@@ -9,24 +9,32 @@
 
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
-use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_10X20};
-use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
-use embedded_graphics::text::Text;
-use esp_hal::clock::CpuClock;
-use esp_hal::gpio::{Level, Output, OutputConfig};
-use esp_hal::timer::timg::TimerGroup;
+use embedded_graphics::{
+    mono_font::{MonoTextStyle, ascii::FONT_10X20},
+    pixelcolor::Rgb565,
+    prelude::*,
+    primitives::{PrimitiveStyle, Rectangle},
+    text::Text,
+};
+use esp_hal::{
+    clock::CpuClock,
+    gpio::{Level, Output, OutputConfig},
+    spi::master::{Config, Spi},
+    time::Rate,
+    timer::timg::TimerGroup,
+};
+
 use rtt_target::rprintln;
 
 use aw9523::I2CGpioExpanderInterface;
 use axp2101::{Axp2101, I2CPowerManagementInterface};
 use embedded_hal_bus::spi::ExclusiveDevice;
-use esp_hal::spi::master::{Config, Spi};
-use esp_hal::time::Rate;
-use mipidsi::interface::SpiInterface;
-use mipidsi::options::{ColorInversion, ColorOrder};
-use mipidsi::{Builder as MipidsiBuilder, models::ILI9342CRgb565};
+use mipidsi::{
+    Builder as MipidsiBuilder,
+    interface::SpiInterface,
+    models::ILI9342CRgb565,
+    options::{ColorInversion, ColorOrder},
+};
 
 const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 240;
