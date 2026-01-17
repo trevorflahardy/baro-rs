@@ -7,10 +7,6 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-mod page;
-mod sampling;
-mod widgets;
-
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
@@ -58,39 +54,40 @@ esp_bootloader_esp_idf::esp_app_desc!();
 async fn main(spawner: Spawner) -> ! {
     // === Core System Init ===
     rtt_target::rtt_init_print!();
-    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
-    let peripherals = esp_hal::init(config);
+    let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let peripherals = esp_hal::init(hal_config);
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
 
-    let timg0 = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(timg0.timer0);
+    let timer_group = TimerGroup::new(peripherals.TIMG0);
+    esp_rtos::start(timer_group.timer0);
     rprintln!("Core system initialized");
 
     // === Power Management ===
     // AXP2101 powers the display and other peripherals
     rprintln!("Configuring power management...");
-    let i2c_bus = esp_hal::i2c::master::I2c::new(
+    let i2c0 = esp_hal::i2c::master::I2c::new(
         peripherals.I2C0,
         esp_hal::i2c::master::Config::default().with_frequency(Rate::from_khz(400)),
     )
     .unwrap()
     .with_sda(peripherals.GPIO12)
-    .with_scl(peripherals.GPIO11);
+    .with_scl(peripherals.GPIO11)
+    .into_async();
 
-    let axp_interface = I2CPowerManagementInterface::new(i2c_bus);
-    let mut axp = Axp2101::new(axp_interface);
+    let power_mgmt_interface = I2CPowerManagementInterface::new(i2c0);
+    let mut power_mgmt_chip = Axp2101::new(power_mgmt_interface);
 
-    match axp.init() {
+    match power_mgmt_chip.init() {
         Ok(_) => rprintln!("Power management ready"),
         Err(e) => rprintln!("Power init failed: {:?}", e),
     }
 
     // === GPIO Expander ===
     rprintln!("Configuring GPIO expander...");
-    let i2c_bus = axp.release_i2c();
-    let aw_interface = I2CGpioExpanderInterface::new(i2c_bus);
-    let mut aw = aw9523::Aw9523::new(aw_interface);
-    aw.init().unwrap();
+    let i2c0_released = power_mgmt_chip.release_i2c();
+    let gpio_expander_interface = I2CGpioExpanderInterface::new(i2c0_released);
+    let mut gpio_expander = aw9523::Aw9523::new(gpio_expander_interface);
+    gpio_expander.init().unwrap();
     rprintln!("GPIO expander ready");
 
     // === Radio Init ===
@@ -103,7 +100,7 @@ async fn main(spawner: Spawner) -> ! {
 
     // === Display Init ===
     rprintln!("Configuring display...");
-    let spi_bus = Spi::new(
+    let display_spi = Spi::new(
         peripherals.SPI2,
         Config::default()
             .with_frequency(Rate::from_mhz(40))
@@ -111,18 +108,21 @@ async fn main(spawner: Spawner) -> ! {
     )
     .unwrap()
     .with_sck(peripherals.GPIO36)
-    .with_mosi(peripherals.GPIO37);
+    .with_mosi(peripherals.GPIO37)
+    .into_async();
 
-    let cs = Output::new(peripherals.GPIO3, Level::High, OutputConfig::default());
-    let dc = Output::new(peripherals.GPIO35, Level::Low, OutputConfig::default());
-    let reset = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
+    let display_cs = Output::new(peripherals.GPIO3, Level::High, OutputConfig::default());
+    let display_dc = Output::new(peripherals.GPIO35, Level::Low, OutputConfig::default());
+    let display_reset = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
 
-    let spi_device = ExclusiveDevice::new(spi_bus, cs, esp_hal::delay::Delay::new()).unwrap();
-    let mut spi_buffer = [0u8; 512];
-    let di = SpiInterface::new(spi_device, dc, &mut spi_buffer);
+    let display_spi_device =
+        ExclusiveDevice::new(display_spi, display_cs, esp_hal::delay::Delay::new()).unwrap();
+    let mut display_spi_buffer = [0u8; 512];
+    let display_interface =
+        SpiInterface::new(display_spi_device, display_dc, &mut display_spi_buffer);
 
-    let mut display = MipidsiBuilder::new(ILI9342CRgb565, di)
-        .reset_pin(reset)
+    let mut display = MipidsiBuilder::new(ILI9342CRgb565, display_interface)
+        .reset_pin(display_reset)
         .display_size(DISPLAY_WIDTH, DISPLAY_HEIGHT)
         .color_order(ColorOrder::Bgr)
         .invert_colors(ColorInversion::Inverted)
