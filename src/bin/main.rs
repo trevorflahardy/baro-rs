@@ -7,8 +7,9 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-mod widgets;
 mod page;
+mod sampling;
+mod widgets;
 
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
