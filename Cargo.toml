@@ -55,6 +55,9 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
 
 critical-section = "1.2.0"
 static_cell = "2.1.1"
+mipidsi = "0.9.0"
+embedded-graphics = "0.8.1"
+embedded-hal-bus = "0.3.0"
 
 
 [profile.dev]

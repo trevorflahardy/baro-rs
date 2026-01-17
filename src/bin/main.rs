@@ -10,8 +10,18 @@
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
+use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::timer::timg::TimerGroup;
 use rtt_target::rprintln;
+
+// Display-LCD panel specific imports
+use embedded_hal_bus::spi::ExclusiveDevice;
+use esp_hal::spi::master::{Config, Spi};
+use mipidsi::interface::SpiInterface;
+use mipidsi::{Builder as MipidsiBuilder, models::ILI9342CRgb565};
+
+const DISPLAY_WIDTH: u16 = 320;
+const DISPLAY_HEIGHT: u16 = 240;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -49,6 +59,37 @@ async fn main(spawner: Spawner) -> ! {
     let (mut _wifi_controller, _interfaces) =
         esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default())
             .expect("Failed to initialize Wi-Fi controller");
+
+    // Configure and initialize the display
+
+    // 1. Configure SPI bus
+    let spi_bus = Spi::new(peripherals.SPI2, Config::default())
+        .unwrap()
+        .with_sck(peripherals.GPIO36)
+        .with_mosi(peripherals.GPIO37);
+
+    // 2. Create a dummy CS pin (we don't use hardware CS for this display)
+    let cs = Output::new(peripherals.GPIO35, Level::High, OutputConfig::default());
+
+    // 3. Wrap the SPI bus as a SPI device (required by embedded-hal traits)
+    let spi_device = ExclusiveDevice::new_no_delay(spi_bus, cs).unwrap();
+
+    // 4. Set up DC (Data/Command) pin
+    let dc = Output::new(peripherals.GPIO34, Level::Low, OutputConfig::default());
+
+    // 5. Create a buffer for SPI batching (larger = faster, uses more RAM)
+    let mut spi_buffer = [0u8; 64];
+
+    // 6. Create display interface
+    let di = SpiInterface::new(spi_device, dc, &mut spi_buffer);
+
+    // 7. Build and initialize the display driver
+    let mut display = MipidsiBuilder::new(ILI9342CRgb565, di)
+        .display_size(DISPLAY_WIDTH, DISPLAY_HEIGHT)
+        .init(&mut embassy_time::Delay)
+        .expect("Failed to initialize display");
+
+    rprintln!("Display initialized!");
 
     // TODO: Spawn some tasks
     let _ = spawner;
