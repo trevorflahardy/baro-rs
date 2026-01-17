@@ -14,7 +14,8 @@ use esp_hal::timer::timg::TimerGroup;
 use rtt_target::rprintln;
 
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    rtt_target::rprintln!("PANIC: {}", info);
     loop {}
 }
 
