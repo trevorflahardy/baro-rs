@@ -21,9 +21,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
-name = "aw9523"
+name = "aw9523-embedded"
 version = "0.1.0"
-source = "git+https://github.com/georgik/aw9523-rs#7d3cac30c8af44b6dabda7509485f928f2a008e9"
+source = "git+https://github.com/trevorflahardy/aw9523-rs#b7a3775ef9b732749eddc950e1cbbfcff47411f6"
 dependencies = [
  "embedded-hal 1.0.0",
 ]
@@ -46,11 +46,12 @@ checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
 name = "baro-rs"
 version = "0.1.0"
 dependencies = [
- "aw9523",
+ "aw9523-embedded",
  "axp2101",
  "critical-section",
  "embassy-executor",
  "embassy-net",
+ "embassy-sync 0.7.2",
  "embassy-time",
  "embedded-graphics",
  "embedded-hal 1.0.0",

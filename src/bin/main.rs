@@ -23,7 +23,8 @@ use embedded_sdmmc::SdCard;
 use esp_hal::{
     clock::CpuClock,
     gpio::{Level, Output, OutputConfig},
-    spi::master::{Config, Spi},
+    i2c::master::Config as I2cConfig,
+    spi::master::{Config as SpiConfig, Spi},
     time::Rate,
     timer::timg::TimerGroup,
 };
@@ -31,12 +32,15 @@ use heapless::String;
 
 use rtt_target::rprintln;
 
-use aw9523::I2CGpioExpanderInterface;
 use axp2101::{Axp2101, I2CPowerManagementInterface};
-use baro_rs::dual_mode_pin::{
-    DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
+use baro_rs::{
+    dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
+    // ft6336u::FT6336U,
 };
-use embedded_hal_bus::spi::CriticalSectionDevice;
+use embedded_hal_bus::{
+    i2c::CriticalSectionDevice as I2cCriticalSectionDevice,
+    spi::CriticalSectionDevice as SpiCriticalSectionDevice,
+};
 use mipidsi::{
     Builder as MipidsiBuilder,
     interface::SpiInterface,
@@ -78,14 +82,19 @@ async fn main(spawner: Spawner) -> ! {
     rprintln!("Configuring power management...");
     let i2c0 = esp_hal::i2c::master::I2c::new(
         peripherals.I2C0,
-        esp_hal::i2c::master::Config::default().with_frequency(Rate::from_khz(400)),
+        I2cConfig::default().with_frequency(Rate::from_khz(400)),
     )
     .unwrap()
     .with_sda(peripherals.GPIO12)
     .with_scl(peripherals.GPIO11)
     .into_async();
 
-    let power_mgmt_interface = I2CPowerManagementInterface::new(i2c0);
+    let i2c0_bus = Mutex::new(RefCell::new(i2c0));
+    let i2c_for_axp = I2cCriticalSectionDevice::new(&i2c0_bus);
+    let i2c_for_aw = I2cCriticalSectionDevice::new(&i2c0_bus);
+    let __i2c_for_touch = I2cCriticalSectionDevice::new(&i2c0_bus);
+
+    let power_mgmt_interface = I2CPowerManagementInterface::new(i2c_for_axp);
     let mut power_mgmt_chip = Axp2101::new(power_mgmt_interface);
 
     match power_mgmt_chip.init() {
@@ -95,10 +104,9 @@ async fn main(spawner: Spawner) -> ! {
 
     // === GPIO Expander ===
     rprintln!("Configuring GPIO expander...");
-    let i2c0_released = power_mgmt_chip.release_i2c();
-    let gpio_expander_interface = I2CGpioExpanderInterface::new(i2c0_released);
-    let mut gpio_expander = aw9523::Aw9523::new(gpio_expander_interface);
+    let mut gpio_expander = aw9523_embedded::Aw9523::new(i2c_for_aw, 0x58);
     gpio_expander.init().unwrap();
+
     rprintln!("GPIO expander ready");
 
     // === Radio Init ===
@@ -113,7 +121,7 @@ async fn main(spawner: Spawner) -> ! {
     rprintln!("Configuring display...");
     let spi_bus_inner = Spi::new(
         peripherals.SPI2,
-        Config::default()
+        SpiConfig::default()
             .with_frequency(Rate::from_mhz(40))
             .with_mode(esp_hal::spi::Mode::_0),
     )
@@ -129,10 +137,10 @@ async fn main(spawner: Spawner) -> ! {
     let cs_sd_card = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
     let display_spi_inner =
-        CriticalSectionDevice::new(&spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
+        SpiCriticalSectionDevice::new(&spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
 
     let sd_card_spi_inner =
-        CriticalSectionDevice::new(&spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
+        SpiCriticalSectionDevice::new(&spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
 
     // Wrap SPI devices with dual-mode pin wrappers
     let display_spi = OutputModeSpiDevice::new(display_spi_inner, &GPIO35_PIN);
@@ -156,6 +164,8 @@ async fn main(spawner: Spawner) -> ! {
     rprintln!("Display ready");
 
     // Load up the SD card as well
+    rprintln!("Configuring SD card...");
+
     let sd_card = SdCard::new(sd_card_spi, esp_hal::delay::Delay::new());
     let sd_card_size = match sd_card.num_bytes() {
         Ok(size) => size,
@@ -165,6 +175,11 @@ async fn main(spawner: Spawner) -> ! {
         }
     };
     rprintln!("SD card ready (size: {} bytes)", sd_card_size);
+
+    // Load up the capacitive touch controller
+    // Create I2C interface on the FT6336U@Capacitive touch, touch area pixels 320 x 280
+    rprintln!("Configuring touch controller...");
+    // let touch_interface = FT6336U::new(i2c_for_touch,)
 
     rprintln!("=== Hardware initialization complete ===\n");
 
