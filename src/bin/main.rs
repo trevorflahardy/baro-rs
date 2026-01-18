@@ -46,7 +46,7 @@ const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 240;
 
 // Static dual-mode pin for GPIO35 (shared between SD card MISO and display DC)
-static GPIO35_PIN: DualModePin = DualModePin::new();
+static GPIO35_PIN: DualModePin<35> = DualModePin::new();
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
