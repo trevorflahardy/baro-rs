@@ -142,24 +142,27 @@ impl<const PIN: u8> embedded_hal::digital::ErrorType for DualModePinAsOutput<PIN
     type Error = core::convert::Infallible;
 }
 
-/// SPI device wrapper that automatically sets a pin to output mode before each transaction
-pub struct DisplaySpiDevice<T, const PIN: u8> {
+/// SPI device wrapper that automatically sets a pin to output mode before each transaction.
+///
+/// Useful when a GPIO pin needs to be in output mode during SPI transactions
+/// (e.g., for a DC/RS signal on displays).
+pub struct OutputModeSpiDevice<T, const PIN: u8> {
     device: T,
     pin: &'static DualModePin<PIN>,
 }
 
-impl<T, const PIN: u8> DisplaySpiDevice<T, PIN> {
-    /// Creates a new DisplaySpiDevice that wraps an existing SPI device
+impl<T, const PIN: u8> OutputModeSpiDevice<T, PIN> {
+    /// Creates a new OutputModeSpiDevice that wraps an existing SPI device
     pub const fn new(device: T, pin: &'static DualModePin<PIN>) -> Self {
         Self { device, pin }
     }
 }
 
-impl<T: ErrorType, const PIN: u8> ErrorType for DisplaySpiDevice<T, PIN> {
+impl<T: ErrorType, const PIN: u8> ErrorType for OutputModeSpiDevice<T, PIN> {
     type Error = T::Error;
 }
 
-impl<T: SpiDevice<u8>, const PIN: u8> SpiDevice<u8> for DisplaySpiDevice<T, PIN> {
+impl<T: SpiDevice<u8>, const PIN: u8> SpiDevice<u8> for OutputModeSpiDevice<T, PIN> {
     fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
         // Switch pin to output mode
         self.pin.set_as_output();
@@ -168,24 +171,27 @@ impl<T: SpiDevice<u8>, const PIN: u8> SpiDevice<u8> for DisplaySpiDevice<T, PIN>
     }
 }
 
-/// SPI device wrapper that automatically sets a pin to input mode before each transaction
-pub struct SdCardSpiDevice<T, const PIN: u8> {
+/// SPI device wrapper that automatically sets a pin to input mode before each transaction.
+///
+/// Useful when a GPIO pin needs to be in input mode during SPI transactions
+/// (e.g., for MISO on an SD card when the pin is shared with other output functions).
+pub struct InputModeSpiDevice<T, const PIN: u8> {
     device: T,
     pin: &'static DualModePin<PIN>,
 }
 
-impl<T, const PIN: u8> SdCardSpiDevice<T, PIN> {
-    /// Creates a new SdCardSpiDevice that wraps an existing SPI device
+impl<T, const PIN: u8> InputModeSpiDevice<T, PIN> {
+    /// Creates a new InputModeSpiDevice that wraps an existing SPI device
     pub const fn new(device: T, pin: &'static DualModePin<PIN>) -> Self {
         Self { device, pin }
     }
 }
 
-impl<T: ErrorType, const PIN: u8> ErrorType for SdCardSpiDevice<T, PIN> {
+impl<T: ErrorType, const PIN: u8> ErrorType for InputModeSpiDevice<T, PIN> {
     type Error = T::Error;
 }
 
-impl<T: SpiDevice<u8>, const PIN: u8> SpiDevice<u8> for SdCardSpiDevice<T, PIN> {
+impl<T: SpiDevice<u8>, const PIN: u8> SpiDevice<u8> for InputModeSpiDevice<T, PIN> {
     fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
         // Switch pin to input mode
         self.pin.set_as_input();

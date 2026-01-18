@@ -33,7 +33,9 @@ use rtt_target::rprintln;
 
 use aw9523::I2CGpioExpanderInterface;
 use axp2101::{Axp2101, I2CPowerManagementInterface};
-use baro_rs::dual_mode_pin::{DisplaySpiDevice, DualModePin, DualModePinAsOutput, SdCardSpiDevice};
+use baro_rs::dual_mode_pin::{
+    DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
+};
 use embedded_hal_bus::spi::CriticalSectionDevice;
 use mipidsi::{
     Builder as MipidsiBuilder,
@@ -133,8 +135,8 @@ async fn main(spawner: Spawner) -> ! {
         CriticalSectionDevice::new(&spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
 
     // Wrap SPI devices with dual-mode pin wrappers
-    let display_spi = DisplaySpiDevice::new(display_spi_inner, &GPIO35_PIN);
-    let sd_card_spi = SdCardSpiDevice::new(sd_card_spi_inner, &GPIO35_PIN);
+    let display_spi = OutputModeSpiDevice::new(display_spi_inner, &GPIO35_PIN);
+    let sd_card_spi = InputModeSpiDevice::new(sd_card_spi_inner, &GPIO35_PIN);
 
     let mut display_spi_buffer = [0u8; 512];
     // Use DualModePinAsOutput for display DC instead of direct Output
