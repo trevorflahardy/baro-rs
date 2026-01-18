@@ -8,6 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use core::cell::RefCell;
+use core::fmt::Write;
 use critical_section::Mutex;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
@@ -18,6 +19,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, Rectangle},
     text::Text,
 };
+use embedded_sdmmc::SdCard;
 use esp_hal::{
     clock::CpuClock,
     gpio::{Level, Output, OutputConfig},
@@ -25,12 +27,14 @@ use esp_hal::{
     time::Rate,
     timer::timg::TimerGroup,
 };
+use heapless::String;
 
 use rtt_target::rprintln;
 
 use aw9523::I2CGpioExpanderInterface;
 use axp2101::{Axp2101, I2CPowerManagementInterface};
-use embedded_hal_bus::{spi::CriticalSectionDevice, spi::ExclusiveDevice};
+use baro_rs::dual_mode_pin::{DisplaySpiDevice, DualModePin, DualModePinAsOutput, SdCardSpiDevice};
+use embedded_hal_bus::spi::CriticalSectionDevice;
 use mipidsi::{
     Builder as MipidsiBuilder,
     interface::SpiInterface,
@@ -40,6 +44,9 @@ use mipidsi::{
 
 const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 240;
+
+// Static dual-mode pin for GPIO35 (shared between SD card MISO and display DC)
+static GPIO35_PIN: DualModePin = DualModePin::new();
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -111,7 +118,7 @@ async fn main(spawner: Spawner) -> ! {
     .unwrap()
     .with_sck(peripherals.GPIO36)
     .with_mosi(peripherals.GPIO37)
-    .with_miso(peripherals.GPIO45)
+    .with_miso(peripherals.GPIO35)
     .into_async();
 
     let spi_bus = Mutex::new(RefCell::new(spi_bus_inner));
@@ -119,14 +126,19 @@ async fn main(spawner: Spawner) -> ! {
     let cs_display = Output::new(peripherals.GPIO3, Level::High, OutputConfig::default());
     let cs_sd_card = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
-    let display_spi =
+    let display_spi_inner =
         CriticalSectionDevice::new(&spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
 
-    let sd_card_spi =
+    let sd_card_spi_inner =
         CriticalSectionDevice::new(&spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
 
+    // Wrap SPI devices with dual-mode pin wrappers
+    let display_spi = DisplaySpiDevice::new(display_spi_inner, &GPIO35_PIN);
+    let sd_card_spi = SdCardSpiDevice::new(sd_card_spi_inner, &GPIO35_PIN);
+
     let mut display_spi_buffer = [0u8; 512];
-    let display_dc = Output::new(peripherals.GPIO35, Level::Low, OutputConfig::default());
+    // Use DualModePinAsOutput for display DC instead of direct Output
+    let display_dc = DualModePinAsOutput::new(&GPIO35_PIN);
     let display_reset = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
 
     let display_interface = SpiInterface::new(display_spi, display_dc, &mut display_spi_buffer);
@@ -140,10 +152,22 @@ async fn main(spawner: Spawner) -> ! {
         .expect("Display init failed");
 
     rprintln!("Display ready");
+
+    // Load up the SD card as well
+    let sd_card = SdCard::new(sd_card_spi, esp_hal::delay::Delay::new());
+    let sd_card_size = match sd_card.num_bytes() {
+        Ok(size) => size,
+        Err(e) => {
+            rprintln!("SD card init failed: {:?}", e);
+            0
+        }
+    };
+    rprintln!("SD card ready (size: {} bytes)", sd_card_size);
+
     rprintln!("=== Hardware initialization complete ===\n");
 
     // === Application: Display Test ===
-    draw_debug_screen(&mut display);
+    draw_debug_screen(&mut display, sd_card_size);
 
     let _ = spawner;
 
@@ -155,16 +179,28 @@ async fn main(spawner: Spawner) -> ! {
 }
 
 /// Draw test pattern on display
-fn draw_debug_screen<D>(display: &mut D)
+fn draw_debug_screen<D>(display: &mut D, sd_card_size: u64)
 where
     D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>,
 {
+    // Clear screen with black background
     let _ = Rectangle::new(Point::new(0, 0), Size::new(320, 240))
-        .into_styled(PrimitiveStyle::with_fill(Rgb565::GREEN))
+        .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
         .draw(display);
 
-    let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
-    let _ = Text::new("huge cock and balls", Point::new(60, 120), text_style).draw(display);
+    let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::GREEN);
+
+    // Display title
+    let _ = Text::new("M5Stack CoreS3", Point::new(60, 30), text_style).draw(display);
+
+    // Format and display SD card size
+    let mut buffer = String::<64>::new();
+    if sd_card_size > 0 {
+        let _ = write!(buffer, "SD: {} MB", sd_card_size / 1_000_000);
+    } else {
+        let _ = write!(buffer, "SD: Not detected");
+    }
+    let _ = Text::new(&buffer, Point::new(60, 120), text_style).draw(display);
 
     rprintln!("Display test complete");
 }
