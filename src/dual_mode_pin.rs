@@ -10,14 +10,14 @@ use embedded_hal::digital::OutputPin;
 use embedded_hal::spi::{ErrorType, Operation, SpiDevice};
 
 // ESP32-S3 GPIO register addresses for GPIO 0-31 (low bank)
-const GPIO_OUT_W1TS_REG: u32 = 0x6000_4008;    // Set output bits
-const GPIO_OUT_W1TC_REG: u32 = 0x6000_400C;    // Clear output bits
+const GPIO_OUT_W1TS_REG: u32 = 0x6000_4008; // Set output bits
+const GPIO_OUT_W1TC_REG: u32 = 0x6000_400C; // Clear output bits
 const GPIO_ENABLE_W1TS_REG: u32 = 0x6000_4020; // Enable output mode
 const GPIO_ENABLE_W1TC_REG: u32 = 0x6000_4024; // Disable output mode (enable input)
 
 // ESP32-S3 GPIO register addresses for GPIO 32-48 (high bank)
-const GPIO_OUT1_W1TS_REG: u32 = 0x6000_4014;    // Set output bits
-const GPIO_OUT1_W1TC_REG: u32 = 0x6000_4018;    // Clear output bits
+const GPIO_OUT1_W1TS_REG: u32 = 0x6000_4014; // Set output bits
+const GPIO_OUT1_W1TC_REG: u32 = 0x6000_4018; // Clear output bits
 const GPIO_ENABLE1_W1TS_REG: u32 = 0x6000_4030; // Enable output mode
 const GPIO_ENABLE1_W1TC_REG: u32 = 0x6000_4034; // Disable output mode (enable input)
 
@@ -55,11 +55,23 @@ impl<const PIN: u8> DualModePin<PIN> {
         if PIN < 32 {
             // Low bank (GPIO 0-31)
             let bit = 1u32 << PIN;
-            (GPIO_OUT_W1TS_REG, GPIO_OUT_W1TC_REG, GPIO_ENABLE_W1TS_REG, GPIO_ENABLE_W1TC_REG, bit)
+            (
+                GPIO_OUT_W1TS_REG,
+                GPIO_OUT_W1TC_REG,
+                GPIO_ENABLE_W1TS_REG,
+                GPIO_ENABLE_W1TC_REG,
+                bit,
+            )
         } else {
             // High bank (GPIO 32-48)
             let bit = 1u32 << (PIN - 32);
-            (GPIO_OUT1_W1TS_REG, GPIO_OUT1_W1TC_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG, bit)
+            (
+                GPIO_OUT1_W1TS_REG,
+                GPIO_OUT1_W1TC_REG,
+                GPIO_ENABLE1_W1TS_REG,
+                GPIO_ENABLE1_W1TC_REG,
+                bit,
+            )
         }
     }
 
