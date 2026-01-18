@@ -57,10 +57,11 @@ critical-section = "1.2.0"
 static_cell = "2.1.1"
 mipidsi = "0.9.0"
 embedded-graphics = "0.8.1"
-embedded-hal-bus = "0.3.0"
+embedded-hal-bus = { version = "0.3.0", features = ["async"] }
 axp2101 = { git = "https://github.com/georgik/axp2101-rs" }
 aw9523 = { git = "https://github.com/georgik/aw9523-rs" }
 embedded-layout = "0.4.2"
+embedded-sdmmc = "0.9.0"
 
 
 [profile.dev]

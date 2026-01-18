@@ -7,6 +7,8 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use core::cell::RefCell;
+use critical_section::Mutex;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
@@ -28,7 +30,7 @@ use rtt_target::rprintln;
 
 use aw9523::I2CGpioExpanderInterface;
 use axp2101::{Axp2101, I2CPowerManagementInterface};
-use embedded_hal_bus::spi::ExclusiveDevice;
+use embedded_hal_bus::{spi::CriticalSectionDevice, spi::ExclusiveDevice};
 use mipidsi::{
     Builder as MipidsiBuilder,
     interface::SpiInterface,
@@ -98,9 +100,9 @@ async fn main(spawner: Spawner) -> ! {
             .expect("WiFi init failed");
     rprintln!("Radio ready");
 
-    // === Display Init ===
+    // === Initialize the SPI devices (display and SD card) ===
     rprintln!("Configuring display...");
-    let display_spi = Spi::new(
+    let spi_bus_inner = Spi::new(
         peripherals.SPI2,
         Config::default()
             .with_frequency(Rate::from_mhz(40))
@@ -109,17 +111,25 @@ async fn main(spawner: Spawner) -> ! {
     .unwrap()
     .with_sck(peripherals.GPIO36)
     .with_mosi(peripherals.GPIO37)
+    .with_miso(peripherals.GPIO45)
     .into_async();
 
-    let display_cs = Output::new(peripherals.GPIO3, Level::High, OutputConfig::default());
+    let spi_bus = Mutex::new(RefCell::new(spi_bus_inner));
+
+    let cs_display = Output::new(peripherals.GPIO3, Level::High, OutputConfig::default());
+    let cs_sd_card = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
+
+    let display_spi =
+        CriticalSectionDevice::new(&spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
+
+    let sd_card_spi =
+        CriticalSectionDevice::new(&spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
+
+    let mut display_spi_buffer = [0u8; 512];
     let display_dc = Output::new(peripherals.GPIO35, Level::Low, OutputConfig::default());
     let display_reset = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
 
-    let display_spi_device =
-        ExclusiveDevice::new(display_spi, display_cs, esp_hal::delay::Delay::new()).unwrap();
-    let mut display_spi_buffer = [0u8; 512];
-    let display_interface =
-        SpiInterface::new(display_spi_device, display_dc, &mut display_spi_buffer);
+    let display_interface = SpiInterface::new(display_spi, display_dc, &mut display_spi_buffer);
 
     let mut display = MipidsiBuilder::new(ILI9342CRgb565, display_interface)
         .reset_pin(display_reset)
@@ -133,7 +143,7 @@ async fn main(spawner: Spawner) -> ! {
     rprintln!("=== Hardware initialization complete ===\n");
 
     // === Application: Display Test ===
-    draw_test_screen(&mut display);
+    draw_debug_screen(&mut display);
 
     let _ = spawner;
 
@@ -145,7 +155,7 @@ async fn main(spawner: Spawner) -> ! {
 }
 
 /// Draw test pattern on display
-fn draw_test_screen<D>(display: &mut D)
+fn draw_debug_screen<D>(display: &mut D)
 where
     D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>,
 {
@@ -154,7 +164,7 @@ where
         .draw(display);
 
     let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
-    let _ = Text::new("balls", Point::new(60, 120), text_style).draw(display);
+    let _ = Text::new("huge cock and balls", Point::new(60, 120), text_style).draw(display);
 
     rprintln!("Display test complete");
 }
