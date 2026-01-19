@@ -219,7 +219,7 @@ impl Rollup {
         }
 
         let start_ts = samples[0].timestamp;
-        let mut avg = [0i32; MAX_SENSORS];
+        let mut sum = [0i64; MAX_SENSORS]; // Use i64 to avoid overflow
         let mut min = [i32::MAX; MAX_SENSORS];
         let mut max = [i32::MIN; MAX_SENSORS];
 
@@ -229,9 +229,14 @@ impl Rollup {
                 let value = sample.values[i];
                 min[i] = min[i].min(value);
                 max[i] = max[i].max(value);
-                // Use i64 for sum to avoid overflow
-                avg[i] = avg[i].saturating_add(value / samples.len() as i32);
+                sum[i] = sum[i].saturating_add(value as i64);
             }
+        }
+
+        // Calculate averages from sums
+        let mut avg = [0i32; MAX_SENSORS];
+        for i in 0..MAX_SENSORS {
+            avg[i] = (sum[i] / samples.len() as i64) as i32;
         }
 
         Some(Self::new(start_ts, avg, min, max))
@@ -247,17 +252,23 @@ impl Rollup {
         }
 
         let start_ts = rollups[0].start_ts;
-        let mut avg = [0i32; MAX_SENSORS];
+        let mut sum = [0i64; MAX_SENSORS]; // Use i64 to avoid overflow
         let mut min = [i32::MAX; MAX_SENSORS];
         let mut max = [i32::MIN; MAX_SENSORS];
 
-        // Calculate min/max across rollups and average the averages
+        // Calculate min/max across rollups and sum averages
         for rollup in rollups {
             for i in 0..MAX_SENSORS {
                 min[i] = min[i].min(rollup.min[i]);
                 max[i] = max[i].max(rollup.max[i]);
-                avg[i] = avg[i].saturating_add(rollup.avg[i] / rollups.len() as i32);
+                sum[i] = sum[i].saturating_add(rollup.avg[i] as i64);
             }
+        }
+
+        // Calculate averages from sums
+        let mut avg = [0i32; MAX_SENSORS];
+        for i in 0..MAX_SENSORS {
+            avg[i] = (sum[i] / rollups.len() as i64) as i32;
         }
 
         Some(Self::new(start_ts, avg, min, max))
