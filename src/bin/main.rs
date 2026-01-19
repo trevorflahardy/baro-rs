@@ -34,14 +34,14 @@ use static_cell::StaticCell;
 use rtt_target::rprintln;
 
 use axp2101::{Axp2101, I2CPowerManagementInterface};
-use baro_rs::{
-    dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
-    ft6336u::FT6336U,
+use baro_rs::dual_mode_pin::{
+    DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
 };
 use embedded_hal_bus::{
     i2c::CriticalSectionDevice as I2cCriticalSectionDevice,
     spi::CriticalSectionDevice as SpiCriticalSectionDevice,
 };
+use ft6336u_driver::FT6336U;
 use mipidsi::{
     Builder as MipidsiBuilder,
     interface::SpiInterface,
@@ -197,7 +197,7 @@ async fn main(spawner: Spawner) -> ! {
     // Configure touch controller in Polling mode (INT stays LOW while touched)
     // This is better than Trigger mode for continuous touch detection
     touch_interface
-        .write_g_mode(baro_rs::ft6336u::GestureMode::Polling)
+        .write_g_mode(ft6336u_driver::GestureMode::Polling)
         .unwrap();
     let g_mode = touch_interface.read_g_mode().unwrap();
 

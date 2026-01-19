@@ -66,6 +66,7 @@ dependencies = [
  "esp-hal",
  "esp-radio",
  "esp-rtos",
+ "ft6336u-driver",
  "heapless 0.9.2",
  "mipidsi",
  "rtt-target",
@@ -987,6 +988,14 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
+
+[[package]]
+name = "ft6336u-driver"
+version = "1.0.0"
+source = "git+https://github.com/trevorflahardy/ft6336u-driver#6025bbff0ab26f3244183e602be213910e0f5683"
+dependencies = [
+ "embedded-hal 1.0.0",
+]
 
 [[package]]
 name = "fugit"

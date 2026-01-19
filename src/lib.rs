@@ -3,7 +3,6 @@
 extern crate alloc;
 
 pub mod dual_mode_pin;
-pub mod ft6336u;
 pub mod page_manager;
 pub mod pages;
 pub mod sampling;
