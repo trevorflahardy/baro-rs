@@ -1,4 +1,4 @@
-use embedded_hal_async::i2c::I2c;
+use embedded_hal::i2c::I2c;
 
 // =============================================================================
 // I2C Address
@@ -233,7 +233,7 @@ impl<E> From<E> for Error<E> {
 /// (2) Reset the controller
 /// - Drive AW9523B P0_0 LOW → HIGH
 /// - This resets the FT6336U
-/// (3) Configure ESP32 GPIO27 (real hardware pin)
+/// (3) Configure ESP32 GPIO21 (real hardware pin)
 /// - Using esp-hal:
 ///     - Input
 ///     - Pull-up
@@ -288,15 +288,15 @@ where
     // =========================================================================
 
     /// Read a single byte from a register
-    async fn read_byte(&mut self, addr: u8) -> Result<u8, Error<I2C::Error>> {
+    fn read_byte(&mut self, addr: u8) -> Result<u8, Error<I2C::Error>> {
         let mut buf = [0u8; 1];
-        self.i2c.write_read(I2C_ADDR, &[addr], &mut buf).await?;
+        self.i2c.write_read(I2C_ADDR, &[addr], &mut buf)?;
         Ok(buf[0])
     }
 
     /// Write a single byte to a register
-    async fn write_byte(&mut self, addr: u8, data: u8) -> Result<(), Error<I2C::Error>> {
-        self.i2c.write(I2C_ADDR, &[addr, data]).await?;
+    fn write_byte(&mut self, addr: u8, data: u8) -> Result<(), Error<I2C::Error>> {
+        self.i2c.write(I2C_ADDR, &[addr, data])?;
         Ok(())
     }
 
@@ -308,8 +308,8 @@ where
     ///
     /// # Returns
     /// The device mode (Working or Factory)
-    pub async fn read_device_mode(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let val = self.read_byte(ADDR_DEVICE_MODE).await?;
+    pub fn read_device_mode(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let val = self.read_byte(ADDR_DEVICE_MODE)?;
         Ok((val & 0x70) >> 4)
     }
 
@@ -317,8 +317,8 @@ where
     ///
     /// # Arguments
     /// * `mode` - The desired device mode
-    pub async fn write_device_mode(&mut self, mode: DeviceMode) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_DEVICE_MODE, mode.to_register()).await
+    pub fn write_device_mode(&mut self, mode: DeviceMode) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_DEVICE_MODE, mode.to_register())
     }
 
     // =========================================================================
@@ -329,24 +329,24 @@ where
     ///
     /// # Returns
     /// Gesture ID value
-    pub async fn read_gesture_id(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_GESTURE_ID).await
+    pub fn read_gesture_id(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_GESTURE_ID)
     }
 
     /// Read the touch detection status register
     ///
     /// # Returns
     /// Raw TD_STATUS register value
-    pub async fn read_td_status(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_TD_STATUS).await
+    pub fn read_td_status(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_TD_STATUS)
     }
 
     /// Read the number of detected touch points
     ///
     /// # Returns
     /// Number of touch points (0-2)
-    pub async fn read_touch_number(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let val = self.read_byte(ADDR_TD_STATUS).await?;
+    pub fn read_touch_number(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let val = self.read_byte(ADDR_TD_STATUS)?;
         Ok(val & 0x0F)
     }
 
@@ -358,11 +358,9 @@ where
     ///
     /// # Returns
     /// X coordinate (0-4095, 12-bit value)
-    pub async fn read_touch1_x(&mut self) -> Result<u16, Error<I2C::Error>> {
+    pub fn read_touch1_x(&mut self) -> Result<u16, Error<I2C::Error>> {
         let mut buf = [0u8; 2];
-        self.i2c
-            .write_read(I2C_ADDR, &[ADDR_TOUCH1_X], &mut buf)
-            .await?;
+        self.i2c.write_read(I2C_ADDR, &[ADDR_TOUCH1_X], &mut buf)?;
         Ok((((buf[0] & 0x0F) as u16) << 8) | (buf[1] as u16))
     }
 
@@ -370,11 +368,9 @@ where
     ///
     /// # Returns
     /// Y coordinate (0-4095, 12-bit value)
-    pub async fn read_touch1_y(&mut self) -> Result<u16, Error<I2C::Error>> {
+    pub fn read_touch1_y(&mut self) -> Result<u16, Error<I2C::Error>> {
         let mut buf = [0u8; 2];
-        self.i2c
-            .write_read(I2C_ADDR, &[ADDR_TOUCH1_Y], &mut buf)
-            .await?;
+        self.i2c.write_read(I2C_ADDR, &[ADDR_TOUCH1_Y], &mut buf)?;
         Ok((((buf[0] & 0x0F) as u16) << 8) | (buf[1] as u16))
     }
 
@@ -382,8 +378,8 @@ where
     ///
     /// # Returns
     /// Event type (0=down, 1=up, 2=contact)
-    pub async fn read_touch1_event(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let val = self.read_byte(ADDR_TOUCH1_EVENT).await?;
+    pub fn read_touch1_event(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let val = self.read_byte(ADDR_TOUCH1_EVENT)?;
         Ok(val >> 6)
     }
 
@@ -391,8 +387,8 @@ where
     ///
     /// # Returns
     /// Touch point ID (0 or 1)
-    pub async fn read_touch1_id(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let val = self.read_byte(ADDR_TOUCH1_ID).await?;
+    pub fn read_touch1_id(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let val = self.read_byte(ADDR_TOUCH1_ID)?;
         Ok(val >> 4)
     }
 
@@ -400,16 +396,16 @@ where
     ///
     /// # Returns
     /// Touch weight value
-    pub async fn read_touch1_weight(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_TOUCH1_WEIGHT).await
+    pub fn read_touch1_weight(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_TOUCH1_WEIGHT)
     }
 
     /// Read miscellaneous data for touch point 1
     ///
     /// # Returns
     /// Misc data value
-    pub async fn read_touch1_misc(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let val = self.read_byte(ADDR_TOUCH1_MISC).await?;
+    pub fn read_touch1_misc(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let val = self.read_byte(ADDR_TOUCH1_MISC)?;
         Ok(val >> 4)
     }
 
@@ -421,11 +417,9 @@ where
     ///
     /// # Returns
     /// X coordinate (0-4095, 12-bit value)
-    pub async fn read_touch2_x(&mut self) -> Result<u16, Error<I2C::Error>> {
+    pub fn read_touch2_x(&mut self) -> Result<u16, Error<I2C::Error>> {
         let mut buf = [0u8; 2];
-        self.i2c
-            .write_read(I2C_ADDR, &[ADDR_TOUCH2_X], &mut buf)
-            .await?;
+        self.i2c.write_read(I2C_ADDR, &[ADDR_TOUCH2_X], &mut buf)?;
         Ok((((buf[0] & 0x0F) as u16) << 8) | (buf[1] as u16))
     }
 
@@ -433,11 +427,9 @@ where
     ///
     /// # Returns
     /// Y coordinate (0-4095, 12-bit value)
-    pub async fn read_touch2_y(&mut self) -> Result<u16, Error<I2C::Error>> {
+    pub fn read_touch2_y(&mut self) -> Result<u16, Error<I2C::Error>> {
         let mut buf = [0u8; 2];
-        self.i2c
-            .write_read(I2C_ADDR, &[ADDR_TOUCH2_Y], &mut buf)
-            .await?;
+        self.i2c.write_read(I2C_ADDR, &[ADDR_TOUCH2_Y], &mut buf)?;
         Ok((((buf[0] & 0x0F) as u16) << 8) | (buf[1] as u16))
     }
 
@@ -445,8 +437,8 @@ where
     ///
     /// # Returns
     /// Event type (0=down, 1=up, 2=contact)
-    pub async fn read_touch2_event(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let val = self.read_byte(ADDR_TOUCH2_EVENT).await?;
+    pub fn read_touch2_event(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let val = self.read_byte(ADDR_TOUCH2_EVENT)?;
         Ok(val >> 6)
     }
 
@@ -454,8 +446,8 @@ where
     ///
     /// # Returns
     /// Touch point ID (0 or 1)
-    pub async fn read_touch2_id(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let val = self.read_byte(ADDR_TOUCH2_ID).await?;
+    pub fn read_touch2_id(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let val = self.read_byte(ADDR_TOUCH2_ID)?;
         Ok(val >> 4)
     }
 
@@ -463,16 +455,16 @@ where
     ///
     /// # Returns
     /// Touch weight value
-    pub async fn read_touch2_weight(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_TOUCH2_WEIGHT).await
+    pub fn read_touch2_weight(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_TOUCH2_WEIGHT)
     }
 
     /// Read miscellaneous data for touch point 2
     ///
     /// # Returns
     /// Misc data value
-    pub async fn read_touch2_misc(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let val = self.read_byte(ADDR_TOUCH2_MISC).await?;
+    pub fn read_touch2_misc(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let val = self.read_byte(ADDR_TOUCH2_MISC)?;
         Ok(val >> 4)
     }
 
@@ -484,56 +476,56 @@ where
     ///
     /// # Returns
     /// Threshold value (lower = more sensitive)
-    pub async fn read_touch_threshold(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_THRESHOLD).await
+    pub fn read_touch_threshold(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_THRESHOLD)
     }
 
     /// Read the filter coefficient
     ///
     /// # Returns
     /// Filter coefficient value
-    pub async fn read_filter_coefficient(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_FILTER_COE).await
+    pub fn read_filter_coefficient(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_FILTER_COE)
     }
 
     /// Read the control mode register
     ///
     /// # Returns
     /// Control mode value
-    pub async fn read_ctrl_mode(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_CTRL).await
+    pub fn read_ctrl_mode(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_CTRL)
     }
 
     /// Write the control mode
     ///
     /// # Arguments
     /// * `mode` - Control mode (KeepActive or SwitchToMonitor)
-    pub async fn write_ctrl_mode(&mut self, mode: CtrlMode) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_CTRL, mode as u8).await
+    pub fn write_ctrl_mode(&mut self, mode: CtrlMode) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_CTRL, mode as u8)
     }
 
     /// Read the time period to enter monitor mode
     ///
     /// # Returns
     /// Time period value in seconds
-    pub async fn read_time_period_enter_monitor(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_TIME_ENTER_MONITOR).await
+    pub fn read_time_period_enter_monitor(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_TIME_ENTER_MONITOR)
     }
 
     /// Read the active mode report rate
     ///
     /// # Returns
     /// Report rate in Hz
-    pub async fn read_active_rate(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_ACTIVE_MODE_RATE).await
+    pub fn read_active_rate(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_ACTIVE_MODE_RATE)
     }
 
     /// Read the monitor mode report rate
     ///
     /// # Returns
     /// Report rate in Hz
-    pub async fn read_monitor_rate(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_MONITOR_MODE_RATE).await
+    pub fn read_monitor_rate(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_MONITOR_MODE_RATE)
     }
 
     // =========================================================================
@@ -544,96 +536,96 @@ where
     ///
     /// # Returns
     /// Radian value
-    pub async fn read_radian_value(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_RADIAN_VALUE).await
+    pub fn read_radian_value(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_RADIAN_VALUE)
     }
 
     /// Write the radian value for gesture detection
     ///
     /// # Arguments
     /// * `val` - Radian value to set
-    pub async fn write_radian_value(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_RADIAN_VALUE, val).await
+    pub fn write_radian_value(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_RADIAN_VALUE, val)
     }
 
     /// Read the offset for left/right gesture detection
     ///
     /// # Returns
     /// Offset value
-    pub async fn read_offset_left_right(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_OFFSET_LEFT_RIGHT).await
+    pub fn read_offset_left_right(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_OFFSET_LEFT_RIGHT)
     }
 
     /// Write the offset for left/right gesture detection
     ///
     /// # Arguments
     /// * `val` - Offset value to set
-    pub async fn write_offset_left_right(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_OFFSET_LEFT_RIGHT, val).await
+    pub fn write_offset_left_right(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_OFFSET_LEFT_RIGHT, val)
     }
 
     /// Read the offset for up/down gesture detection
     ///
     /// # Returns
     /// Offset value
-    pub async fn read_offset_up_down(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_OFFSET_UP_DOWN).await
+    pub fn read_offset_up_down(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_OFFSET_UP_DOWN)
     }
 
     /// Write the offset for up/down gesture detection
     ///
     /// # Arguments
     /// * `val` - Offset value to set
-    pub async fn write_offset_up_down(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_OFFSET_UP_DOWN, val).await
+    pub fn write_offset_up_down(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_OFFSET_UP_DOWN, val)
     }
 
     /// Read the distance for left/right gesture detection
     ///
     /// # Returns
     /// Distance value
-    pub async fn read_distance_left_right(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_DISTANCE_LEFT_RIGHT).await
+    pub fn read_distance_left_right(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_DISTANCE_LEFT_RIGHT)
     }
 
     /// Write the distance for left/right gesture detection
     ///
     /// # Arguments
     /// * `val` - Distance value to set
-    pub async fn write_distance_left_right(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_DISTANCE_LEFT_RIGHT, val).await
+    pub fn write_distance_left_right(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_DISTANCE_LEFT_RIGHT, val)
     }
 
     /// Read the distance for up/down gesture detection
     ///
     /// # Returns
     /// Distance value
-    pub async fn read_distance_up_down(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_DISTANCE_UP_DOWN).await
+    pub fn read_distance_up_down(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_DISTANCE_UP_DOWN)
     }
 
     /// Write the distance for up/down gesture detection
     ///
     /// # Arguments
     /// * `val` - Distance value to set
-    pub async fn write_distance_up_down(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_DISTANCE_UP_DOWN, val).await
+    pub fn write_distance_up_down(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_DISTANCE_UP_DOWN, val)
     }
 
     /// Read the distance for zoom gesture detection
     ///
     /// # Returns
     /// Distance value
-    pub async fn read_distance_zoom(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_DISTANCE_ZOOM).await
+    pub fn read_distance_zoom(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_DISTANCE_ZOOM)
     }
 
     /// Write the distance for zoom gesture detection
     ///
     /// # Arguments
     /// * `val` - Distance value to set
-    pub async fn write_distance_zoom(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_DISTANCE_ZOOM, val).await
+    pub fn write_distance_zoom(&mut self, val: u8) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_DISTANCE_ZOOM, val)
     }
 
     // =========================================================================
@@ -644,11 +636,10 @@ where
     ///
     /// # Returns
     /// 16-bit library version number
-    pub async fn read_library_version(&mut self) -> Result<u16, Error<I2C::Error>> {
+    pub fn read_library_version(&mut self) -> Result<u16, Error<I2C::Error>> {
         let mut buf = [0u8; 2];
         self.i2c
-            .write_read(I2C_ADDR, &[ADDR_LIBRARY_VERSION_H], &mut buf)
-            .await?;
+            .write_read(I2C_ADDR, &[ADDR_LIBRARY_VERSION_H], &mut buf)?;
         Ok((((buf[0] & 0x0F) as u16) << 8) | (buf[1] as u16))
     }
 
@@ -656,64 +647,64 @@ where
     ///
     /// # Returns
     /// Chip ID (should be 0x64 for FT6336U)
-    pub async fn read_chip_id(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_CHIP_ID).await
+    pub fn read_chip_id(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_CHIP_ID)
     }
 
     /// Read the gesture/interrupt mode
     ///
     /// # Returns
     /// G_MODE register value
-    pub async fn read_g_mode(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_G_MODE).await
+    pub fn read_g_mode(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_G_MODE)
     }
 
     /// Write the gesture/interrupt mode
     ///
     /// # Arguments
     /// * `mode` - Gesture mode (Polling or Trigger)
-    pub async fn write_g_mode(&mut self, mode: GestureMode) -> Result<(), Error<I2C::Error>> {
-        self.write_byte(ADDR_G_MODE, mode as u8).await
+    pub fn write_g_mode(&mut self, mode: GestureMode) -> Result<(), Error<I2C::Error>> {
+        self.write_byte(ADDR_G_MODE, mode as u8)
     }
 
     /// Read the power mode
     ///
     /// # Returns
     /// Power mode value
-    pub async fn read_pwrmode(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_POWER_MODE).await
+    pub fn read_pwrmode(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_POWER_MODE)
     }
 
     /// Read the firmware ID
     ///
     /// # Returns
     /// Firmware ID value
-    pub async fn read_firmware_id(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_FIRMWARE_ID).await
+    pub fn read_firmware_id(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_FIRMWARE_ID)
     }
 
     /// Read the Focaltech ID
     ///
     /// # Returns
     /// Focaltech ID value
-    pub async fn read_focaltech_id(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_FOCALTECH_ID).await
+    pub fn read_focaltech_id(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_FOCALTECH_ID)
     }
 
     /// Read the release code ID
     ///
     /// # Returns
     /// Release code ID value
-    pub async fn read_release_code_id(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_RELEASE_CODE_ID).await
+    pub fn read_release_code_id(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_RELEASE_CODE_ID)
     }
 
     /// Read the device state
     ///
     /// # Returns
     /// Device state value
-    pub async fn read_state(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_byte(ADDR_STATE).await
+    pub fn read_state(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_byte(ADDR_STATE)
     }
 
     // =========================================================================
@@ -728,9 +719,9 @@ where
     ///
     /// # Returns
     /// TouchData containing the number of touch points and their coordinates/status
-    pub async fn scan(&mut self) -> Result<TouchData, Error<I2C::Error>> {
+    pub fn scan(&mut self) -> Result<TouchData, Error<I2C::Error>> {
         // Read the number of touch points
-        let touch_count = self.read_touch_number().await?;
+        let touch_count = self.read_touch_number()?;
         self.touch_data.touch_count = touch_count;
 
         if touch_count == 0 {
@@ -739,7 +730,7 @@ where
             self.touch_data.points[1].status = TouchStatus::Release;
         } else if touch_count == 1 {
             // Single touch point
-            let id1 = self.read_touch1_id().await? as usize;
+            let id1 = self.read_touch1_id()? as usize;
             if id1 < 2 {
                 // Update status: if previously released, mark as new touch, otherwise streaming
                 let prev_status = self.touch_data.points[id1].status;
@@ -749,8 +740,8 @@ where
                 };
 
                 // Read coordinates
-                self.touch_data.points[id1].x = self.read_touch1_x().await?;
-                self.touch_data.points[id1].y = self.read_touch1_y().await?;
+                self.touch_data.points[id1].x = self.read_touch1_x()?;
+                self.touch_data.points[id1].y = self.read_touch1_y()?;
 
                 // Mark the other point as released
                 let other_id = (!id1) & 0x01;
@@ -758,26 +749,26 @@ where
             }
         } else {
             // Two touch points
-            let id1 = self.read_touch1_id().await? as usize;
+            let id1 = self.read_touch1_id()? as usize;
             if id1 < 2 {
                 let prev_status1 = self.touch_data.points[id1].status;
                 self.touch_data.points[id1].status = match prev_status1 {
                     TouchStatus::Release => TouchStatus::Touch,
                     _ => TouchStatus::Stream,
                 };
-                self.touch_data.points[id1].x = self.read_touch1_x().await?;
-                self.touch_data.points[id1].y = self.read_touch1_y().await?;
+                self.touch_data.points[id1].x = self.read_touch1_x()?;
+                self.touch_data.points[id1].y = self.read_touch1_y()?;
             }
 
-            let id2 = self.read_touch2_id().await? as usize;
+            let id2 = self.read_touch2_id()? as usize;
             if id2 < 2 {
                 let prev_status2 = self.touch_data.points[id2].status;
                 self.touch_data.points[id2].status = match prev_status2 {
                     TouchStatus::Release => TouchStatus::Touch,
                     _ => TouchStatus::Stream,
                 };
-                self.touch_data.points[id2].x = self.read_touch2_x().await?;
-                self.touch_data.points[id2].y = self.read_touch2_y().await?;
+                self.touch_data.points[id2].x = self.read_touch2_x()?;
+                self.touch_data.points[id2].y = self.read_touch2_y()?;
             }
         }
 
