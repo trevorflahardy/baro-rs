@@ -32,7 +32,7 @@ dependencies = [
 [[package]]
 name = "axp2101"
 version = "0.3.0"
-source = "git+https://github.com/trevorflahardy/axp2101-embedded#bfd54b99d8d14a578c4ae433830a0c6de9784e65"
+source = "git+https://github.com/trevorflahardy/axp2101-embedded#4a9282223cc09ee3a361cfe9ea8e31bc788063f0"
 dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-async",

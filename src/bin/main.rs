@@ -110,6 +110,25 @@ async fn main(spawner: Spawner) -> ! {
         Err(e) => rprintln!("Power init failed: {:?}", e),
     }
 
+    power_mgmt_chip
+        .set_charging_led_mode(axp2101::ChargeLedMode::On)
+        .await
+        .unwrap();
+
+    // 0xBF = 0b10111111
+    // Enable all ALDO and BLDO and DLDO except for
+    // CPUSLDO
+    power_mgmt_chip.enable_aldo1().await.unwrap();
+    power_mgmt_chip.enable_aldo2().await.unwrap();
+    power_mgmt_chip.enable_aldo3().await.unwrap();
+    power_mgmt_chip.enable_aldo4().await.unwrap();
+    power_mgmt_chip.enable_bldo1().await.unwrap();
+    power_mgmt_chip.enable_bldo2().await.unwrap();
+    power_mgmt_chip.enable_dldo1().await.unwrap();
+
+    // aldo 4 voltage to 3.3V for display
+    power_mgmt_chip.set_aldo4_voltage(3300).await.unwrap();
+
     // === GPIO Expander ===
     rprintln!("Configuring GPIO expander...");
     let mut gpio_expander = Aw9523Async::new(i2c_for_aw, 0x58);
