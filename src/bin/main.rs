@@ -1,3 +1,4 @@
+// cSpell: disable
 #![no_std]
 #![no_main]
 #![deny(
@@ -7,10 +8,11 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use core::cell::RefCell;
-use core::fmt::Write;
-use critical_section::Mutex;
+use core::{cell::RefCell, fmt::Write};
+use critical_section::Mutex as CsMutex;
 use embassy_executor::Spawner;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
     mono_font::{MonoTextStyle, ascii::FONT_10X20},
@@ -33,12 +35,14 @@ use static_cell::StaticCell;
 
 use rtt_target::rprintln;
 
-use axp2101::{Axp2101, I2CPowerManagementInterface};
+use aw9523_embedded::r#async::Aw9523Async;
+use axp2101::AsyncAxp2101;
+use baro_rs::async_i2c_bus::AsyncI2cDevice;
 use baro_rs::dual_mode_pin::{
     DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
 };
 use embedded_hal_bus::{
-    i2c::CriticalSectionDevice as I2cCriticalSectionDevice,
+    // i2c::CriticalSectionDevice as I2cCriticalSectionDevice,
     spi::CriticalSectionDevice as SpiCriticalSectionDevice,
 };
 use ft6336u_driver::FT6336U;
@@ -91,32 +95,33 @@ async fn main(spawner: Spawner) -> ! {
     .into_async();
 
     static I2C0_BUS: StaticCell<
-        Mutex<RefCell<esp_hal::i2c::master::I2c<'static, esp_hal::Async>>>,
+        AsyncMutex<CriticalSectionRawMutex, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
     > = StaticCell::new();
-    let i2c0_bus = I2C0_BUS.init(Mutex::new(RefCell::new(i2c0)));
-    let i2c_for_axp = I2cCriticalSectionDevice::new(i2c0_bus);
-    let i2c_for_aw = I2cCriticalSectionDevice::new(i2c0_bus);
-    let i2c_for_touch = I2cCriticalSectionDevice::new(i2c0_bus);
+    let i2c0_bus = I2C0_BUS.init(AsyncMutex::new(i2c0));
 
-    let power_mgmt_interface = I2CPowerManagementInterface::new(i2c_for_axp);
-    let mut power_mgmt_chip = Axp2101::new(power_mgmt_interface);
+    let i2c_for_axp = AsyncI2cDevice::new(i2c0_bus);
+    let i2c_for_aw = AsyncI2cDevice::new(i2c0_bus);
+    let i2c_for_touch = AsyncI2cDevice::new(i2c0_bus);
 
-    match power_mgmt_chip.init() {
+    let mut power_mgmt_chip = AsyncAxp2101::new(i2c_for_axp);
+
+    match power_mgmt_chip.init().await {
         Ok(_) => rprintln!("Power management ready"),
         Err(e) => rprintln!("Power init failed: {:?}", e),
     }
 
     // === GPIO Expander ===
     rprintln!("Configuring GPIO expander...");
-    let mut gpio_expander = aw9523_embedded::Aw9523::new(i2c_for_aw, 0x58);
-    gpio_expander.init().unwrap();
+    let mut gpio_expander = Aw9523Async::new(i2c_for_aw, 0x58);
+    gpio_expander.init().await.unwrap();
 
     // Configure P1_2 (pin 10) as input for touch interrupt from FT6336U
     gpio_expander
         .pin_mode(10, aw9523_embedded::PinMode::Input)
+        .await
         .unwrap();
     // Enable interrupt detection on P1_2 so it triggers the AW9523B's INTN pin
-    gpio_expander.enable_interrupt(10, true).unwrap();
+    gpio_expander.enable_interrupt(10, true).await.unwrap();
 
     rprintln!("GPIO expander ready (P1_2 configured for touch interrupt)");
 
@@ -142,14 +147,13 @@ async fn main(spawner: Spawner) -> ! {
     .with_miso(peripherals.GPIO35)
     .into_async();
 
-    let spi_bus = Mutex::new(RefCell::new(spi_bus_inner));
+    let spi_bus = CsMutex::new(RefCell::new(spi_bus_inner));
 
     let cs_display = Output::new(peripherals.GPIO3, Level::High, OutputConfig::default());
     let cs_sd_card = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
     let display_spi_inner =
         SpiCriticalSectionDevice::new(&spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
-
     let sd_card_spi_inner =
         SpiCriticalSectionDevice::new(&spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
 
@@ -191,15 +195,16 @@ async fn main(spawner: Spawner) -> ! {
     // Create I2C interface on the FT6336U@Capacitive touch, touch area pixels 320 x 280
     rprintln!("Configuring touch controller...");
     let mut touch_interface = FT6336U::new(i2c_for_touch);
-    let library_version = touch_interface.read_library_version().unwrap_or(0);
-    let chip_id = touch_interface.read_chip_id().unwrap();
+    let library_version = touch_interface.read_library_version().await.unwrap_or(0);
+    let chip_id = touch_interface.read_chip_id().await.unwrap();
 
     // Configure touch controller in Polling mode (INT stays LOW while touched)
     // This is better than Trigger mode for continuous touch detection
     touch_interface
         .write_g_mode(ft6336u_driver::GestureMode::Polling)
+        .await
         .unwrap();
-    let g_mode = touch_interface.read_g_mode().unwrap();
+    let g_mode = touch_interface.read_g_mode().await.unwrap();
 
     rprintln!(
         "Touch controller ready (library version: 0x{:04X}, chip ID: 0x{:02X}, g_mode: 0x{:02X} [Polling])",
@@ -228,15 +233,13 @@ async fn main(spawner: Spawner) -> ! {
 /// Async task for polling touch input
 #[embassy_executor::task]
 async fn touch_polling_task(
-    mut touch: FT6336U<
-        I2cCriticalSectionDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-    >,
+    mut touch: FT6336U<AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>>,
 ) {
     rprintln!("Touch polling task started");
 
     loop {
         // Poll the touch controller
-        match touch.scan() {
+        match touch.scan().await {
             Ok(touch_data) => {
                 if touch_data.touch_count > 0 {
                     for i in 0..touch_data.touch_count as usize {

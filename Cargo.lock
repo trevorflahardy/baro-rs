@@ -22,18 +22,20 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "aw9523-embedded"
-version = "0.1.0"
-source = "git+https://github.com/trevorflahardy/aw9523-rs#b7a3775ef9b732749eddc950e1cbbfcff47411f6"
+version = "1.0.0"
+source = "git+https://github.com/trevorflahardy/aw9523-embedded#c8f62c60979ed58b7c1f085296df6422856a3dec"
 dependencies = [
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
 ]
 
 [[package]]
 name = "axp2101"
-version = "0.2.0"
-source = "git+https://github.com/georgik/axp2101-rs#79ffaf8de8df279672e1aca09639fd712c980895"
+version = "0.3.0"
+source = "git+https://github.com/trevorflahardy/axp2101-embedded#bfd54b99d8d14a578c4ae433830a0c6de9784e65"
 dependencies = [
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
 ]
 
 [[package]]
@@ -991,10 +993,11 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "ft6336u-driver"
-version = "1.0.0"
-source = "git+https://github.com/trevorflahardy/ft6336u-driver#6025bbff0ab26f3244183e602be213910e0f5683"
+version = "1.1.0"
+source = "git+https://github.com/trevorflahardy/ft6336u-driver#6d9eaccb5c76a5e87330f8d5b332b4640a413383"
 dependencies = [
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
 ]
 
 [[package]]
