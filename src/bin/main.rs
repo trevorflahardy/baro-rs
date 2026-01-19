@@ -38,9 +38,11 @@ use rtt_target::rprintln;
 
 use aw9523_embedded::r#async::Aw9523Async;
 use axp2101::AsyncAxp2101;
-use baro_rs::async_i2c_bus::AsyncI2cDevice;
-use baro_rs::dual_mode_pin::{
-    DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
+use baro_rs::{
+    async_i2c_bus::AsyncI2cDevice,
+    dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
+    rollup_storage::MAX_SENSORS,
+    sensors::{SHT40Indexed, SHT40Sensor},
 };
 use embedded_hal_bus::{
     // i2c::CriticalSectionDevice as I2cCriticalSectionDevice,
@@ -238,15 +240,17 @@ async fn main(spawner: Spawner) -> ! {
 
     // Setup the st4x sensor
     rprintln!("Configuring SHT4x sensor...");
-    let mut sht4x: Sht4xAsync<
-        AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-        embassy_time::Delay,
-    > = sht4x::Sht4xAsync::new(i2c_for_sht4x);
+    // let sht4x: Sht4xAsync<
+    //     AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
+    //     embassy_time::Delay,
+    // > = sht4x::Sht4xAsync::new(i2c_for_sht4x);
 
     // === Spawn Touch Polling Task ===
     rprintln!("Starting touch polling task...");
     spawner.spawn(touch_polling_task(touch_interface)).ok();
-    spawner.spawn(background_sensor_reading_task(sht4x)).ok();
+    spawner
+        .spawn(background_sensor_reading_task(i2c_for_sht4x))
+        .ok();
 
     // === Main Loop ===
     rprintln!("Main loop running...\n");
@@ -257,14 +261,18 @@ async fn main(spawner: Spawner) -> ! {
 
 #[embassy_executor::task]
 async fn background_sensor_reading_task(
-    mut sht4x: Sht4xAsync<
-        AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-        embassy_time::Delay,
-    >,
+    sht4x_i2c: AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
 ) {
-    // The background task for reading sensors - reads every 10s and performs the rollups
+    rprintln!("Sensor reading task started");
 
-    // TODO: Rollup backend build needed from the STORAGE.md file. Rollup file needed, impl of structs, and then structs created here for later processing - processing sent off to other task.
+    let mut sht4x_sensor = SHT40Indexed::from(SHT40Sensor::new(sht4x_i2c));
+
+    let mut values = [0i32; MAX_SENSORS];
+
+    loop {
+        // ... TODO: On each iteration, read all sensors into the values array and then
+        // process/store the data as needed ...
+    }
 }
 
 /// Async task for polling touch input
