@@ -31,6 +31,7 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use heapless::String;
+use sht4x::{Precision, Sht4xAsync};
 use static_cell::StaticCell;
 
 use rtt_target::rprintln;
@@ -102,6 +103,7 @@ async fn main(spawner: Spawner) -> ! {
     let i2c_for_axp = AsyncI2cDevice::new(i2c0_bus);
     let i2c_for_aw = AsyncI2cDevice::new(i2c0_bus);
     let i2c_for_touch = AsyncI2cDevice::new(i2c0_bus);
+    let i2c_for_sht4x = AsyncI2cDevice::new(i2c0_bus);
 
     let mut power_mgmt_chip = AsyncAxp2101::new(i2c_for_axp);
 
@@ -234,8 +236,12 @@ async fn main(spawner: Spawner) -> ! {
 
     rprintln!("=== Hardware initialization complete ===\n");
 
-    // === Application: Display Test ===
-    draw_debug_screen(&mut display, sd_card_size);
+    // Setup the st4x sensor
+    rprintln!("Configuring SHT4x sensor...");
+    let mut sht4x: Sht4xAsync<
+        AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
+        embassy_time::Delay,
+    > = sht4x::Sht4xAsync::new(i2c_for_sht4x);
 
     // === Spawn Touch Polling Task ===
     rprintln!("Starting touch polling task...");
@@ -244,8 +250,10 @@ async fn main(spawner: Spawner) -> ! {
     // === Main Loop ===
     rprintln!("Main loop running...\n");
     loop {
-        // Main loop can do other things
-        Timer::after(Duration::from_secs(10)).await;
+        // Update display with sensor data every iteration
+        draw_sensor_data(&mut display, &mut sht4x, sd_card_size).await;
+
+        Timer::after(Duration::from_secs(2)).await;
     }
 }
 
@@ -278,14 +286,20 @@ async fn touch_polling_task(
             }
         }
 
-        // Poll every 50ms
-        Timer::after(Duration::from_millis(50)).await;
+        // Poll every 5ms
+        Timer::after(Duration::from_millis(5)).await;
     }
 }
 
-/// Draw test pattern on display
-fn draw_debug_screen<D>(display: &mut D, sd_card_size: u64)
-where
+/// Debug function to draw sensor data and system info on display
+async fn draw_sensor_data<D>(
+    display: &mut D,
+    sht4x: &mut Sht4xAsync<
+        AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
+        embassy_time::Delay,
+    >,
+    sd_card_size: u64,
+) where
     D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>,
 {
     // Clear screen with black background
@@ -296,16 +310,45 @@ where
     let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::GREEN);
 
     // Display title
-    let _ = Text::new("M5Stack CoreS3", Point::new(60, 30), text_style).draw(display);
+    let _ = Text::new("M5Stack CoreS3 - Debug", Point::new(20, 30), text_style).draw(display);
 
-    // Format and display SD card size
+    // Read sensor data
+    let mut delay = embassy_time::Delay;
+    let measurement_result = sht4x.measure(Precision::High, &mut delay).await;
+
     let mut buffer = String::<64>::new();
+
+    // Display SD card size
+    buffer.clear();
     if sd_card_size > 0 {
         let _ = write!(buffer, "SD: {} MB", sd_card_size / 1_000_000);
     } else {
         let _ = write!(buffer, "SD: Not detected");
     }
-    let _ = Text::new(&buffer, Point::new(60, 120), text_style).draw(display);
+    let _ = Text::new(&buffer, Point::new(20, 70), text_style).draw(display);
 
-    rprintln!("Display test complete");
+    // Display temperature and humidity
+    match measurement_result {
+        Ok(measurement) => {
+            buffer.clear();
+            let _ = write!(buffer, "Temp: {:.1} C", measurement.temperature_celsius());
+            let _ = Text::new(&buffer, Point::new(20, 110), text_style).draw(display);
+
+            buffer.clear();
+            let _ = write!(buffer, "Humidity: {:.1} %", measurement.humidity_percent());
+            let _ = Text::new(&buffer, Point::new(20, 150), text_style).draw(display);
+
+            rprintln!(
+                "Sensor: {:.1}°C, {:.1}%RH",
+                measurement.temperature_celsius(),
+                measurement.humidity_percent()
+            );
+        }
+        Err(e) => {
+            buffer.clear();
+            let _ = write!(buffer, "Sensor Error: {:?}", e);
+            let _ = Text::new(&buffer, Point::new(20, 110), text_style).draw(display);
+            rprintln!("SHT4x read error: {:?}", e);
+        }
+    }
 }

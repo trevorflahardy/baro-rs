@@ -73,6 +73,7 @@ embedded-hal-async = "1.0.0"
 ft6336u-driver = { git = "https://github.com/trevorflahardy/ft6336u-driver", features = [
   "async",
 ] }
+sht4x = { version = "0.2.0", features = ["embedded-hal-async"] }
 
 
 [profile.dev]
