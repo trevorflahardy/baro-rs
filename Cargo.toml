@@ -65,6 +65,7 @@ embedded-layout = "0.4.2"
 embedded-sdmmc = "0.9.0"
 heapless = "0.9.2"
 embassy-sync = "0.7.2"
+embedded-hal-async = "1.0.0"
 
 
 [profile.dev]
