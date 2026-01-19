@@ -3,7 +3,7 @@
 //! Implements the binary format specifications from STORAGE.md:
 //! - RawSample: 96 bytes (raw sensor readings, 24-hour retention)
 //! - Rollup: 256 bytes (aggregated data for 5m/1h/daily tiers)
-//! - LifetimeStats: 256 bytes (lifetime counters and extrema)
+//! - LifetimeStats: 336 bytes (lifetime counters and extrema, with alignment)
 
 /// Maximum number of sensor values per sample
 pub const MAX_SENSORS: usize = 20;
@@ -282,7 +282,10 @@ impl Rollup {
 /// Used for: All-time stats, uptime, exposure metrics
 ///
 /// Note: STORAGE.md specified 256 bytes, but with 20 sensors and proper alignment,
-/// the natural size is 336 bytes. This is still acceptable for single-record storage.
+/// the natural size is 336 bytes. This is calculated as:
+/// 4 (boot_time) + 4 (alignment padding) + 8 (total_samples) + 160 (sensor_integrals) + 
+/// 80 (sensor_max) + 80 (sensor_min) = 336 bytes.
+/// This is still acceptable for single-record storage.
 ///
 /// Binary format (little-endian):
 /// - boot_time: 4 bytes (u32)

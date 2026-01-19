@@ -7,17 +7,17 @@ The rollup backend implements three main data structures as specified in STORAGE
 ### RawSample (96 bytes)
 - **Actual size**: 96 bytes ✓
 - Stores raw sensor readings for 24-hour ring buffer
-- Binary layout: timestamp (4) + values[20] (80) + padding (12)
+- Binary layout: timestamp (4) + values[20] (80) + padding (12) = 96 bytes
 
 ### Rollup (256 bytes)  
 - **Actual size**: 256 bytes ✓
 - Stores aggregated min/avg/max for 5m, 1h, and daily tiers
-- Binary layout: start_ts (4) + avg[20] (80) + min[20] (80) + max[20] (80) + padding (12)
+- Binary layout: start_ts (4) + avg[20] (80) + min[20] (80) + max[20] (80) + padding (12) = 256 bytes
 
 ### LifetimeStats (336 bytes)
 - **Actual size**: 336 bytes (not 256 as originally specified)
 - **Reason**: The C ABI requires 8-byte alignment for u64 and i64 fields, adding 4 bytes of padding after boot_time
-- Binary layout: boot_time (4) + align_pad (4) + total_samples (8) + sensor_integrals[20] (160) + sensor_max[20] (80) + sensor_min[20] (80)
+- Binary layout: boot_time (4) + align_pad (4) + total_samples (8) + sensor_integrals[20] (160) + sensor_max[20] (80) + sensor_min[20] (80) = 336 bytes
 
 ### Alignment Consideration
 
