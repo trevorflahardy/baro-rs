@@ -7,7 +7,7 @@ use super::MAX_SENSORS;
 ///
 /// Binary size: 96 bytes (padded for alignment)
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RawSample {
     /// Timestamp in seconds since epoch (or boot time)
     pub timestamp: u32,
@@ -61,7 +61,7 @@ impl AsMut<[u8]> for Rollup {
 ///
 /// Binary size: 256 bytes (padded for alignment)
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct LifetimeStats {
     /// Timestamp when the device first booted (seconds since epoch)
     pub boot_time: u32,
