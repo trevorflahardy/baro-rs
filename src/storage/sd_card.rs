@@ -1,11 +1,33 @@
-use embedded_sdmmc::{Mode, SdCard, SdCardError, TimeSource, VolumeIdx, VolumeManager};
+use embedded_sdmmc::{Mode, SdCard, TimeSource, VolumeIdx, VolumeManager};
 
-use crate::storage::Rollup;
+use crate::{config::Config, storage::Rollup};
+use postcard::from_bytes;
 
+type ConfigBuffer = [u8; core::mem::size_of::<Config>()];
+
+const CONFIG_FILE: &str = "config.bin";
 const ROLLUP_FILE_5M: &str = "rollup_5m.bin";
 const ROLLUP_FILE_1H: &str = "rollup_1h.bin";
 const ROLLUP_FILE_DAILY: &str = "rollup_daily.bin";
 const ROLLUP_FILE_LIFETIME: &str = "lifetime.bin";
+
+#[derive(Debug)]
+pub enum SdCardManagerError {
+    SdmmcError(embedded_sdmmc::Error<embedded_sdmmc::SdCardError>),
+    PostcardParseError(postcard::Error),
+}
+
+impl From<embedded_sdmmc::Error<embedded_sdmmc::SdCardError>> for SdCardManagerError {
+    fn from(e: embedded_sdmmc::Error<embedded_sdmmc::SdCardError>) -> Self {
+        SdCardManagerError::SdmmcError(e)
+    }
+}
+
+impl From<postcard::Error> for SdCardManagerError {
+    fn from(e: postcard::Error) -> Self {
+        SdCardManagerError::PostcardParseError(e)
+    }
+}
 
 /// For NOW, these SD card operations are blocking (as are also the display operations on the same SPI bus),
 /// BUT we're going to raw dog it and see if it works okay in practice.
@@ -34,6 +56,52 @@ where
         Self { volume_mgr }
     }
 
+    fn read_config<'a>(&self) -> Result<ConfigBuffer, SdCardManagerError> {
+        self.file_operation(CONFIG_FILE, Mode::ReadOnly, move |file| {
+            let mut buffer = ConfigBuffer::default();
+            file.read(&mut buffer)
+                .map_err(SdCardManagerError::SdmmcError)?;
+
+            Ok(buffer)
+        })
+    }
+
+    /// Allows you to read the config and perform an operation based on it.
+    fn config_op_once<Outpt>(
+        &self,
+        operation: impl FnOnce(&Config<'_>) -> Outpt,
+    ) -> Result<Outpt, SdCardManagerError> {
+        let raw_bytes = self.read_config()?;
+        let config: Config =
+            from_bytes(&raw_bytes).map_err(SdCardManagerError::PostcardParseError)?;
+
+        Ok(operation(&config))
+    }
+
+    /// Allows you to read the config, mutate it, and save it back to the SD card.
+    /// Will always read the latest config from the SD card before performing the operation, and always
+    /// saves it back after the operation.
+    fn config_op_once_mut(
+        &self,
+        operation: impl FnOnce(&mut Config<'_>),
+    ) -> Result<(), SdCardManagerError> {
+        let raw_bytes = self.read_config()?;
+        let mut config: Config =
+            from_bytes(&raw_bytes).map_err(SdCardManagerError::PostcardParseError)?;
+
+        operation(&mut config);
+
+        // We need to save this back to the SD card.
+        let mut buffer = ConfigBuffer::default();
+        let serialized = postcard::to_slice(&config, &mut buffer)
+            .map_err(SdCardManagerError::PostcardParseError)?;
+
+        self.file_operation(CONFIG_FILE, Mode::ReadWriteCreateOrTruncate, move |file| {
+            file.write(serialized)
+                .map_err(SdCardManagerError::SdmmcError)
+        })
+    }
+
     /// Performs a generic file operation on the SD card, opening the file, passing the file handle to the operation, and then closing the file when the operation is completed.
     fn file_operation<OpRes>(
         &self,
@@ -41,13 +109,18 @@ where
         mode: Mode,
         operation: impl FnOnce(
             &mut embedded_sdmmc::File<'_, SdCard<S, D>, T, 4, 4, 1>,
-        ) -> Result<OpRes, embedded_sdmmc::Error<SdCardError>>,
-    ) -> Result<OpRes, embedded_sdmmc::Error<SdCardError>> {
+        ) -> Result<OpRes, SdCardManagerError>,
+    ) -> Result<OpRes, SdCardManagerError> {
         // Open volume
-        let volume0 = self.volume_mgr.open_volume(VolumeIdx(0))?;
+        let volume0 = self
+            .volume_mgr
+            .open_volume(VolumeIdx(0))
+            .map_err(SdCardManagerError::SdmmcError)?;
 
         // Open root directory
-        let root_dir = volume0.open_root_dir()?;
+        let root_dir = volume0
+            .open_root_dir()
+            .map_err(SdCardManagerError::SdmmcError)?;
 
         // Open file
         let mut file = match mode {
@@ -59,12 +132,16 @@ where
                         // ! This file does not exist but we wanted to read from it, so create it first
                         // ! SAFETY: Every portion of this application is built to handle the case where any file is empty.
                         // ! This includes rollup files, config, files, etc.
-                        Ok(root_dir.open_file_in_dir(file_name, Mode::ReadWriteCreateOrAppend)?)
+                        Ok(root_dir
+                            .open_file_in_dir(file_name, Mode::ReadWriteCreateOrAppend)
+                            .map_err(SdCardManagerError::SdmmcError)?)
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => Err(SdCardManagerError::SdmmcError(e)),
                 }
             }
-            _ => root_dir.open_file_in_dir(file_name, mode),
+            _ => root_dir
+                .open_file_in_dir(file_name, mode)
+                .map_err(SdCardManagerError::SdmmcError),
         }?;
 
         // Perform operation
@@ -83,9 +160,10 @@ where
         &self,
         file_name: &str,
         data: &Rollup,
-    ) -> Result<(), embedded_sdmmc::Error<SdCardError>> {
+    ) -> Result<(), SdCardManagerError> {
         self.file_operation(file_name, Mode::ReadWriteCreateOrAppend, move |file| {
             file.write(data.as_ref())
+                .map_err(SdCardManagerError::SdmmcError)
         })
     }
 
@@ -94,7 +172,7 @@ where
         file_name: &str,
         buffer: &mut [Rollup],
         within_window: (u32, u32),
-    ) -> Result<usize, embedded_sdmmc::Error<SdCardError>> {
+    ) -> Result<usize, SdCardManagerError> {
         self.file_operation(file_name, Mode::ReadOnly, move |file| {
             let mut count = 0;
             let mut temp_rollup = Rollup::default();
@@ -116,7 +194,7 @@ where
                     }
                     Err(e) => {
                         // Handle read error
-                        return Err(e);
+                        return Err(e.into());
                     }
                 }
             }
