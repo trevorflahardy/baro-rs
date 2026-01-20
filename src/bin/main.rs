@@ -32,8 +32,8 @@ use axp2101::AsyncAxp2101;
 use baro_rs::{
     async_i2c_bus::AsyncI2cDevice,
     dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
-    rollup_storage::MAX_SENSORS,
     sensors::{SHT40Indexed, SHT40Sensor},
+    storage::MAX_SENSORS,
 };
 use embedded_hal_bus::{
     // i2c::CriticalSectionDevice as I2cCriticalSectionDevice,
