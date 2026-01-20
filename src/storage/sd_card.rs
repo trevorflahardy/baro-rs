@@ -12,7 +12,7 @@ const ROLLUP_FILE_LIFETIME: &str = "lifetime.bin";
 ///
 /// In the future, we may want to implement async SD card operations, but to do this, the dual mode pin
 /// would need to be async, and the embedded_sdmmc would need to be rewritten to be async-compatible.
-pub struct SdCardStorage<S, D, T>
+pub struct SdCardManager<S, D, T>
 where
     S: embedded_hal::spi::SpiDevice<u8>,
     D: embedded_hal::delay::DelayNs,
@@ -21,7 +21,7 @@ where
     volume_mgr: VolumeManager<SdCard<S, D>, T, 4, 4, 1>,
 }
 
-impl<S, D, T> SdCardStorage<S, D, T>
+impl<S, D, T> SdCardManager<S, D, T>
 where
     S: embedded_hal::spi::SpiDevice<u8>,
     D: embedded_hal::delay::DelayNs,
