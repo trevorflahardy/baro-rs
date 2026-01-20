@@ -1,4 +1,4 @@
-use embedded_sdmmc::{Mode, SdCard, SdCardError, TimeSource, Volume, VolumeIdx, VolumeManager};
+use embedded_sdmmc::{Mode, SdCard, SdCardError, TimeSource, VolumeIdx, VolumeManager};
 
 use crate::storage::Rollup;
 
