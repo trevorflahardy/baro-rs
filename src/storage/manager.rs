@@ -1,3 +1,5 @@
+use crate::storage::sd_card::SdCardManager;
+
 use super::{LifetimeStats, RawSample, Rollup, accumulator::RollupEvent};
 
 /// Storage manager that maintains ring buffers in RAM and handles SD card persistence
@@ -13,7 +15,12 @@ use super::{LifetimeStats, RawSample, Rollup, accumulator::RollupEvent};
 /// - Hourly rollups: 720 × 256 bytes = 180 KB (30 days)
 /// - Daily rollups: 365 × 256 bytes = 91 KB (1 year)
 /// - **Total: ~822 KB**
-pub struct StorageManager {
+pub struct StorageManager<S, D, T>
+where
+    S: embedded_hal::spi::SpiDevice<u8>,
+    D: embedded_hal::delay::DelayNs,
+    T: embedded_sdmmc::TimeSource,
+{
     /// Ring buffer for raw samples (last 1 hour for 5m and 1h graphs)
     raw_samples: heapless::Deque<RawSample, 360>,
     /// Ring buffer for 5-minute rollups (last 7 days for 24h and 7d graphs)
@@ -24,19 +31,30 @@ pub struct StorageManager {
     rollups_daily: heapless::Deque<Rollup, 365>,
     /// Lifetime statistics
     lifetime_stats: LifetimeStats,
+    /// SD Card storage
+    sd_card_manager: SdCardManager<S, D, T>,
 }
 
-impl StorageManager {
-    /// Create a new storage manager
-    // pub fn new(boot_time: u32) -> Self {
-    //     Self {
-    //         raw_samples: heapless::Deque::new(),
-    //         rollups_5m: heapless::Deque::new(),
-    //         rollups_1h: heapless::Deque::new(),
-    //         rollups_daily: heapless::Deque::new(),
-    //         lifetime_stats: LifetimeStats::new(boot_time),
-    //     }
-    // }
+impl<S, D, T> StorageManager<S, D, T>
+where
+    S: embedded_hal::spi::SpiDevice<u8>,
+    D: embedded_hal::delay::DelayNs,
+    T: embedded_sdmmc::TimeSource,
+{
+    fn new(sd_card_manager: SdCardManager<S, D, T>) -> Self {
+        Self {
+            raw_samples: heapless::Deque::new(),
+            rollups_5m: heapless::Deque::new(),
+            rollups_1h: heapless::Deque::new(),
+            rollups_daily: heapless::Deque::new(),
+            lifetime_stats: LifetimeStats::default(),
+            sd_card_manager,
+        }
+    }
+
+    fn init(&mut self) -> () {
+        // Load lifetime stats and propagate to ring buffers.
+    }
 
     /// Process a rollup event (store in RAM and write to SD card)
     pub async fn process_event(&mut self, event: RollupEvent) {
