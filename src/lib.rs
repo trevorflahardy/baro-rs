@@ -12,3 +12,4 @@ pub mod storage;
 pub mod ui_components;
 pub mod ui_core;
 pub mod widgets;
+pub mod wifi_secrets;

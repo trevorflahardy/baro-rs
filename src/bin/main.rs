@@ -23,6 +23,7 @@ use esp_hal::{
     time::Rate,
     timer::timg::TimerGroup,
 };
+use esp_radio::wifi::ClientConfig;
 use static_cell::StaticCell;
 
 use rtt_target::rprintln;
@@ -34,6 +35,7 @@ use baro_rs::{
     dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
     sensors::{SHT40Indexed, SHT40Sensor},
     storage::MAX_SENSORS,
+    wifi_secrets,
 };
 use embedded_hal_bus::{
     // i2c::CriticalSectionDevice as I2cCriticalSectionDevice,
@@ -142,10 +144,28 @@ async fn main(spawner: Spawner) -> ! {
     // === Radio Init ===
     rprintln!("Configuring radio...");
     let radio_init = esp_radio::init().expect("Radio init failed");
-    let (_wifi, _interfaces) =
+    let (mut wifi, _interfaces) =
         esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default())
             .expect("WiFi init failed");
+
     rprintln!("Radio ready");
+
+    // ==== Loading Wifi Credentials ====
+    rprintln!("Connecting to WiFi SSID: {}", wifi_secrets::WIFI_SSID);
+
+    let client_config = ClientConfig::default()
+        .with_ssid(wifi_secrets::WIFI_SSID.into())
+        .with_password(wifi_secrets::WIFI_PASSWORD.into());
+
+    wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config))
+        .unwrap();
+
+    // TODO: Later, need connection timeout management and retry logic here... ideally after the display has been set up
+    // so we can render connection status to the user.
+    wifi.start_async().await.unwrap();
+    wifi.connect_async().await.unwrap();
+
+    rprintln!("WiFi connected");
 
     // === Initialize the SPI devices (display and SD card) ===
     rprintln!("Configuring display...");
@@ -236,10 +256,25 @@ async fn main(spawner: Spawner) -> ! {
         .spawn(background_sensor_reading_task(i2c_for_sht4x))
         .ok();
 
+    use embedded_graphics::prelude::RgbColor;
+
     // === Main Loop ===
     rprintln!("Main loop running...\n");
     loop {
-        Timer::after(Duration::from_secs(2)).await;
+        // Draw black to the display to show it's alive and not have the display
+        // render weird. Of course, we'll be changing this later.
+        display
+            .set_pixels(
+                0,
+                0,
+                DISPLAY_WIDTH,
+                DISPLAY_HEIGHT,
+                [embedded_graphics::pixelcolor::Rgb565::BLACK;
+                    (DISPLAY_HEIGHT as usize * DISPLAY_WIDTH as usize)],
+            )
+            .unwrap();
+
+        Timer::after(Duration::from_secs(10)).await;
     }
 }
 
@@ -256,6 +291,7 @@ async fn background_sensor_reading_task(
     loop {
         // ... TODO: On each iteration, read all sensors into the values array and then
         // process/store the data as needed ...
+        Timer::after(Duration::from_millis(10)).await;
     }
 }
 
@@ -288,7 +324,6 @@ async fn touch_polling_task(
             }
         }
 
-        // Poll every 5ms
-        Timer::after(Duration::from_millis(5)).await;
+        Timer::after(Duration::from_millis(10)).await;
     }
 }
