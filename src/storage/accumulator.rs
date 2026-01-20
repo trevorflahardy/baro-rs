@@ -1,0 +1,166 @@
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::Publisher};
+
+use super::{MAX_SENSORS, RawSample, Rollup};
+
+/// Channel capacity for pub-sub events
+/// Set to 8 to handle bursts without blocking the sensor task
+pub const EVENT_CHANNEL_CAPACITY: usize = 8;
+
+/// Number of subscribers that can listen to rollup events
+/// - Subscriber 0: StorageManager (SD card writer + RAM buffers)
+/// - Subscriber 1: UI rendering task
+pub const EVENT_SUBSCRIBERS: usize = 2;
+
+/// Number of publishers (just the sensor task)
+pub const EVENT_PUBLISHERS: usize = 1;
+
+/// Events published by the accumulator to notify subscribers of new data
+#[derive(Debug, Clone, Copy)]
+pub enum RollupEvent {
+    /// A new raw sample was recorded
+    RawSample(RawSample),
+    /// A 5-minute rollup was completed
+    Rollup5m(Rollup),
+    /// An hourly rollup was completed
+    Rollup1h(Rollup),
+    /// A daily rollup was completed
+    RollupDaily(Rollup),
+}
+
+/// In-memory accumulator for generating rollups from raw samples
+///
+/// This struct maintains rolling buffers of samples and generates higher-tier
+/// rollups when accumulation thresholds are met. It publishes events to a
+/// PubSubChannel for consumption by storage and UI tasks.
+///
+/// ## Accumulation Windows
+///
+/// - **5-minute rollups**: 30 raw samples (10s × 30 = 5 minutes)
+/// - **Hourly rollups**: 12 five-minute rollups (5m × 12 = 1 hour)
+/// - **Daily rollups**: 24 hourly rollups (1h × 24 = 24 hours)
+///
+/// ## Usage
+///
+/// ```rust,ignore
+/// // Create a global pub-sub channel
+/// static ROLLUP_CHANNEL: PubSubChannel<...> = PubSubChannel::new();
+///
+/// let publisher = ROLLUP_CHANNEL.publisher().unwrap();
+/// let mut accumulator = RollupAccumulator::new(publisher);
+///
+/// // Add samples every 10 seconds
+/// accumulator.add_sample(timestamp, &sensor_values).await;
+/// ```
+pub struct RollupAccumulator<'a> {
+    /// Buffer for raw samples (up to 30 for 5-minute rollup)
+    raw_buffer: heapless::Vec<RawSample, 30>,
+    /// Buffer for 5-minute rollups (up to 12 for hourly rollup)
+    rollup_5m_buffer: heapless::Vec<Rollup, 12>,
+    /// Buffer for hourly rollups (up to 24 for daily rollup)
+    rollup_1h_buffer: heapless::Vec<Rollup, 24>,
+    /// Publisher for sending rollup events
+    publisher: Publisher<
+        'a,
+        CriticalSectionRawMutex,
+        RollupEvent,
+        EVENT_CHANNEL_CAPACITY,
+        EVENT_SUBSCRIBERS,
+        EVENT_PUBLISHERS,
+    >,
+}
+
+impl<'a> RollupAccumulator<'a> {
+    /// Create a new rollup accumulator with a publisher
+    pub fn new(
+        publisher: Publisher<
+            'a,
+            CriticalSectionRawMutex,
+            RollupEvent,
+            EVENT_CHANNEL_CAPACITY,
+            EVENT_SUBSCRIBERS,
+            EVENT_PUBLISHERS,
+        >,
+    ) -> Self {
+        Self {
+            raw_buffer: heapless::Vec::new(),
+            rollup_5m_buffer: heapless::Vec::new(),
+            rollup_1h_buffer: heapless::Vec::new(),
+            publisher,
+        }
+    }
+
+    /// Add a new raw sample to the accumulator
+    ///
+    /// This should be called every 10 seconds with fresh sensor readings.
+    /// When 30 samples accumulate, a 5-minute rollup is automatically generated.
+    /// All events are published to subscribers (storage manager, UI tasks, etc.)
+    pub async fn add_sample(&mut self, timestamp: u32, values: &[i32; MAX_SENSORS]) {
+        let sample = RawSample::new(timestamp, values);
+
+        // Publish raw sample event
+        self.publisher.publish(RollupEvent::RawSample(sample)).await;
+
+        // Try to add to buffer; if full, generate rollup
+        if self.raw_buffer.push(sample).is_err() {
+            // Buffer is full (30 samples), generate 5-minute rollup
+            self.generate_5m_rollup().await;
+            // Clear buffer and add current sample
+            self.raw_buffer.clear();
+            let _ = self.raw_buffer.push(sample);
+        }
+    }
+
+    /// Generate a 5-minute rollup from accumulated raw samples
+    async fn generate_5m_rollup(&mut self) {
+        if self.raw_buffer.is_empty() {
+            return;
+        }
+
+        let rollup = Self::compute_rollup(&self.raw_buffer);
+
+        // Publish 5-minute rollup event
+        self.publisher.publish(RollupEvent::Rollup5m(rollup)).await;
+
+        // Add to hourly buffer
+        if self.rollup_5m_buffer.push(rollup).is_err() {
+            // Buffer is full (12 rollups), generate hourly rollup
+            self.generate_1h_rollup().await;
+            self.rollup_5m_buffer.clear();
+            let _ = self.rollup_5m_buffer.push(rollup);
+        }
+    }
+
+    /// Generate an hourly rollup from accumulated 5-minute rollups
+    async fn generate_1h_rollup(&mut self) {
+        if self.rollup_5m_buffer.is_empty() {
+            return;
+        }
+
+        let rollup = Self::compute_rollup_from_rollups(&self.rollup_5m_buffer);
+
+        // Publish hourly rollup event
+        self.publisher.publish(RollupEvent::Rollup1h(rollup)).await;
+
+        // Add to daily buffer
+        if self.rollup_1h_buffer.push(rollup).is_err() {
+            // Buffer is full (24 rollups), generate daily rollup
+            self.generate_daily_rollup().await;
+            self.rollup_1h_buffer.clear();
+            let _ = self.rollup_1h_buffer.push(rollup);
+        }
+    }
+
+    /// Generate a daily rollup from accumulated hourly rollups
+    async fn generate_daily_rollup(&mut self) {
+        if self.rollup_1h_buffer.is_empty() {
+            return;
+        }
+
+        let rollup = Self::compute_rollup_from_rollups(&self.rollup_1h_buffer);
+
+        // Publish daily rollup event
+        self.publisher
+            .publish(RollupEvent::RollupDaily(rollup))
+            .await;
+    }
+}

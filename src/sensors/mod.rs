@@ -1,6 +1,6 @@
 mod sht40;
 
-use super::rollup_storage::MAX_SENSORS;
+use super::storage::MAX_SENSORS;
 use core::marker::PhantomData;
 
 pub enum SensorError {

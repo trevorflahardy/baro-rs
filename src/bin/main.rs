@@ -8,19 +8,12 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use core::{cell::RefCell, fmt::Write};
+use core::cell::RefCell;
 use critical_section::Mutex as CsMutex;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_time::{Duration, Timer};
-use embedded_graphics::{
-    mono_font::{MonoTextStyle, ascii::FONT_10X20},
-    pixelcolor::Rgb565,
-    prelude::*,
-    primitives::{PrimitiveStyle, Rectangle},
-    text::Text,
-};
 use embedded_sdmmc::SdCard;
 use esp_hal::{
     clock::CpuClock,
@@ -30,8 +23,6 @@ use esp_hal::{
     time::Rate,
     timer::timg::TimerGroup,
 };
-use heapless::String;
-use sht4x::{Precision, Sht4xAsync};
 use static_cell::StaticCell;
 
 use rtt_target::rprintln;
@@ -237,13 +228,6 @@ async fn main(spawner: Spawner) -> ! {
     );
 
     rprintln!("=== Hardware initialization complete ===\n");
-
-    // Setup the st4x sensor
-    rprintln!("Configuring SHT4x sensor...");
-    // let sht4x: Sht4xAsync<
-    //     AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-    //     embassy_time::Delay,
-    // > = sht4x::Sht4xAsync::new(i2c_for_sht4x);
 
     // === Spawn Touch Polling Task ===
     rprintln!("Starting touch polling task...");
