@@ -1,32 +1,24 @@
+// cSpell: disable
 use embedded_sdmmc::{Mode, SdCard, TimeSource, VolumeIdx, VolumeManager};
 
 use crate::{config::Config, storage::Rollup};
-use postcard::from_bytes;
+use thiserror_no_std::Error;
 
 type ConfigBuffer = [u8; core::mem::size_of::<Config>()];
 
 const CONFIG_FILE: &str = "config.bin";
-const ROLLUP_FILE_5M: &str = "rollup_5m.bin";
 const ROLLUP_FILE_1H: &str = "rollup_1h.bin";
+const ROLLUP_FILE_5M: &str = "rollup_5m.bin";
 const ROLLUP_FILE_DAILY: &str = "rollup_daily.bin";
 const ROLLUP_FILE_LIFETIME: &str = "lifetime.bin";
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SdCardManagerError {
-    SdmmcError(embedded_sdmmc::Error<embedded_sdmmc::SdCardError>),
-    PostcardParseError(postcard::Error),
-}
+    #[error("SDMMC (SD Card Manager) error: {0:?}")]
+    SdmmcError(#[from] embedded_sdmmc::Error<embedded_sdmmc::SdCardError>),
 
-impl From<embedded_sdmmc::Error<embedded_sdmmc::SdCardError>> for SdCardManagerError {
-    fn from(e: embedded_sdmmc::Error<embedded_sdmmc::SdCardError>) -> Self {
-        SdCardManagerError::SdmmcError(e)
-    }
-}
-
-impl From<postcard::Error> for SdCardManagerError {
-    fn from(e: postcard::Error) -> Self {
-        SdCardManagerError::PostcardParseError(e)
-    }
+    #[error("Error when parsing postcard data (configuration): {0}")]
+    PostcardParseError(#[from] postcard::Error),
 }
 
 /// For NOW, these SD card operations are blocking (as are also the display operations on the same SPI bus),
@@ -73,7 +65,7 @@ where
     ) -> Result<Outpt, SdCardManagerError> {
         let raw_bytes = self.read_config()?;
         let config: Config =
-            from_bytes(&raw_bytes).map_err(SdCardManagerError::PostcardParseError)?;
+            postcard::from_bytes(&raw_bytes).map_err(SdCardManagerError::PostcardParseError)?;
 
         Ok(operation(&config))
     }
@@ -87,7 +79,7 @@ where
     ) -> Result<(), SdCardManagerError> {
         let raw_bytes = self.read_config()?;
         let mut config: Config =
-            from_bytes(&raw_bytes).map_err(SdCardManagerError::PostcardParseError)?;
+            postcard::from_bytes(&raw_bytes).map_err(SdCardManagerError::PostcardParseError)?;
 
         operation(&mut config);
 

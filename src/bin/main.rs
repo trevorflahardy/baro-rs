@@ -11,6 +11,7 @@
 use core::cell::RefCell;
 use critical_section::Mutex as CsMutex;
 use embassy_executor::Spawner;
+use embassy_net::{Config as EmbassyNetConfig, StackResources};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_time::{Duration, Timer};
@@ -29,7 +30,7 @@ use static_cell::StaticCell;
 use rtt_target::rprintln;
 
 use aw9523_embedded::r#async::Aw9523Async;
-use axp2101::AsyncAxp2101;
+use axp2101_embedded::AsyncAxp2101;
 use baro_rs::{
     async_i2c_bus::AsyncI2cDevice,
     dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
@@ -37,10 +38,7 @@ use baro_rs::{
     storage::MAX_SENSORS,
     wifi_secrets,
 };
-use embedded_hal_bus::{
-    // i2c::CriticalSectionDevice as I2cCriticalSectionDevice,
-    spi::CriticalSectionDevice as SpiCriticalSectionDevice,
-};
+use embedded_hal_bus::spi::CriticalSectionDevice as SpiCriticalSectionDevice;
 use ft6336u_driver::FT6336U;
 use mipidsi::{
     Builder as MipidsiBuilder,
@@ -48,6 +46,8 @@ use mipidsi::{
     models::ILI9342CRgb565,
     options::{ColorInversion, ColorOrder},
 };
+
+static NET_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
 
 const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 240;
@@ -77,6 +77,42 @@ async fn main(spawner: Spawner) -> ! {
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timer_group.timer0);
     rprintln!("Core system initialized");
+
+    // === Radio Init ===
+    rprintln!("Configuring SVC...");
+    // esp_idf_svc::sys::link_patches();
+    // esp_idf_svc::EspLogger::initialize_default();
+
+    rprintln!("Configuring radio...");
+    let radio_init = esp_radio::init().expect("Radio init failed");
+    let (mut wifi, interfaces) =
+        esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default())
+            .expect("WiFi init failed");
+
+    rprintln!("Radio ready");
+
+    // ==== Loading Wifi Credentials ====
+    rprintln!("Connecting to WiFi SSID: {}", wifi_secrets::WIFI_SSID);
+
+    let client_config = ClientConfig::default()
+        .with_ssid(wifi_secrets::WIFI_SSID.into())
+        .with_password(wifi_secrets::WIFI_PASSWORD.into());
+
+    wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config))
+        .unwrap();
+
+    // TODO: Later, need connection timeout management and retry logic here... ideally after the display has been set up so we can render connection status to the user.
+    wifi.start_async().await.unwrap();
+    wifi.connect_async().await.unwrap();
+
+    rprintln!("Initializing SNTP...");
+    // Open a new UDP socket for SNTP and pass it off
+    let resources = NET_RESOURCES.init(StackResources::new());
+    let net_config = EmbassyNetConfig::dhcpv4(Default::default());
+    let (_stack, _runner) = embassy_net::new(interfaces.sta, net_config, resources, 1024);
+    // spawner.spawn(runner).unwrap();
+
+    rprintln!("WiFi connected");
 
     // === Power Management ===
     // AXP2101 powers the display and other peripherals
@@ -108,7 +144,7 @@ async fn main(spawner: Spawner) -> ! {
     }
 
     power_mgmt_chip
-        .set_charging_led_mode(axp2101::ChargeLedMode::On)
+        .set_charging_led_mode(axp2101_embedded::ChargeLedMode::On)
         .await
         .unwrap();
 
@@ -140,32 +176,6 @@ async fn main(spawner: Spawner) -> ! {
     gpio_expander.enable_interrupt(10, true).await.unwrap();
 
     rprintln!("GPIO expander ready (P1_2 configured for touch interrupt)");
-
-    // === Radio Init ===
-    rprintln!("Configuring radio...");
-    let radio_init = esp_radio::init().expect("Radio init failed");
-    let (mut wifi, _interfaces) =
-        esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default())
-            .expect("WiFi init failed");
-
-    rprintln!("Radio ready");
-
-    // ==== Loading Wifi Credentials ====
-    rprintln!("Connecting to WiFi SSID: {}", wifi_secrets::WIFI_SSID);
-
-    let client_config = ClientConfig::default()
-        .with_ssid(wifi_secrets::WIFI_SSID.into())
-        .with_password(wifi_secrets::WIFI_PASSWORD.into());
-
-    wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config))
-        .unwrap();
-
-    // TODO: Later, need connection timeout management and retry logic here... ideally after the display has been set up
-    // so we can render connection status to the user.
-    wifi.start_async().await.unwrap();
-    wifi.connect_async().await.unwrap();
-
-    rprintln!("WiFi connected");
 
     // === Initialize the SPI devices (display and SD card) ===
     rprintln!("Configuring display...");
@@ -284,9 +294,9 @@ async fn background_sensor_reading_task(
 ) {
     rprintln!("Sensor reading task started");
 
-    let mut sht4x_sensor = SHT40Indexed::from(SHT40Sensor::new(sht4x_i2c));
+    let mut _sht4x_sensor = SHT40Indexed::from(SHT40Sensor::new(sht4x_i2c));
 
-    let mut values = [0i32; MAX_SENSORS];
+    let mut _values = [0i32; MAX_SENSORS];
 
     loop {
         // ... TODO: On each iteration, read all sensors into the values array and then
