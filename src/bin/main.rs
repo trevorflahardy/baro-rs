@@ -517,6 +517,11 @@ async fn background_sensor_reading_task(
 
         // Read all sensors
         sensors.read_all(&mut values).await;
+        rprintln!(
+            "Sensor readings at {}: {:?}",
+            timestamp,
+            &values[..MAX_SENSORS]
+        );
 
         // Add sample to accumulator via app state
         {
@@ -527,7 +532,7 @@ async fn background_sensor_reading_task(
         }
 
         timestamp = timestamp.wrapping_add(10);
-        Timer::after(Duration::from_secs(10)).await;
+        Timer::after(Duration::from_secs(40)).await;
     }
 }
 
@@ -586,6 +591,7 @@ async fn touch_polling_task(
                             x: point.x,
                             y: point.y,
                         };
+                        rprintln!("Touch detected at ({}, {})", touch_point.x, touch_point.y);
 
                         // For now, always send a Press event
                         // TODO: Handle touch release based on point.status when the API is clarified
@@ -601,7 +607,7 @@ async fn touch_polling_task(
             }
         }
 
-        Timer::after(Duration::from_millis(50)).await;
+        Timer::after(Duration::from_millis(5)).await;
     }
 }
 
