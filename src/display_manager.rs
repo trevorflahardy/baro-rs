@@ -85,7 +85,7 @@ where
 
     /// Navigate to a new page
     fn navigate_to(&mut self, page_id: PageId) {
-        debug!("[DisplayManager] Navigating to page: {:?}", page_id);
+        debug!(" Navigating to page: {:?}", page_id);
         match page_id {
             PageId::Home => {
                 let mut page = HomePage::new(self.bounds);
@@ -98,7 +98,7 @@ where
             }
             PageId::Graphs => {
                 // TODO: Create graphs page when implemented
-                debug!("[DisplayManager] Graphs page not yet implemented");
+                debug!(" Graphs page not yet implemented");
             }
         }
         self.needs_redraw = true;
@@ -106,25 +106,25 @@ where
 
     /// Handle a touch event on the current page
     fn handle_touch(&mut self, event: TouchEvent) {
-        debug!("[DisplayManager] Received touch event: {:?}", event);
+        debug!(" Received touch event: {:?}", event);
         if let Some(action) = Page::handle_touch(&mut self.current_page, event) {
-            debug!("[DisplayManager] Touch resulted in action: {:?}", action);
+            debug!(" Touch resulted in action: {:?}", action);
             match action {
                 Action::NavigateToPage(page_id) => {
                     self.navigate_to(page_id);
                 }
                 _ => {
-                    debug!("[DisplayManager] Unhandled action: {:?}", action);
+                    debug!(" Unhandled action: {:?}", action);
                 }
             }
         } else {
-            debug!("[DisplayManager] Touch event not handled by page");
+            debug!(" Touch event not handled by page");
         }
     }
 
     /// Update the current page with new data
     fn update_data(&mut self, event: Box<RollupEvent>) {
-        debug!("[DisplayManager] Received data update: {:?}", event);
+        debug!(" Received data update: {:?}", event);
 
         // Convert RollupEvent to PageEvent and dispatch to current page
         match *event {
@@ -137,10 +137,7 @@ where
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
 
-                debug!(
-                    "[DisplayManager] Raw sample - T: {:.1}°C, H: {:.1}%",
-                    temp_c, humidity_pct
-                );
+                debug!(" Raw sample - T: {:.1}°C, H: {:.1}%", temp_c, humidity_pct);
 
                 let sensor_data = SensorData {
                     temperature: Some(temp_c),
@@ -152,7 +149,7 @@ where
                 let needs_redraw = Page::on_event(&mut self.current_page, &page_event);
 
                 if needs_redraw {
-                    debug!("[DisplayManager] Page marked for redraw after sensor update");
+                    debug!(" Page marked for redraw after sensor update");
                     self.needs_redraw = true;
                 }
             }
@@ -167,7 +164,7 @@ where
                 let humidity_pct = humidity_mp as f32 / 1000.0;
 
                 debug!(
-                    "[DisplayManager] Rollup - T: {:.1}°C (avg), H: {:.1}% (avg)",
+                    " Rollup - T: {:.1}°C (avg), H: {:.1}% (avg)",
                     temp_c, humidity_pct
                 );
 
@@ -181,7 +178,7 @@ where
                 let needs_redraw = Page::on_event(&mut self.current_page, &page_event);
 
                 if needs_redraw {
-                    debug!("[DisplayManager] Page marked for redraw after rollup update");
+                    debug!(" Page marked for redraw after rollup update");
                     self.needs_redraw = true;
                 }
             }
@@ -191,7 +188,7 @@ where
     /// Render the current page if needed
     fn render(&mut self) -> Result<(), D::Error> {
         if self.needs_redraw {
-            debug!("[DisplayManager] Rendering page");
+            debug!(" Rendering page");
             // Clear the display
             self.bounds
                 .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
@@ -208,7 +205,7 @@ where
 
     /// Process a display request
     fn process_request(&mut self, request: DisplayRequest) -> Result<(), D::Error> {
-        debug!("[DisplayManager] Processing request: {:?}", request);
+        debug!(" Processing request: {:?}", request);
         match request {
             DisplayRequest::NavigateToPage(page_id) => {
                 self.navigate_to(page_id);
@@ -238,11 +235,11 @@ where
     ) where
         <D as DrawTarget>::Error: core::fmt::Debug,
     {
-        info!("[DisplayManager] Display manager task started");
+        info!(" Display manager task started");
 
         // Initial render
         if let Err(e) = self.render() {
-            error!("[DisplayManager] Display render error: {:?}", e);
+            error!(" Display render error: {:?}", e);
         }
 
         loop {
@@ -251,7 +248,7 @@ where
 
             // Process the request
             if let Err(e) = self.process_request(request) {
-                error!("[DisplayManager] Error processing request: {:?}", e);
+                error!(" Error processing request: {:?}", e);
             }
         }
     }

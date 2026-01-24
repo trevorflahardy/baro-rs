@@ -73,10 +73,7 @@ where
 
                 // Update lifetime stats
                 self.lifetime_stats.update(&sample);
-                debug!(
-                    "[StorageManager] Recalculated lifetime stats: {:?}",
-                    self.lifetime_stats
-                );
+                debug!(" Recalculated lifetime stats: {:?}", self.lifetime_stats);
             }
             RollupEvent::Rollup5m(rollup) => {
                 if self.rollups_5m.len() >= 2016 {
@@ -89,9 +86,9 @@ where
                     .sd_card_manager
                     .append_rollup_data(ROLLUP_FILE_5M, &rollup)
                 {
-                    error!("[StorageManager] Failed to write 5m rollup to SD: {:?}", e);
+                    error!(" Failed to write 5m rollup to SD: {:?}", e);
                 } else {
-                    info!("[StorageManager] Updating rollup file 5m.");
+                    info!(" Updating rollup file 5m.");
                 }
             }
             RollupEvent::Rollup1h(rollup) => {
@@ -105,9 +102,9 @@ where
                     .sd_card_manager
                     .append_rollup_data(ROLLUP_FILE_1H, &rollup)
                 {
-                    error!("[StorageManager] Failed to write 1h rollup to SD: {:?}", e);
+                    error!(" Failed to write 1h rollup to SD: {:?}", e);
                 } else {
-                    info!("[StorageManager] Updating rollup file 1h.");
+                    info!(" Updating rollup file 1h.");
                 }
             }
             RollupEvent::RollupDaily(rollup) => {
@@ -121,12 +118,9 @@ where
                     .sd_card_manager
                     .append_rollup_data(ROLLUP_FILE_DAILY, &rollup)
                 {
-                    error!(
-                        "[StorageManager] Failed to write daily rollup to SD: {:?}",
-                        e
-                    );
+                    error!(" Failed to write daily rollup to SD: {:?}", e);
                 } else {
-                    info!("[StorageManager] Updating rollup file 24h.");
+                    info!(" Updating rollup file 24h.");
                 }
             }
         }

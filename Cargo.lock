@@ -66,7 +66,6 @@ dependencies = [
  "esp-alloc",
  "esp-bootloader-esp-idf",
  "esp-hal",
- "esp-println",
  "esp-radio",
  "esp-rtos",
  "ft6336u-driver",
@@ -708,17 +707,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "esp-build"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8aa1c8f9954c9506699cf1ca10a2adcc226ff10b6ae3cb9e875cf2c6a0b9a372"
-dependencies = [
- "quote",
- "syn 2.0.114",
- "termcolor",
-]
-
-[[package]]
 name = "esp-config"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -820,18 +808,6 @@ dependencies = [
  "esp-metadata-generated",
  "esp-sync",
  "esp-wifi-sys",
-]
-
-[[package]]
-name = "esp-println"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "960703930f9f3c899ddedd122ea27a09d6a612c22323157e524af5b18876448e"
-dependencies = [
- "critical-section",
- "esp-build",
- "log",
- "portable-atomic",
 ]
 
 [[package]]
@@ -1336,6 +1312,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "once_cell"
+version = "1.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+dependencies = [
+ "critical-section",
+ "portable-atomic",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1524,6 +1510,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7afed1f4302eeba88c601636cf2c554c45e1cbb464bab44c6012bab0e71473c"
 dependencies = [
  "critical-section",
+ "log",
+ "once_cell",
  "portable-atomic",
  "ufmt-write",
 ]

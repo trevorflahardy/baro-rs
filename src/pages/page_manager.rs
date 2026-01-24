@@ -1,11 +1,11 @@
 // src/pages/page_manager.rs
 //! Page manager with navigation and event dispatching
 
-use log::debug;
 use crate::ui::core::{Action, DirtyRegion, Drawable, PageEvent, PageId, TouchEvent};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 use heapless::Vec;
+use log::debug;
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -280,13 +280,13 @@ impl PageManager {
 
     /// Handle touch events, returns action if any
     pub fn handle_touch(&mut self, event: TouchEvent) -> Option<Action> {
-        debug!("[PageManager] Processing touch event: {:?}", event);
+        debug!(" Processing touch event: {:?}", event);
         if let Some(page) = self.get_current_page_mut() {
             let result = page.handle_touch(event);
-            debug!("[PageManager] Touch result: {:?}", result);
+            debug!(" Touch result: {:?}", result);
             result
         } else {
-            debug!("[PageManager] No current page to handle touch");
+            debug!(" No current page to handle touch");
             None
         }
     }
@@ -294,13 +294,16 @@ impl PageManager {
     /// Dispatch event to current page
     /// Returns true if page needs redraw
     pub fn dispatch_event(&mut self, event: &PageEvent) -> bool {
-        debug!("[PageManager] Dispatching event to page {:?}: {:?}", self.current_page, event);
+        debug!(
+            " Dispatching event to page {:?}: {:?}",
+            self.current_page, event
+        );
         if let Some(page) = self.get_current_page_mut() {
             let handled = page.on_event(event);
-            debug!("[PageManager] Event handled: {}, needs_redraw: {}", handled, handled);
+            debug!(" Event handled: {}, needs_redraw: {}", handled, handled);
             handled
         } else {
-            debug!("[PageManager] No current page to dispatch event to");
+            debug!(" No current page to dispatch event to");
             false
         }
     }

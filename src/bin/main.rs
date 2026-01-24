@@ -252,10 +252,9 @@ impl embedded_sdmmc::TimeSource for SimpleTimeSource {
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
     // === Core System Init ===
-    rtt_target::rtt_init_print!();
+    rtt_target::rtt_init_log!(log::LevelFilter::Debug);
 
     // Initialize logger with Info level
-    esp_println::logger::init_logger(log::LevelFilter::Debug);
     info!("Logger initialized");
 
     let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
