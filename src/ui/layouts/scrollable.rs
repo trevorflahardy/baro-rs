@@ -261,10 +261,6 @@ impl Touchable for ScrollableContainer {
                     TouchResult::NotHandled
                 }
             }
-            TouchEvent::Release(_) => {
-                self.last_touch = None;
-                TouchResult::Handled
-            }
         }
     }
 }

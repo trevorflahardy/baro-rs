@@ -42,7 +42,7 @@ use baro_rs::{
     wifi_secrets,
 };
 use embedded_hal_bus::spi::CriticalSectionDevice as SpiCriticalSectionDevice;
-use ft6336u_driver::FT6336U;
+use ft6336u_driver::{FT6336U, TouchStatus};
 use mipidsi::{
     Builder as MipidsiBuilder,
     interface::SpiInterface,
@@ -593,11 +593,20 @@ async fn touch_polling_task(
                             x: point.x,
                             y: point.y,
                         };
-                        rprintln!("Touch detected at ({}, {})", touch_point.x, touch_point.y);
+                        rprintln!(
+                            "Touch detected at ({}, {}): {:?}",
+                            touch_point.x,
+                            touch_point.y,
+                            point.status
+                        );
 
+                        // TODO: Handle Release events properly
                         // For now, always send a Press event
-                        // TODO: Handle touch release based on point.status when the API is clarified
-                        let event = baro_rs::ui::TouchEvent::Press(touch_point);
+                        let event = match point.status {
+                            TouchStatus::Touch => baro_rs::ui::TouchEvent::Press(touch_point),
+                            TouchStatus::Stream => baro_rs::ui::TouchEvent::Drag(touch_point),
+                            _ => baro_rs::ui::TouchEvent::Press(touch_point), // <- Release does not ever be fired (?)
+                        };
 
                         let display_sender = baro_rs::display_manager::get_display_sender();
                         let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));

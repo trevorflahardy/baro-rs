@@ -26,8 +26,6 @@ impl TouchPoint {
 pub enum TouchEvent {
     /// Initial touch press at a point
     Press(TouchPoint),
-    /// Touch release at a point
-    Release(TouchPoint),
     /// Touch drag to a new point
     Drag(TouchPoint),
 }

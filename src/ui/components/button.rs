@@ -169,19 +169,9 @@ impl Touchable for Button {
             TouchEvent::Press(point) if self.contains_point(point) => {
                 self.state = ButtonState::Pressed;
                 self.dirty = true;
-                TouchResult::Handled
-            }
-            TouchEvent::Release(point) => {
-                if self.state == ButtonState::Pressed {
-                    self.state = ButtonState::Normal;
-                    self.dirty = true;
 
-                    // Only trigger action if release is over button
-                    if self.contains_point(point) {
-                        return TouchResult::Action(self.action);
-                    }
-                }
-                TouchResult::Handled
+                // Trigger action immediately on press
+                TouchResult::Action(self.action)
             }
             TouchEvent::Drag(point) => {
                 // Update pressed state based on whether drag is still over button

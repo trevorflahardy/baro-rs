@@ -65,7 +65,6 @@ Touch events flow through the UI hierarchy:
 pub enum TouchEvent {
     Press(TouchPoint),    // Initial touch
     Drag(TouchPoint),     // Touch moved
-    Release(TouchPoint),  // Touch ended
 }
 
 pub enum TouchResult {
