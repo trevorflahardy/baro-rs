@@ -242,7 +242,7 @@ where
 
         // Initial render
         if let Err(e) = self.render() {
-            rtt_target::rprintln!("Display render error: {:?}", e);
+            error!("[DisplayManager] Display render error: {:?}", e);
         }
 
         loop {

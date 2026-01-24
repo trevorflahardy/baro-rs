@@ -103,7 +103,7 @@ static GPIO35_PIN: DualModePin<35> = DualModePin::new();
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    rtt_target::rprintln!("PANIC: {}", info);
+    error!("PANIC: {}", info);
     loop {}
 }
 

@@ -30,7 +30,7 @@ impl<'a> SensorsState<'a> {
     pub async fn read_all(&mut self, values: &mut [i32; crate::storage::MAX_SENSORS]) {
         // Read SHT40 (temperature and humidity at indices 0 and 1)
         if let Err(e) = self.sht40.read_into(values).await {
-            rtt_target::rprintln!("SHT40 read error: {:?}", e);
+            error!("SHT40 read error: {:?}", e);
         }
 
         // Future sensors would be added here
