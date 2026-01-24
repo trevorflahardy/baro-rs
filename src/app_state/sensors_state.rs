@@ -3,6 +3,8 @@
 use crate::async_i2c_bus::AsyncI2cDevice;
 use crate::sensors::{SHT40Indexed, SHT40Sensor};
 
+use log::error;
+
 /// Container for all sensor instances
 ///
 /// This struct holds all active sensors in the system.
