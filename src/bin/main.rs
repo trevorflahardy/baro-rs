@@ -257,9 +257,14 @@ async fn main(spawner: Spawner) -> ! {
 
     // 225KB for heap in internal RAM
     esp_alloc::heap_allocator!(size: 74_000);
-    // esp_alloc::psram_allocator!(&peripherals.PSRAM, esp_hal::psram);
+    esp_alloc::psram_allocator!(&peripherals.PSRAM, esp_hal::psram);
 
     rprintln!("PSRAM global allocator initialized (8MB)");
+    rprintln!(
+        "Heap allocation completed: {} bytes used / {} bytes free",
+        esp_alloc::HEAP.used(),
+        esp_alloc::HEAP.free()
+    );
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timer_group.timer0);
