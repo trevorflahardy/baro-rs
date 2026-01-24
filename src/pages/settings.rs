@@ -13,7 +13,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle};
 use embedded_graphics::text::Text;
 use heapless::{String as HeaplessString, Vec};
-use log::{debug, info};
+use log::debug;
 
 /// Log entry for the live feed
 #[derive(Clone)]
