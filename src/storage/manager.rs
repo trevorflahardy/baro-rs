@@ -2,10 +2,10 @@
 use crate::storage::sd_card::{ROLLUP_FILE_1H, ROLLUP_FILE_5M, ROLLUP_FILE_DAILY, SdCardManager};
 
 use super::{LifetimeStats, RawSample, Rollup, accumulator::RollupEvent};
+use log::{debug, error, info};
 
 extern crate alloc;
 use alloc::collections::VecDeque;
-use rtt_target::rprintln;
 
 /// Storage manager that maintains ring buffers in RAM and handles SD card persistence
 ///
@@ -73,7 +73,10 @@ where
 
                 // Update lifetime stats
                 self.lifetime_stats.update(&sample);
-                rprintln!("Updating lifetime stats");
+                debug!(
+                    "[StorageManager] Recalculated lifetime stats: {:?}",
+                    self.lifetime_stats
+                );
             }
             RollupEvent::Rollup5m(rollup) => {
                 if self.rollups_5m.len() >= 2016 {
@@ -86,9 +89,9 @@ where
                     .sd_card_manager
                     .append_rollup_data(ROLLUP_FILE_5M, &rollup)
                 {
-                    rtt_target::rprintln!("Failed to write 5m rollup to SD: {:?}", e);
+                    error!("[StorageManager] Failed to write 5m rollup to SD: {:?}", e);
                 } else {
-                    rprintln!("Updating rollup file 5m.");
+                    info!("[StorageManager] Updating rollup file 5m.");
                 }
             }
             RollupEvent::Rollup1h(rollup) => {
@@ -102,9 +105,9 @@ where
                     .sd_card_manager
                     .append_rollup_data(ROLLUP_FILE_1H, &rollup)
                 {
-                    rtt_target::rprintln!("Failed to write 1h rollup to SD: {:?}", e);
+                    error!("[StorageManager] Failed to write 1h rollup to SD: {:?}", e);
                 } else {
-                    rprintln!("Updating rollup file 1h.");
+                    info!("[StorageManager] Updating rollup file 1h.");
                 }
             }
             RollupEvent::RollupDaily(rollup) => {
@@ -118,9 +121,12 @@ where
                     .sd_card_manager
                     .append_rollup_data(ROLLUP_FILE_DAILY, &rollup)
                 {
-                    rtt_target::rprintln!("Failed to write daily rollup to SD: {:?}", e);
+                    error!(
+                        "[StorageManager] Failed to write daily rollup to SD: {:?}",
+                        e
+                    );
                 } else {
-                    rprintln!("Updating rollup file 24h.");
+                    info!("[StorageManager] Updating rollup file 24h.");
                 }
             }
         }

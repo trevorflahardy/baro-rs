@@ -35,8 +35,7 @@ use esp_radio::wifi::{ClientConfig, WifiDevice};
 use heapless::String;
 use static_cell::StaticCell;
 
-use rtt_target::rprintln;
-use log::info;
+use log::{debug, error, info};
 
 use baro_rs::{
     dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
@@ -124,15 +123,15 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
     // Wait for network to be configured
     stack.wait_config_up().await;
 
-    rprintln!("Network configured, starting NTP time sync");
+    info!("Network configured, starting NTP time sync");
 
     // Print our IP address for debugging
     if let Some(config) = stack.config_v4() {
-        rprintln!("Our IP: {}", config.address.address());
-        rprintln!("Gateway: {:?}", config.gateway);
-        rprintln!("DNS: {:?}", config.dns_servers);
+        info!("Our IP: {}", config.address.address());
+        info!("Gateway: {:?}", config.gateway);
+        info!("DNS: {:?}", config.dns_servers);
     } else {
-        rprintln!("WARNING: No IPv4 config available yet");
+        error!("WARNING: No IPv4 config available yet");
     }
 
     // NTP servers to try (pool.ntp.org and time.google.com)
@@ -144,7 +143,7 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
 
     // Try each server
     for (i, &ntp_server) in ntp_servers.iter().enumerate() {
-        rprintln!("Trying NTP server #{}: {}", i + 1, ntp_server);
+        info!("Trying NTP server #{}: {}", i + 1, ntp_server);
 
         // UDP socket buffers
         let mut rx_meta: [PacketMetadata; 4] = [PacketMetadata::EMPTY; 4];
@@ -160,26 +159,25 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
             addr: None, // Changed from Some to None - let stack choose
             port: 0,    // Changed from fixed port to 0 - let OS assign
         }) {
-            rprintln!("UDP bind failed: {:?}", e);
+            info!("UDP bind failed: {:?}", e);
             continue;
         }
 
-        rprintln!("Socket bound successfully");
+        info!("Socket bound successfully");
 
         // NTP request packet (48 bytes, first byte 0x1B)
         // 0x1B = LI=0 (no warning), VN=3 (version 3), Mode=3 (client)
         let mut ntp_packet = [0u8; 48];
         ntp_packet[0] = 0x1B;
 
-        rprintln!("Sending NTP request to {}", ntp_server);
+        info!("Sending NTP request to {}", ntp_server);
 
         if let Err(e) = socket.send_to(&ntp_packet, ntp_server).await {
-            rprintln!("UDP send failed: {:?}", e);
+            error!("UDP send failed: {:?}", e);
             continue;
         }
 
-        rprintln!("NTP request sent successfully, waiting for response...");
-
+        info!("NTP request sent successfully, waiting for response...");
         // Add timeout to recv_from (5 seconds)
         let mut recv_buf = [0u8; 64];
         let recv_result =
@@ -187,10 +185,10 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
 
         match recv_result {
             Ok(Ok((len, endpoint))) => {
-                rprintln!("NTP response received from {} ({} bytes)", endpoint, len);
+                info!("NTP response received from {} ({} bytes)", endpoint, len);
 
                 if len < 48 {
-                    rprintln!("NTP response too short: {} bytes", len);
+                    info!("NTP response too short: {} bytes", len);
                     continue;
                 }
 
@@ -199,16 +197,16 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
                     u32::from_be_bytes([recv_buf[40], recv_buf[41], recv_buf[42], recv_buf[43]]);
                 // NTP epoch starts in 1900, Unix in 1970
                 let unix_time = secs.wrapping_sub(2_208_988_800);
-                rprintln!("NTP time: {} (unix)", unix_time);
+                info!("NTP time: {} (unix)", unix_time);
 
                 return Ok(unix_time);
             }
             Ok(Err(e)) => {
-                rprintln!("UDP recv failed: {:?}", e);
+                error!("UDP recv failed: {:?}", e);
                 continue;
             }
             Err(_) => {
-                rprintln!("NTP request timed out after 5 seconds");
+                error!("NTP request timed out after 5 seconds");
                 continue;
             }
         }
@@ -255,11 +253,11 @@ impl embedded_sdmmc::TimeSource for SimpleTimeSource {
 async fn main(spawner: Spawner) -> ! {
     // === Core System Init ===
     rtt_target::rtt_init_print!();
-    
+
     // Initialize logger with Info level
     esp_println::logger::init_logger(log::LevelFilter::Debug);
     info!("Logger initialized");
-    
+
     let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(hal_config);
 
@@ -267,8 +265,8 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(size: 74_000);
     esp_alloc::psram_allocator!(&peripherals.PSRAM, esp_hal::psram);
 
-    rprintln!("PSRAM global allocator initialized (8MB)");
-    rprintln!(
+    info!("PSRAM global allocator initialized (8MB)");
+    info!(
         "Heap allocation completed: {} bytes used / {} bytes free",
         esp_alloc::HEAP.used(),
         esp_alloc::HEAP.free()
@@ -276,19 +274,19 @@ async fn main(spawner: Spawner) -> ! {
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timer_group.timer0);
-    rprintln!("Core system initialized");
+    info!("Core system initialized");
 
     // === Radio Init ===
-    rprintln!("Configuring radio...");
+    info!("Configuring radio...");
     let radio_init = RADIO_INIT.init(esp_radio::init().expect("Radio init failed"));
     let (mut wifi, interfaces) =
         esp_radio::wifi::new(radio_init, peripherals.WIFI, Default::default())
             .expect("WiFi init failed");
 
-    rprintln!("Radio ready");
+    info!("Radio ready");
 
     // ==== Loading Wifi Credentials ====
-    rprintln!("Connecting to WiFi SSID: {}", wifi_secrets::WIFI_SSID);
+    info!("Connecting to WiFi SSID: {}", wifi_secrets::WIFI_SSID);
 
     let client_config = ClientConfig::default()
         .with_ssid(wifi_secrets::WIFI_SSID.into())
@@ -302,9 +300,9 @@ async fn main(spawner: Spawner) -> ! {
     let wifi_connected = wifi_result.is_ok();
 
     if wifi_connected {
-        rprintln!("WiFi connected");
+        info!("WiFi connected");
     } else {
-        rprintln!("WiFi connection failed: {:?}", wifi_result.err());
+        error!("WiFi connection failed: {:?}", wifi_result.err());
     }
 
     // === Network Stack Setup ===
@@ -323,31 +321,30 @@ async fn main(spawner: Spawner) -> ! {
             break;
         }
 
-        rprintln!("Waiting for network link...");
+        info!("Waiting for network link...");
         Timer::after(Duration::from_secs(1)).await;
     }
 
-    rprintln!("Network link is up!");
-
+    info!("Network link is up!");
     // Wait for DHCP to complete and network to be fully configured
-    rprintln!("Waiting for network configuration (DHCP)...");
+    info!("Waiting for network configuration (DHCP)...");
     stack_ref.wait_config_up().await;
 
     // Give the network stack a moment to stabilize
     Timer::after(Duration::from_millis(500)).await;
-    rprintln!("Network fully configured and ready");
+    info!("Network fully configured and ready");
 
     // === Time Synchronization ===
     let mut time_known = false;
     if wifi_connected {
-        rprintln!("Performing time sync...");
+        info!("Performing time sync...");
         match udp_time_sync(stack_ref).await {
             Ok(timestamp) => {
-                rprintln!("Time sync successful: {}", timestamp);
+                info!("Time sync successful: {}", timestamp);
                 time_known = true;
             }
             Err(e) => {
-                rprintln!("Time sync failed: {:?}", e);
+                error!("Time sync failed: {:?}", e);
             }
         }
     }
@@ -359,7 +356,7 @@ async fn main(spawner: Spawner) -> ! {
     let (_i2c_hardware, i2c_for_touch, i2c_for_sensors) = init_i2c_hardware(i2c0).await;
 
     // 2. SPI devices (display and SD card)
-    rprintln!("Configuring SPI devices...");
+    info!("Configuring SPI devices...");
     let spi_bus_inner = Spi::new(
         peripherals.SPI2,
         SpiConfig::default()
@@ -403,24 +400,24 @@ async fn main(spawner: Spawner) -> ! {
         .init(&mut embassy_time::Delay)
         .expect("Display init failed");
 
-    rprintln!("Display ready");
+    info!("Display ready");
 
     // Load up the SD card as well
-    rprintln!("Configuring SD card...");
+    info!("Configuring SD card...");
 
     let sd_card = init_spi_hardware(sd_card_spi, esp_hal::delay::Delay::new());
     let sd_card_size = match sd_card.num_bytes() {
         Ok(size) => size,
         Err(e) => {
-            rprintln!("SD card init failed: {:?}", e);
+            error!("SD card init failed: {:?}", e);
             0
         }
     };
-    rprintln!("SD card ready (size: {} bytes)", sd_card_size);
+    info!("SD card ready (size: {} bytes)", sd_card_size);
 
     // Load up the capacitive touch controller
     // Create I2C interface on the FT6336U@Capacitive touch, touch area pixels 320 x 280
-    rprintln!("Configuring touch controller...");
+    info!("Configuring touch controller...");
     let mut touch_interface = FT6336U::new(i2c_for_touch);
     let library_version = touch_interface.read_library_version().await.unwrap_or(0);
     let chip_id = touch_interface.read_chip_id().await.unwrap();
@@ -433,14 +430,12 @@ async fn main(spawner: Spawner) -> ! {
         .unwrap();
     let g_mode = touch_interface.read_g_mode().await.unwrap();
 
-    rprintln!(
+    info!(
         "Touch controller ready (library: 0x{:04X}, chip: 0x{:02X}, mode: 0x{:02X})",
-        library_version,
-        chip_id,
-        g_mode
+        library_version, chip_id, g_mode
     );
 
-    rprintln!("=== Hardware initialization complete ===\n");
+    info!("=== Hardware initialization complete ===\n");
 
     // === Application State Setup ===
     let time_source = SimpleTimeSource::new();
@@ -465,7 +460,7 @@ async fn main(spawner: Spawner) -> ! {
 
     // Only start sensor tasks if WiFi connected successfully
     if wifi_connected && sd_card_size > 0 {
-        rprintln!("Starting sensor and storage tasks...");
+        info!("Starting sensor and storage tasks...");
 
         // Create sensors state
         let sensors = SensorsState::new(i2c_for_sensors);
@@ -478,9 +473,9 @@ async fn main(spawner: Spawner) -> ! {
             .spawn(storage_event_processing_task(app_state_ref))
             .ok();
 
-        rprintln!("Sensor and storage tasks started");
+        info!("Sensor and storage tasks started");
     } else {
-        rprintln!("Skipping sensor tasks - WiFi not connected or SD card unavailable");
+        info!("Skipping sensor tasks - WiFi not connected or SD card unavailable");
     }
 
     // Start touch polling task
@@ -490,10 +485,10 @@ async fn main(spawner: Spawner) -> ! {
     let display_manager = DisplayManager::new(display);
     spawner.spawn(display_manager_task(display_manager)).ok();
 
-    rprintln!("All tasks spawned\n");
+    info!("All tasks spawned\n");
 
     // === Main Loop ===
-    rprintln!("Main loop running...\n");
+    info!("Main loop running...\n");
     loop {
         Timer::after(Duration::from_secs(10)).await;
     }
@@ -501,7 +496,7 @@ async fn main(spawner: Spawner) -> ! {
 
 #[embassy_executor::task]
 async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) {
-    rprintln!("WiFi runner task started");
+    info!("WiFi runner task started");
     runner.run().await
 }
 
@@ -516,7 +511,7 @@ async fn background_sensor_reading_task(
     mut sensors: SensorsState<'static>,
     app_state: &'static ConcreteGlobalStateType,
 ) {
-    rprintln!("Sensor reading task started");
+    info!("Sensor reading task started");
 
     let mut timestamp: u32 = 0;
 
@@ -525,7 +520,7 @@ async fn background_sensor_reading_task(
 
         // Read all sensors
         sensors.read_all(&mut values).await;
-        rprintln!(
+        debug!(
             "Sensor readings at {}: {:?}",
             timestamp,
             &values[..MAX_SENSORS]
@@ -552,7 +547,7 @@ async fn background_sensor_reading_task(
 /// 3. Passes events to the storage manager for persistence
 #[embassy_executor::task]
 async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateType) {
-    rprintln!("Storage event processing task started");
+    info!("Storage event processing task started");
 
     // Subscribe to rollup events
     let mut subscriber = ROLLUP_CHANNEL.subscriber().unwrap();
@@ -585,7 +580,7 @@ async fn touch_polling_task(
         >,
     >,
 ) {
-    rprintln!("Touch polling task started");
+    info!("Touch polling task started");
 
     loop {
         match touch.scan().await {
@@ -614,7 +609,7 @@ async fn touch_polling_task(
                 }
             }
             Err(e) => {
-                rprintln!("Touch scan error: {:?}", e);
+                error!("Touch scan error: {:?}", e);
             }
         }
 
