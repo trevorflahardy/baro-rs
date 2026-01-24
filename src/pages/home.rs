@@ -1,17 +1,17 @@
 use embedded_graphics::prelude::*;
 use embedded_graphics::{
+    Drawable as EgDrawable,
     mono_font::{MonoTextStyle, ascii::FONT_10X20},
     pixelcolor::Rgb565,
     primitives::{PrimitiveStyle, Rectangle},
     text::Text,
-    Drawable as EgDrawable,
 };
 use heapless::Vec;
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Button, ButtonVariant, ColorPalette, Drawable,
-    PageId, TouchEvent, TouchResult, Touchable,
+    Action, Button, ButtonVariant, ColorPalette, Drawable, PageId, TouchEvent, TouchResult,
+    Touchable,
 };
 
 pub struct HomePage {
@@ -38,32 +38,40 @@ impl HomePage {
         let palette = ColorPalette::default();
 
         // Settings button
-        if self.buttons.push(
-            Button::new(
-                Rectangle::new(
-                    Point::new(20, y_start),
-                    Size::new(button_width, button_height),
-                ),
-                "Settings",
-                Action::NavigateToPage(PageId::Settings),
+        if self
+            .buttons
+            .push(
+                Button::new(
+                    Rectangle::new(
+                        Point::new(20, y_start),
+                        Size::new(button_width, button_height),
+                    ),
+                    "Settings",
+                    Action::NavigateToPage(PageId::Settings),
+                )
+                .with_palette(palette)
+                .with_variant(ButtonVariant::Primary),
             )
-            .with_palette(palette)
-            .with_variant(ButtonVariant::Primary),
-        ).is_ok() {}
+            .is_ok()
+        {}
 
         // Data button
-        if self.buttons.push(
-            Button::new(
-                Rectangle::new(
-                    Point::new(20, y_start + button_height as i32 + spacing),
-                    Size::new(button_width, button_height),
-                ),
-                "View Graphs",
-                Action::NavigateToPage(PageId::Graphs),
+        if self
+            .buttons
+            .push(
+                Button::new(
+                    Rectangle::new(
+                        Point::new(20, y_start + button_height as i32 + spacing),
+                        Size::new(button_width, button_height),
+                    ),
+                    "View Graphs",
+                    Action::NavigateToPage(PageId::Graphs),
+                )
+                .with_palette(palette)
+                .with_variant(ButtonVariant::Secondary),
             )
-            .with_palette(palette)
-            .with_variant(ButtonVariant::Secondary),
-        ).is_ok() {}
+            .is_ok()
+        {}
 
         self.dirty = true;
     }
@@ -119,10 +127,7 @@ impl Page for HomePage {
 }
 
 impl Drawable for HomePage {
-    fn draw<D: DrawTarget<Color = Rgb565>>(
-        &self,
-        display: &mut D,
-    ) -> Result<(), D::Error> {
+    fn draw<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
         // Clear background
         self.bounds
             .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
@@ -130,8 +135,7 @@ impl Drawable for HomePage {
 
         // Draw title
         let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
-        Text::new("Baro Dashboard", Point::new(60, 20), text_style)
-            .draw(display)?;
+        Text::new("Baro Dashboard", Point::new(60, 20), text_style).draw(display)?;
 
         // Draw all buttons
         for button in &self.buttons {

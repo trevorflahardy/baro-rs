@@ -49,7 +49,7 @@ where
     }
 
     #[allow(dead_code)]
-    fn read_config<'a>(&self) -> Result<ConfigBuffer, SdCardManagerError> {
+    fn read_config(&self) -> Result<ConfigBuffer, SdCardManagerError> {
         self.file_operation(CONFIG_FILE, Mode::ReadOnly, move |file| {
             let mut buffer = ConfigBuffer::default();
             file.read(&mut buffer)

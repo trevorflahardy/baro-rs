@@ -92,7 +92,7 @@ impl<'a> RollupAccumulator<'a> {
         }
     }
 
-    fn compute_rollup(rollup: &Vec<RawSample>) -> Rollup {
+    fn compute_rollup(rollup: &[RawSample]) -> Rollup {
         let mut avg = [0i32; MAX_SENSORS];
         let mut min = [i32::MAX; MAX_SENSORS];
         let mut max = [i32::MIN; MAX_SENSORS];
@@ -117,7 +117,7 @@ impl<'a> RollupAccumulator<'a> {
         Rollup::new(rollup[0].timestamp, &avg, &min, &max)
     }
 
-    fn compute_rollup_from_rollups(rollup: &Vec<Rollup>) -> Rollup {
+    fn compute_rollup_from_rollups(rollup: &[Rollup]) -> Rollup {
         let mut avg = [0i32; MAX_SENSORS];
         let mut min = [i32::MAX; MAX_SENSORS];
         let mut max = [i32::MIN; MAX_SENSORS];

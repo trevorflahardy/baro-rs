@@ -116,6 +116,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 /// This function sends an NTP request and parses the response to get the current
 /// Unix timestamp. The time can then be used to set the system clock for accurate
 /// timestamping of sensor data and rollups.
+#[allow(clippy::large_stack_frames)]
 async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppError> {
     use embassy_time::with_timeout;
 

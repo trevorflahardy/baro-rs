@@ -1,10 +1,13 @@
 // src/pages/page_manager.rs
 //! Page manager with navigation and event dispatching
 
-use crate::ui::core::{Action, Drawable, DirtyRegion, PageEvent, PageId, TouchEvent};
+use crate::ui::core::{Action, DirtyRegion, Drawable, PageEvent, PageId, TouchEvent};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 use heapless::Vec;
+
+extern crate alloc;
+use alloc::boxed::Box;
 
 /// Trait for pages that can be rendered and interacted with
 pub trait Page {
@@ -54,9 +57,7 @@ pub trait Page {
     fn dirty_regions(&self) -> Vec<DirtyRegion, 8> {
         if self.is_dirty() {
             let mut regions = Vec::new();
-            regions
-                .push(DirtyRegion::new(self.bounds()))
-                .ok();
+            regions.push(DirtyRegion::new(self.bounds())).ok();
             regions
         } else {
             Vec::new()
@@ -64,10 +65,63 @@ pub trait Page {
     }
 }
 
+impl<T: Page> Page for Box<T> {
+    fn id(&self) -> PageId {
+        (**self).id()
+    }
+
+    fn title(&self) -> &str {
+        (**self).title()
+    }
+
+    fn on_activate(&mut self) {
+        (**self).on_activate()
+    }
+
+    fn on_deactivate(&mut self) {
+        (**self).on_deactivate()
+    }
+
+    fn handle_touch(&mut self, event: TouchEvent) -> Option<Action> {
+        (**self).handle_touch(event)
+    }
+
+    fn update(&mut self) {
+        (**self).update()
+    }
+
+    fn on_event(&mut self, event: &PageEvent) -> bool {
+        (**self).on_event(event)
+    }
+
+    fn draw_page<D: DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>>(
+        &self,
+        display: &mut D,
+    ) -> Result<(), D::Error> {
+        (**self).draw_page(display)
+    }
+
+    fn bounds(&self) -> Rectangle {
+        (**self).bounds()
+    }
+
+    fn is_dirty(&self) -> bool {
+        (**self).is_dirty()
+    }
+
+    fn mark_clean(&mut self) {
+        (**self).mark_clean()
+    }
+
+    fn mark_dirty(&mut self) {
+        (**self).mark_dirty()
+    }
+}
+
 /// Page wrapper enum for storing different page types
 pub enum PageWrapper {
-    Home(crate::pages::home::HomePage),
-    Settings(crate::pages::settings::SettingsPage),
+    Home(Box<crate::pages::home::HomePage>),
+    Settings(Box<crate::pages::settings::SettingsPage>),
 }
 
 impl Page for PageWrapper {
@@ -215,16 +269,12 @@ impl PageManager {
 
     /// Get mutable reference to current page
     fn get_current_page_mut(&mut self) -> Option<&mut PageWrapper> {
-        self.pages
-            .iter_mut()
-            .find(|p| p.id() == self.current_page)
+        self.pages.iter_mut().find(|p| p.id() == self.current_page)
     }
 
     /// Get reference to current page
     fn get_current_page(&self) -> Option<&PageWrapper> {
-        self.pages
-            .iter()
-            .find(|p| p.id() == self.current_page)
+        self.pages.iter().find(|p| p.id() == self.current_page)
     }
 
     /// Handle touch events, returns action if any
