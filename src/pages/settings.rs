@@ -1,6 +1,7 @@
 // src/pages/settings.rs
 //! Settings page with live sensor data and log feed
 
+use log::debug;
 use crate::pages::page_manager::Page;
 use crate::ui::{
     Action, Button, ButtonVariant, ColorPalette, Drawable, MultiLineText, PageEvent, PageId,
@@ -43,13 +44,13 @@ impl SettingsPage {
 
         // Create sensor value displays
         let temperature_text = TextComponent::new(
-            Rectangle::new(Point::new(20, 50), Size::new(280, 20)),
+            Rectangle::new(Point::new(20, 60), Size::new(280, 20)),
             "Temperature: --",
             TextSize::Medium,
         );
 
         let humidity_text = TextComponent::new(
-            Rectangle::new(Point::new(20, 80), Size::new(280, 20)),
+            Rectangle::new(Point::new(20, 85), Size::new(280, 20)),
             "Humidity: --",
             TextSize::Medium,
         );
@@ -169,8 +170,10 @@ impl Page for SettingsPage {
     }
 
     fn on_event(&mut self, event: &PageEvent) -> bool {
+        debug!("[SettingsPage] Received event: {:?}", event);
         match event {
             PageEvent::SensorUpdate(data) => {
+                debug!("[SettingsPage] Processing sensor update - temp: {:?}, humidity: {:?}", data.temperature, data.humidity);
                 // Update sensor values
                 if let Some(temp) = data.temperature {
                     self.last_temperature = Some(temp);
@@ -180,6 +183,7 @@ impl Page for SettingsPage {
                 }
 
                 self.update_sensor_displays();
+                debug!("[SettingsPage] Sensor displays updated");
 
                 // Add log entry
                 let mut log_msg = HeaplessString::<64>::new();
@@ -190,11 +194,13 @@ impl Page for SettingsPage {
                     write!(&mut log_msg, "[Sensor] H:{:.1}%", hum).ok();
                 }
                 self.add_log_entry(&log_msg, data.timestamp);
+                debug!("[SettingsPage] Log entry added: {}", log_msg.as_str());
 
                 self.dirty = true;
                 true
             }
             PageEvent::StorageEvent(storage_event) => {
+                debug!("[SettingsPage] Processing storage event: {:?}", storage_event);
                 match storage_event {
                     StorageEvent::RawSample {
                         sensor,

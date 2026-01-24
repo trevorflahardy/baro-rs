@@ -7,6 +7,7 @@ use axp2101_embedded::AsyncAxp2101;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
 use esp_hal::{i2c::master::Config as I2cConfig, time::Rate};
+use log::info;
 use static_cell::StaticCell;
 
 use crate::async_i2c_bus::AsyncI2cDevice;
@@ -36,8 +37,6 @@ pub async fn init_i2c_hardware(
     AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
     AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
 ) {
-    use rtt_target::rprintln;
-
     // Create shared I2C bus
     static I2C0_BUS: StaticCell<
         AsyncMutex<CriticalSectionRawMutex, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
@@ -51,12 +50,12 @@ pub async fn init_i2c_hardware(
     let i2c_for_sensors = AsyncI2cDevice::new(i2c0_bus);
 
     // Initialize power management
-    rprintln!("Configuring power management...");
+    info!("Configuring power management");
     let mut power_mgmt_chip = AsyncAxp2101::new(i2c_for_axp);
 
     match power_mgmt_chip.init().await {
-        Ok(_) => rprintln!("Power management ready"),
-        Err(e) => rprintln!("Power init failed: {:?}", e),
+        Ok(_) => info!("Power management ready"),
+        Err(e) => info!("Power init failed: {:?}", e),
     }
 
     power_mgmt_chip
@@ -77,7 +76,7 @@ pub async fn init_i2c_hardware(
     power_mgmt_chip.set_aldo4_voltage(3300).await.unwrap();
 
     // Initialize GPIO expander
-    rprintln!("Configuring GPIO expander...");
+    info!("Configuring GPIO expander...");
     let mut gpio_expander = aw9523_embedded::r#async::Aw9523Async::new(i2c_for_aw, 0x58);
     gpio_expander.init().await.unwrap();
 
@@ -88,7 +87,7 @@ pub async fn init_i2c_hardware(
         .unwrap();
     gpio_expander.enable_interrupt(10, true).await.unwrap();
 
-    rprintln!("GPIO expander ready (P1_2 configured for touch interrupt)");
+    info!("GPIO expander ready (P1_2 configured for touch interrupt)");
 
     let hardware = I2cHardware {
         power_mgmt: power_mgmt_chip,

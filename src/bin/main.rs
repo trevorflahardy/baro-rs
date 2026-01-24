@@ -36,6 +36,7 @@ use heapless::String;
 use static_cell::StaticCell;
 
 use rtt_target::rprintln;
+use log::info;
 
 use baro_rs::{
     dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
@@ -254,6 +255,11 @@ impl embedded_sdmmc::TimeSource for SimpleTimeSource {
 async fn main(spawner: Spawner) -> ! {
     // === Core System Init ===
     rtt_target::rtt_init_print!();
+    
+    // Initialize logger with Info level
+    esp_println::logger::init_logger(log::LevelFilter::Debug);
+    info!("Logger initialized");
+    
     let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(hal_config);
 
@@ -593,12 +599,6 @@ async fn touch_polling_task(
                             x: point.x,
                             y: point.y,
                         };
-                        rprintln!(
-                            "Touch detected at ({}, {}): {:?}",
-                            touch_point.x,
-                            touch_point.y,
-                            point.status
-                        );
 
                         // TODO: Handle Release events properly
                         // For now, always send a Press event
