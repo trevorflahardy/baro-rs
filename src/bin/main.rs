@@ -534,7 +534,7 @@ async fn background_sensor_reading_task(
         }
 
         timestamp = timestamp.wrapping_add(10);
-        Timer::after(Duration::from_secs(40)).await;
+        Timer::after(Duration::from_secs(10)).await;
     }
 }
 
