@@ -1,14 +1,14 @@
 // src/ui/components/text.rs
 //! Text component for displaying text with styling
 
-use crate::ui::core::{Drawable, DirtyRegion};
+use crate::ui::core::{DirtyRegion, Drawable};
 use crate::ui::styling::Style;
-use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoFont, MonoTextStyle};
+use embedded_graphics::Drawable as EgDrawable;
+use embedded_graphics::mono_font::{MonoFont, MonoTextStyle, ascii::FONT_6X10};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::text::{Alignment, Text as EgText};
-use embedded_graphics::Drawable as EgDrawable;
 
 /// Text size variants
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -88,7 +88,8 @@ impl TextComponent {
                 self.bounds.top_left.y + self.style.padding.top as i32,
             ),
             Alignment::Right => Point::new(
-                self.bounds.top_left.x + self.bounds.size.width as i32 - self.style.padding.right as i32,
+                self.bounds.top_left.x + self.bounds.size.width as i32
+                    - self.style.padding.right as i32,
                 self.bounds.top_left.y + self.style.padding.top as i32,
             ),
         }
@@ -110,8 +111,7 @@ impl Drawable for TextComponent {
 
         let position = self.text_position();
 
-        EgText::with_alignment(&self.text, position, text_style, self.alignment)
-            .draw(display)?;
+        EgText::with_alignment(&self.text, position, text_style, self.alignment).draw(display)?;
 
         Ok(())
     }
@@ -180,7 +180,8 @@ impl MultiLineText {
         self.lines.clear();
 
         // Simple line breaking by newlines and character limit
-        let max_chars = (self.bounds.size.width / (self.size.font().character_size.width + 1)) as usize;
+        let max_chars =
+            (self.bounds.size.width / (self.size.font().character_size.width + 1)) as usize;
 
         for line in text.split('\n') {
             if line.len() <= max_chars {
@@ -191,7 +192,7 @@ impl MultiLineText {
                 // Simple word wrapping
                 let mut current_line = heapless::String::<64>::new();
                 for word in line.split_whitespace() {
-                    if current_line.len() + word.len() + 1 <= max_chars {
+                    if current_line.len() + word.len() < max_chars {
                         if !current_line.is_empty() {
                             current_line.push(' ').ok();
                         }

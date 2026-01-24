@@ -13,10 +13,13 @@ use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 
-use crate::pages::page_manager::Page;
 use crate::pages::home::HomePage;
+use crate::pages::page_manager::Page;
 use crate::storage::accumulator::RollupEvent;
 use crate::ui::{Action, Drawable, PageId, TouchEvent};
+
+extern crate alloc;
+use alloc::boxed::Box;
 
 const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 240;
@@ -25,7 +28,7 @@ const DISPLAY_HEIGHT: u16 = 240;
 const PAGE_CHANGE_CAPACITY: usize = 4;
 
 /// Request to change the current page or update the display
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum DisplayRequest {
     /// Navigate to a specific page
     NavigateToPage(PageId),
@@ -34,7 +37,7 @@ pub enum DisplayRequest {
     /// Handle a touch event on the current page
     HandleTouch(TouchEvent),
     /// Update the display with new rollup data
-    UpdateData(RollupEvent),
+    UpdateData(Box<RollupEvent>),
 }
 
 /// Global channel for display requests
@@ -110,7 +113,7 @@ where
     }
 
     /// Update the current page with new data
-    fn update_data(&mut self, _event: RollupEvent) {
+    fn update_data(&mut self, _event: Box<RollupEvent>) {
         // For now, just mark as needing redraw
         // Future: pass event to page for data updates
         self.needs_redraw = true;

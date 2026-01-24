@@ -8,6 +8,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use alloc::boxed::Box;
 use baro_rs::app_state::{
     AppError, AppRunState, AppState, FromUnchecked, GlobalStateType, ROLLUP_CHANNEL, SensorsState,
     create_i2c_bus, init_i2c_hardware, init_spi_hardware,
@@ -563,7 +564,7 @@ async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateTy
 
         // Also send to display for updates
         let display_sender = baro_rs::display_manager::get_display_sender();
-        let _ = display_sender.try_send(DisplayRequest::UpdateData(event));
+        let _ = display_sender.try_send(DisplayRequest::UpdateData(Box::new(event)));
     }
 }
 

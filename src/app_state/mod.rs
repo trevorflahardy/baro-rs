@@ -15,7 +15,7 @@ use thiserror_no_std::Error;
 
 use crate::storage::{
     accumulator::{
-        RollupAccumulator, RollupEvent, EVENT_CHANNEL_CAPACITY, EVENT_PUBLISHERS, EVENT_SUBSCRIBERS,
+        EVENT_CHANNEL_CAPACITY, EVENT_PUBLISHERS, EVENT_SUBSCRIBERS, RollupAccumulator, RollupEvent,
     },
     manager::StorageManager,
 };
@@ -56,6 +56,17 @@ where
     pub wifi_connected: bool,
     pub accumulator: Option<RollupAccumulator<'a>>,
     pub storage_manager: Option<StorageManager<S, D, T>>,
+}
+
+impl<'a, S, D, T> Default for AppState<'a, S, D, T>
+where
+    S: embedded_hal::spi::SpiDevice<u8>,
+    D: embedded_hal::delay::DelayNs,
+    T: embedded_sdmmc::TimeSource,
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a, S, D, T> AppState<'a, S, D, T>

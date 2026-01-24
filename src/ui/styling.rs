@@ -265,20 +265,11 @@ impl ButtonVariant {
 }
 
 /// Global theme configuration
+#[derive(Default)]
 pub struct Theme {
     pub palette: ColorPalette,
     pub spacing: Spacing,
     pub border_radius: BorderRadius,
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self {
-            palette: ColorPalette::default(),
-            spacing: Spacing::default(),
-            border_radius: BorderRadius::default(),
-        }
-    }
 }
 
 impl Theme {
