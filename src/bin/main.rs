@@ -119,6 +119,8 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
     // Wait for network to be configured
     stack.wait_config_up().await;
 
+    rprintln!("Network configured, starting NTP time sync");
+
     // NTP server: pool.ntp.org
     let ntp_server = IpEndpoint::new(IpAddress::v4(162, 159, 200, 1), 123);
     let local_port = 12345;
@@ -142,16 +144,22 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
     let mut ntp_packet = [0u8; 48];
     ntp_packet[0] = 0x1B;
 
+    rprintln!("Sending NTP request to {}", ntp_server);
+
     socket
         .send_to(&ntp_packet, ntp_server)
         .await
         .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP send failed")))?;
+
+    rprintln!("NTP request sent, waiting for response...");
 
     let mut recv_buf = [0u8; 64];
     let (len, _endpoint) = socket
         .recv_from(&mut recv_buf)
         .await
         .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP recv failed")))?;
+
+    rprintln!("NTP response received ({} bytes)", len);
 
     if len < 48 {
         return Err(AppError::TimeSync(String::from_unchecked(
@@ -207,6 +215,7 @@ async fn main(spawner: Spawner) -> ! {
     let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(hal_config);
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
+    // esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timer_group.timer0);
@@ -249,7 +258,17 @@ async fn main(spawner: Spawner) -> ! {
     static STACK: StaticCell<embassy_net::Stack<'static>> = StaticCell::new();
     let stack_ref = STACK.init(stack);
 
+    // This task will call runner.run() to drive the network stack
     spawner.spawn(task_wifi_runner(runner)).unwrap();
+
+    loop {
+        if stack_ref.is_link_up() {
+            break;
+        }
+
+        rprintln!("Waiting for network link...");
+        Timer::after(Duration::from_secs(1)).await;
+    }
 
     // === Time Synchronization ===
     let mut time_known = false;
@@ -416,7 +435,7 @@ async fn main(spawner: Spawner) -> ! {
 #[embassy_executor::task]
 async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) {
     rprintln!("WiFi runner task started");
-    runner.run().await;
+    runner.run().await
 }
 
 /// Background task for reading sensors and publishing rollup events
