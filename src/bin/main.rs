@@ -8,40 +8,40 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use baro_rs::app_state::{AppError, AppRunState, AppState, FromUnchecked, GlobalStateType};
+use baro_rs::app_state::{
+    AppError, AppRunState, AppState, FromUnchecked, GlobalStateType, ROLLUP_CHANNEL, SensorsState,
+    create_i2c_bus, init_i2c_hardware,
+};
+use baro_rs::display_manager::{DisplayManager, DisplayRequest, get_display_receiver};
+use baro_rs::storage::{
+    MAX_SENSORS, accumulator::RollupEvent, manager::StorageManager, sd_card::SdCardManager,
+};
 use core::cell::RefCell;
 use critical_section::Mutex as CsMutex;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
-use embassy_net::{Config as EmbassyNetConfig, Runner, StackResources};
+use embassy_net::{Config as EmbassyNetConfig, IpListenEndpoint, Runner, StackResources};
 use embassy_net::{IpAddress, IpEndpoint, Ipv4Address};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
-use esp_radio::Controller;
-use heapless::String;
-// AppState, AppRunState, AppError, GlobalStateType are now in app_state.rs
 use embassy_time::{Duration, Timer};
 use embedded_sdmmc::SdCard;
 use esp_hal::{
     clock::CpuClock,
     gpio::{Level, Output, OutputConfig},
-    i2c::master::Config as I2cConfig,
     spi::master::{Config as SpiConfig, Spi},
     time::Rate,
     timer::timg::TimerGroup,
 };
+use esp_radio::Controller;
 use esp_radio::wifi::{ClientConfig, WifiDevice};
+use heapless::String;
 use static_cell::StaticCell;
 
 use rtt_target::rprintln;
 
-use aw9523_embedded::r#async::Aw9523Async;
-use axp2101_embedded::AsyncAxp2101;
 use baro_rs::{
-    async_i2c_bus::AsyncI2cDevice,
     dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
-    sensors::{SHT40Indexed, SHT40Sensor},
-    storage::MAX_SENSORS,
     wifi_secrets,
 };
 use embedded_hal_bus::spi::CriticalSectionDevice as SpiCriticalSectionDevice;
@@ -72,11 +72,17 @@ extern crate alloc;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-async fn udp_time_sync(
-    stack: embassy_sync::mutex::Mutex<CriticalSectionRawMutex, embassy_net::Stack<'static>>,
-) -> Result<(), AppError> {
-    // NTP server: pool.ntp.org (hardcoded IPv4 for demo, should resolve DNS in production)
-    let ntp_server = IpEndpoint::new(IpAddress::v4(162, 159, 200, 1), 123); // pool.ntp.org
+/// Synchronize time with an NTP server using UDP
+///
+/// This function sends an NTP request and parses the response to get the current
+/// Unix timestamp. The time can then be used to set the system clock for accurate
+/// timestamping of sensor data and rollups.
+async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppError> {
+    // Wait for network to be configured
+    stack.wait_config_up().await;
+
+    // NTP server: pool.ntp.org
+    let ntp_server = IpEndpoint::new(IpAddress::v4(162, 159, 200, 1), 123);
     let local_port = 12345;
 
     // UDP socket buffers
@@ -85,30 +91,16 @@ async fn udp_time_sync(
     let mut tx_meta: [PacketMetadata; 4] = [PacketMetadata::EMPTY; 4];
     let mut tx_buf: [u8; 128] = [0; 128];
 
-    // Safety: single-threaded init
-    let stack_ref = stack.lock().await;
-    let mut socket = UdpSocket::new(
-        *stack_ref,
-        &mut rx_meta,
-        &mut rx_buf,
-        &mut tx_meta,
-        &mut tx_buf,
-    );
-    socket
-        .bind(IpEndpoint::new(
-            IpAddress::Ipv4(Ipv4Address::UNSPECIFIED),
-            local_port,
-        ))
-        .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP bind failed")))?;
+    let mut socket = UdpSocket::new(*stack, &mut rx_meta, &mut rx_buf, &mut tx_meta, &mut tx_buf);
 
-    // NTP request packet (48 bytes, first byte 0x1B)
     socket
-        .bind(embassy_net::IpListenEndpoint {
+        .bind(IpListenEndpoint {
             addr: Some(IpAddress::v4(0, 0, 0, 0)),
             port: local_port,
         })
         .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP bind failed")))?;
 
+    // NTP request packet (48 bytes, first byte 0x1B)
     let mut ntp_packet = [0u8; 48];
     ntp_packet[0] = 0x1B;
 
@@ -118,7 +110,7 @@ async fn udp_time_sync(
         .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP send failed")))?;
 
     let mut recv_buf = [0u8; 64];
-    let (len, _meta) = socket
+    let (len, _endpoint) = socket
         .recv_from(&mut recv_buf)
         .await
         .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP recv failed")))?;
@@ -135,8 +127,38 @@ async fn udp_time_sync(
     let unix_time = secs.wrapping_sub(2_208_988_800);
     rprintln!("NTP time: {} (unix)", unix_time);
 
-    // TODO: Set system time here if possible
-    Ok(())
+    Ok(unix_time)
+}
+
+/// Simple time source for embedded-sdmmc that uses a counter
+/// In production, this should use the actual RTC or system time from NTP
+struct SimpleTimeSource {
+    counter: core::cell::RefCell<u32>,
+}
+
+impl SimpleTimeSource {
+    fn new() -> Self {
+        Self {
+            counter: core::cell::RefCell::new(0),
+        }
+    }
+}
+
+impl embedded_sdmmc::TimeSource for SimpleTimeSource {
+    fn get_timestamp(&self) -> embedded_sdmmc::Timestamp {
+        let count = *self.counter.borrow();
+        *self.counter.borrow_mut() = count.wrapping_add(1);
+
+        // Return a default timestamp (2024-01-01 00:00:00)
+        embedded_sdmmc::Timestamp {
+            year_since_1970: 54,
+            zero_indexed_month: 0,
+            zero_indexed_day: 0,
+            hours: 0,
+            minutes: 0,
+            seconds: 0,
+        }
+    }
 }
 
 #[allow(clippy::large_stack_frames)]
@@ -153,8 +175,6 @@ async fn main(spawner: Spawner) -> ! {
     rprintln!("Core system initialized");
 
     // === Radio Init ===
-    rprintln!("Configuring SVC...");
-
     rprintln!("Configuring radio...");
     let radio_init = RADIO_INIT.init(esp_radio::init().expect("Radio init failed"));
     let (mut wifi, interfaces) =
@@ -173,91 +193,49 @@ async fn main(spawner: Spawner) -> ! {
     wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config))
         .unwrap();
     wifi.start_async().await.unwrap();
-    wifi.connect_async().await.unwrap();
 
-    rprintln!("WiFi connected");
+    let wifi_result = wifi.connect_async().await;
+    let wifi_connected = wifi_result.is_ok();
 
-    rprintln!("Initializing SNTP...");
+    if wifi_connected {
+        rprintln!("WiFi connected");
+    } else {
+        rprintln!("WiFi connection failed: {:?}", wifi_result.err());
+    }
+
+    // === Network Stack Setup ===
     let resources = NET_RESOURCES.init(StackResources::new());
     let net_config = EmbassyNetConfig::dhcpv4(Default::default());
-    let (stack_inner, runner) = embassy_net::new(interfaces.sta, net_config, resources, 1024);
+    let (stack, runner) = embassy_net::new(interfaces.sta, net_config, resources, 1024);
+
+    static STACK: StaticCell<embassy_net::Stack<'static>> = StaticCell::new();
+    let stack_ref = STACK.init(stack);
+
     spawner.spawn(task_wifi_runner(runner)).unwrap();
 
-    let stack =
-        embassy_sync::mutex::Mutex::<CriticalSectionRawMutex, embassy_net::Stack>::new(stack_inner);
-
-    // Perform UDP time sync (NTP/SNTP)
-    if let Err(e) = udp_time_sync(stack).await {
-        rprintln!("Time sync failed: {:?}", e);
-    } else {
-        rprintln!("Time sync successful");
+    // === Time Synchronization ===
+    let mut time_known = false;
+    if wifi_connected {
+        rprintln!("Performing time sync...");
+        match udp_time_sync(stack_ref).await {
+            Ok(timestamp) => {
+                rprintln!("Time sync successful: {}", timestamp);
+                time_known = true;
+            }
+            Err(e) => {
+                rprintln!("Time sync failed: {:?}", e);
+            }
+        }
     }
 
-    // === Power Management ===
-    // AXP2101 powers the display and other peripherals
-    rprintln!("Configuring power management...");
-    let i2c0 = esp_hal::i2c::master::I2c::new(
-        peripherals.I2C0,
-        I2cConfig::default().with_frequency(Rate::from_khz(400)),
-    )
-    .unwrap()
-    .with_sda(peripherals.GPIO12)
-    .with_scl(peripherals.GPIO11)
-    .into_async();
+    // === Hardware Initialization (in correct order) ===
 
-    static I2C0_BUS: StaticCell<
-        AsyncMutex<CriticalSectionRawMutex, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-    > = StaticCell::new();
-    let i2c0_bus = I2C0_BUS.init(AsyncMutex::new(i2c0));
+    // 1. I2C and power management (CRITICAL - must be first)
+    let i2c0 = create_i2c_bus(peripherals.I2C0, peripherals.GPIO12, peripherals.GPIO11);
+    let (_i2c_hardware, i2c_for_touch, i2c_for_sensors) = init_i2c_hardware(i2c0).await;
 
-    let i2c_for_axp = AsyncI2cDevice::new(i2c0_bus);
-    let i2c_for_aw = AsyncI2cDevice::new(i2c0_bus);
-    let i2c_for_touch = AsyncI2cDevice::new(i2c0_bus);
-    let i2c_for_sht4x = AsyncI2cDevice::new(i2c0_bus);
-
-    let mut power_mgmt_chip = AsyncAxp2101::new(i2c_for_axp);
-
-    match power_mgmt_chip.init().await {
-        Ok(_) => rprintln!("Power management ready"),
-        Err(e) => rprintln!("Power init failed: {:?}", e),
-    }
-
-    power_mgmt_chip
-        .set_charging_led_mode(axp2101_embedded::ChargeLedMode::On)
-        .await
-        .unwrap();
-
-    // 0xBF = 0b10111111
-    // Enable all ALDO and BLDO and DLDO except for
-    // CPUSLDO
-    power_mgmt_chip.enable_aldo1().await.unwrap();
-    power_mgmt_chip.enable_aldo2().await.unwrap();
-    power_mgmt_chip.enable_aldo3().await.unwrap();
-    power_mgmt_chip.enable_aldo4().await.unwrap();
-    power_mgmt_chip.enable_bldo1().await.unwrap();
-    power_mgmt_chip.enable_bldo2().await.unwrap();
-    power_mgmt_chip.enable_dldo1().await.unwrap();
-
-    // aldo 4 voltage to 3.3V for display
-    power_mgmt_chip.set_aldo4_voltage(3300).await.unwrap();
-
-    // === GPIO Expander ===
-    rprintln!("Configuring GPIO expander...");
-    let mut gpio_expander = Aw9523Async::new(i2c_for_aw, 0x58);
-    gpio_expander.init().await.unwrap();
-
-    // Configure P1_2 (pin 10) as input for touch interrupt from FT6336U
-    gpio_expander
-        .pin_mode(10, aw9523_embedded::PinMode::Input)
-        .await
-        .unwrap();
-    // Enable interrupt detection on P1_2 so it triggers the AW9523B's INTN pin
-    gpio_expander.enable_interrupt(10, true).await.unwrap();
-
-    rprintln!("GPIO expander ready (P1_2 configured for touch interrupt)");
-
-    // === Initialize the SPI devices (display and SD card) ===
-    rprintln!("Configuring display...");
+    // 2. SPI devices (display and SD card)
+    rprintln!("Configuring SPI devices...");
     let spi_bus_inner = Spi::new(
         peripherals.SPI2,
         SpiConfig::default()
@@ -330,7 +308,7 @@ async fn main(spawner: Spawner) -> ! {
     let g_mode = touch_interface.read_g_mode().await.unwrap();
 
     rprintln!(
-        "Touch controller ready (library version: 0x{:04X}, chip ID: 0x{:02X}, g_mode: 0x{:02X} [Polling])",
+        "Touch controller ready (library: 0x{:04X}, chip: 0x{:02X}, mode: 0x{:02X})",
         library_version,
         chip_id,
         g_mode
@@ -338,79 +316,183 @@ async fn main(spawner: Spawner) -> ! {
 
     rprintln!("=== Hardware initialization complete ===\n");
 
-    // === Spawn Touch Polling Task ===
-    rprintln!("Starting touch polling task...");
-    spawner.spawn(touch_polling_task(touch_interface)).ok();
-    spawner
-        .spawn(background_sensor_reading_task(i2c_for_sht4x))
-        .ok();
+    // === Application State Setup ===
+    let time_source = SimpleTimeSource::new();
+    let sd_card_manager = SdCardManager::new(sd_card, time_source);
+    let storage_manager = StorageManager::new(sd_card_manager);
 
-    use embedded_graphics::prelude::RgbColor;
+    static APP_STATE = StaticCell::new();
+    let mut app_state = AppState::new();
+    app_state.wifi_connected = wifi_connected;
+    app_state.time_known = time_known;
+    app_state.run_state = if wifi_connected {
+        AppRunState::WifiConnected
+    } else {
+        AppRunState::Error
+    };
+    app_state.init_accumulator();
+    app_state.set_storage_manager(storage_manager);
+
+    let app_state_ref = APP_STATE.init(AsyncMutex::new(app_state));
+
+    // === Spawn Background Tasks ===
+
+    // Only start sensor tasks if WiFi connected successfully
+    if wifi_connected && sd_card_size > 0 {
+        rprintln!("Starting sensor and storage tasks...");
+
+        // Create sensors state
+        let sensors = SensorsState::new(i2c_for_sensors);
+        spawner
+            .spawn(background_sensor_reading_task(sensors, app_state_ref))
+            .ok();
+
+        // Start storage event processing task
+        spawner
+            .spawn(storage_event_processing_task(app_state_ref))
+            .ok();
+
+        rprintln!("Sensor and storage tasks started");
+    } else {
+        rprintln!("Skipping sensor tasks - WiFi not connected or SD card unavailable");
+    }
+
+    // Start touch polling task
+    spawner.spawn(touch_polling_task(touch_interface)).ok();
+
+    // Start display manager task
+    let display_manager = DisplayManager::new(display);
+    spawner.spawn(display_manager_task(display_manager)).ok();
+
+    rprintln!("All tasks spawned\n");
 
     // === Main Loop ===
     rprintln!("Main loop running...\n");
     loop {
-        // Draw black to the display to show it's alive and not have the display
-        // render weird. Of course, we'll be changing this later.
-        display
-            .set_pixels(
-                0,
-                0,
-                DISPLAY_WIDTH,
-                DISPLAY_HEIGHT,
-                [embedded_graphics::pixelcolor::Rgb565::BLACK;
-                    (DISPLAY_HEIGHT as usize * DISPLAY_WIDTH as usize)],
-            )
-            .unwrap();
-
         Timer::after(Duration::from_secs(10)).await;
     }
 }
 
 #[embassy_executor::task]
-async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) -> () {
+async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) {
     rprintln!("WiFi runner task started");
     runner.run().await;
 }
 
+/// Background task for reading sensors and publishing rollup events
+///
+/// This task:
+/// 1. Reads all sensors every 10 seconds
+/// 2. Creates a RawSample with the current timestamp
+/// 3. Dispatches the sample to the accumulator via the app state
 #[embassy_executor::task]
 async fn background_sensor_reading_task(
-    sht4x_i2c: AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-) {
+    mut sensors: SensorsState<'static>,
+    app_state: &'static GlobalStateType<
+        'static,
+        impl embedded_hal::spi::SpiDevice<u8>,
+        impl embedded_hal::delay::DelayNs,
+        impl embedded_sdmmc::TimeSource,
+    >,
+)
+{
     rprintln!("Sensor reading task started");
 
-    let mut _sht4x_sensor = SHT40Indexed::from(SHT40Sensor::new(sht4x_i2c));
-
-    let mut _values = [0i32; MAX_SENSORS];
+    let mut timestamp: u32 = 0;
 
     loop {
-        // ... TODO: On each iteration, read all sensors into the values array and then
-        // process/store the data as needed ...
-        Timer::after(Duration::from_millis(10)).await;
+        let mut values = [0i32; MAX_SENSORS];
+
+        // Read all sensors
+        sensors.read_all(&mut values).await;
+
+        // Add sample to accumulator via app state
+        {
+            let mut state = app_state.lock().await;
+            if let Some(accumulator) = state.accumulator_mut() {
+                accumulator.add_sample(timestamp, &values).await;
+            }
+        }
+
+        timestamp = timestamp.wrapping_add(10);
+        Timer::after(Duration::from_secs(10)).await;
+    }
+}
+
+/// Background task for processing rollup events and storing them
+///
+/// This task:
+/// 1. Subscribes to the rollup event channel
+/// 2. Receives events from the accumulator
+/// 3. Passes events to the storage manager for persistence
+#[embassy_executor::task]
+async fn storage_event_processing_task(
+    app_state: &'static GlobalStateType<
+        'static,
+        impl embedded_hal::spi::SpiDevice<u8>,
+        impl embedded_hal::delay::DelayNs,
+        impl embedded_sdmmc::TimeSource,
+    >,
+) {
+    rprintln!("Storage event processing task started");
+
+    // Subscribe to rollup events
+    let mut subscriber = ROLLUP_CHANNEL.subscriber().unwrap();
+
+    loop {
+        // Wait for next rollup event
+        let event = subscriber.next_message_pure().await;
+
+        // Process event through storage manager
+        {
+            let mut state = app_state.lock().await;
+            if let Some(storage) = state.storage_manager_mut() {
+                storage.process_event(event).await;
+            }
+        }
+
+        // Also send to display for updates
+        let display_sender = baro_rs::display_manager::get_display_sender();
+        let _ = display_sender.try_send(DisplayRequest::UpdateData(event));
     }
 }
 
 /// Async task for polling touch input
 #[embassy_executor::task]
 async fn touch_polling_task(
-    mut touch: FT6336U<AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>>,
+    mut touch: FT6336U<
+        baro_rs::async_i2c_bus::AsyncI2cDevice<
+            'static,
+            esp_hal::i2c::master::I2c<'static, esp_hal::Async>,
+        >,
+    >,
 ) {
     rprintln!("Touch polling task started");
 
     loop {
-        // Poll the touch controller
         match touch.scan().await {
             Ok(touch_data) => {
                 if touch_data.touch_count > 0 {
                     for i in 0..touch_data.touch_count as usize {
                         let point = &touch_data.points[i];
-                        rprintln!(
-                            "🖐️ Touch {}: x={}, y={} (status: {:?})",
-                            i,
-                            point.x,
-                            point.y,
-                            point.status
-                        );
+
+                        // Convert touch to our TouchEvent and send to display
+                        let touch_point = baro_rs::ui_core::TouchPoint {
+                            x: point.x,
+                            y: point.y,
+                        };
+
+                        let event = match point.status {
+                            ft6336u_driver::TouchStatus::Contact => {
+                                baro_rs::ui_core::TouchEvent::Press(touch_point)
+                            }
+                            ft6336u_driver::TouchStatus::Lift => {
+                                baro_rs::ui_core::TouchEvent::Release(touch_point)
+                            }
+                        };
+
+                        let display_sender = baro_rs::display_manager::get_display_sender();
+                        let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));
                     }
                 }
             }
@@ -419,6 +501,17 @@ async fn touch_polling_task(
             }
         }
 
-        Timer::after(Duration::from_millis(10)).await;
+        Timer::after(Duration::from_millis(50)).await;
     }
+}
+
+/// Display manager task for rendering pages
+#[embassy_executor::task]
+async fn display_manager_task(
+    mut display_manager: DisplayManager<
+        impl embedded_graphics::prelude::DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>,
+    >,
+) {
+    let receiver = get_display_receiver();
+    display_manager.run(receiver).await;
 }

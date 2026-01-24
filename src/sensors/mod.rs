@@ -1,8 +1,11 @@
 mod sht40;
 
-use super::storage::MAX_SENSORS;
-use core::marker::PhantomData;
+pub use sht40::*;
 
+use super::storage::MAX_SENSORS;
+use core::{future::Future, marker::PhantomData};
+
+#[derive(Debug)]
 pub enum SensorError {
     UnknownError,
     ReadError,
@@ -99,6 +102,9 @@ pub mod indices {
     pub const TEMPERATURE: usize = 0;
     pub const HUMIDITY: usize = 1;
 }
+
+// Re-export for convenience
+pub use indices::SHT40Indexed;
 
 pub use indices::*;
 pub use sht40::SHT40Sensor;

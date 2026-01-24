@@ -1,5 +1,5 @@
-mod rollup_storage;
-mod sd_card;
+pub mod rollup_storage;
+pub mod sd_card;
 
 pub mod accumulator;
 pub mod manager;

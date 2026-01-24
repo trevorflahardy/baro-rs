@@ -5,6 +5,7 @@ extern crate alloc;
 pub mod app_state;
 pub mod async_i2c_bus;
 pub mod config;
+pub mod display_manager;
 pub mod dual_mode_pin;
 pub mod page_manager;
 pub mod pages;

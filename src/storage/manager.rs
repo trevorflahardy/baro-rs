@@ -1,4 +1,5 @@
-use crate::storage::sd_card::SdCardManager;
+// cSpell: disable
+use crate::storage::sd_card::{ROLLUP_FILE_1H, ROLLUP_FILE_5M, ROLLUP_FILE_DAILY, SdCardManager};
 
 use super::{LifetimeStats, RawSample, Rollup, accumulator::RollupEvent};
 
@@ -41,7 +42,7 @@ where
     D: embedded_hal::delay::DelayNs,
     T: embedded_sdmmc::TimeSource,
 {
-    fn new(sd_card_manager: SdCardManager<S, D, T>) -> Self {
+    pub fn new(sd_card_manager: SdCardManager<S, D, T>) -> Self {
         Self {
             raw_samples: heapless::Deque::new(),
             rollups_5m: heapless::Deque::new(),
@@ -52,7 +53,7 @@ where
         }
     }
 
-    fn init(&mut self) -> () {
+    pub fn init(&mut self) {
         // Load lifetime stats and propagate to ring buffers.
     }
 
@@ -76,7 +77,13 @@ where
                     let _ = self.rollups_5m.push_back(rollup);
                 }
 
-                // TODO: Append to rollup_5m.bin on SD card
+                // Append to rollup_5m.bin on SD card
+                if let Err(e) = self
+                    .sd_card_manager
+                    .append_rollup_data(ROLLUP_FILE_5M, &rollup)
+                {
+                    rtt_target::rprintln!("Failed to write 5m rollup to SD: {:?}", e);
+                }
             }
             RollupEvent::Rollup1h(rollup) => {
                 if self.rollups_1h.push_back(rollup).is_err() {
@@ -84,7 +91,13 @@ where
                     let _ = self.rollups_1h.push_back(rollup);
                 }
 
-                // TODO: Append to rollup_1h.bin on SD card
+                // Append to rollup_1h.bin on SD card
+                if let Err(e) = self
+                    .sd_card_manager
+                    .append_rollup_data(ROLLUP_FILE_1H, &rollup)
+                {
+                    rtt_target::rprintln!("Failed to write 1h rollup to SD: {:?}", e);
+                }
             }
             RollupEvent::RollupDaily(rollup) => {
                 if self.rollups_daily.push_back(rollup).is_err() {
@@ -92,7 +105,13 @@ where
                     let _ = self.rollups_daily.push_back(rollup);
                 }
 
-                // TODO: Append to rollup_daily.bin on SD card
+                // Append to rollup_daily.bin on SD card
+                if let Err(e) = self
+                    .sd_card_manager
+                    .append_rollup_data(ROLLUP_FILE_DAILY, &rollup)
+                {
+                    rtt_target::rprintln!("Failed to write daily rollup to SD: {:?}", e);
+                }
             }
         }
     }

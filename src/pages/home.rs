@@ -1,5 +1,3 @@
-// Example HomePage using embedded-layout
-
 use embedded_graphics::prelude::*;
 use embedded_graphics::{
     mono_font::{MonoTextStyle, ascii::FONT_10X20},
@@ -18,14 +16,14 @@ use crate::{
 
 pub struct HomePage {
     buttons: Vec<Button, 6>,
-    dirty: bool,
+    _dirty: bool,
 }
 
 impl HomePage {
     pub fn new() -> Self {
         Self {
             buttons: Vec::new(),
-            dirty: true,
+            _dirty: true,
         }
     }
 
@@ -100,11 +98,11 @@ impl Drawable for HomePage {
     }
 
     fn is_dirty(&self) -> bool {
-        self.dirty || self.buttons.iter().any(|b| b.is_dirty())
+        self._dirty || self.buttons.iter().any(|b| b.is_dirty())
     }
 
     fn mark_clean(&mut self) {
-        self.dirty = false;
+        self._dirty = false;
         for button in &mut self.buttons {
             button.mark_clean();
         }
