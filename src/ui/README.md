@@ -398,7 +398,6 @@ if let Some(action) = page_manager.handle_touch(touch_event) {
 let sensor_data = SensorData {
     temperature: Some(23.5),
     humidity: Some(45.0),
-    pressure: None,
     timestamp: 12345,
 };
 let needs_redraw = page_manager.dispatch_event(&PageEvent::SensorUpdate(sensor_data));

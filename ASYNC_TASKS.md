@@ -159,7 +159,6 @@ async fn use_display() {
 struct SensorReading {
     timestamp: u32,
     temperature: i32,
-    pressure: i32,
     humidity: i32,
 }
 
@@ -173,7 +172,6 @@ async fn sensor_task() {
         let reading = SensorReading {
             timestamp: get_timestamp(),
             temperature: read_temp_sensor(),
-            pressure: read_pressure_sensor(),
             humidity: read_humidity_sensor(),
         };
 

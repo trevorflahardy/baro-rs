@@ -26,7 +26,6 @@ pub struct SettingsPage {
     // Sensor data displays
     temperature_text: TextComponent,
     humidity_text: TextComponent,
-    pressure_text: TextComponent,
     // Live log feed
     log_entries: Vec<LogEntry, 20>,
     log_display: MultiLineText,
@@ -35,7 +34,6 @@ pub struct SettingsPage {
     // Current sensor values
     last_temperature: Option<f32>,
     last_humidity: Option<f32>,
-    last_pressure: Option<f32>,
     dirty: bool,
 }
 
@@ -53,12 +51,6 @@ impl SettingsPage {
         let humidity_text = TextComponent::new(
             Rectangle::new(Point::new(20, 80), Size::new(280, 20)),
             "Humidity: --",
-            TextSize::Medium,
-        );
-
-        let pressure_text = TextComponent::new(
-            Rectangle::new(Point::new(20, 110), Size::new(280, 20)),
-            "Pressure: --",
             TextSize::Medium,
         );
 
@@ -85,13 +77,11 @@ impl SettingsPage {
             bounds,
             temperature_text,
             humidity_text,
-            pressure_text,
             log_entries: Vec::new(),
             log_display,
             back_button,
             last_temperature: None,
             last_humidity: None,
-            last_pressure: None,
             dirty: true,
         }
     }
@@ -111,14 +101,6 @@ impl SettingsPage {
             use core::fmt::Write;
             write!(&mut text, "Humidity: {:.1}%", hum).ok();
             self.humidity_text.set_text(&text);
-        }
-
-        // Update pressure display
-        if let Some(press) = self.last_pressure {
-            let mut text = HeaplessString::<64>::new();
-            use core::fmt::Write;
-            write!(&mut text, "Pressure: {:.1} hPa", press).ok();
-            self.pressure_text.set_text(&text);
         }
     }
 
@@ -196,9 +178,6 @@ impl Page for SettingsPage {
                 if let Some(hum) = data.humidity {
                     self.last_humidity = Some(hum);
                 }
-                if let Some(press) = data.pressure {
-                    self.last_pressure = Some(press);
-                }
 
                 self.update_sensor_displays();
 
@@ -209,8 +188,6 @@ impl Page for SettingsPage {
                     write!(&mut log_msg, "[Sensor] T:{:.1}C", temp).ok();
                 } else if let Some(hum) = data.humidity {
                     write!(&mut log_msg, "[Sensor] H:{:.1}%", hum).ok();
-                } else if let Some(press) = data.pressure {
-                    write!(&mut log_msg, "[Sensor] P:{:.1}hPa", press).ok();
                 }
                 self.add_log_entry(&log_msg, data.timestamp);
 
@@ -292,7 +269,6 @@ impl Drawable for SettingsPage {
         // Draw sensor data
         self.temperature_text.draw(display)?;
         self.humidity_text.draw(display)?;
-        self.pressure_text.draw(display)?;
 
         // Draw log section
         let log_header_bounds = Rectangle::new(Point::new(10, 135), Size::new(300, 10));
@@ -334,7 +310,6 @@ impl Drawable for SettingsPage {
         self.dirty
             || self.temperature_text.is_dirty()
             || self.humidity_text.is_dirty()
-            || self.pressure_text.is_dirty()
             || self.log_display.is_dirty()
             || self.back_button.is_dirty()
     }
@@ -343,7 +318,6 @@ impl Drawable for SettingsPage {
         self.dirty = false;
         self.temperature_text.mark_clean();
         self.humidity_text.mark_clean();
-        self.pressure_text.mark_clean();
         self.log_display.mark_clean();
         self.back_button.mark_clean();
     }

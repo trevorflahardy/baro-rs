@@ -1,14 +1,16 @@
 // src/ui/components/button.rs
 //! Button component with various styles and states
 
-use crate::ui::core::{Action, Drawable, DirtyRegion, TouchEvent, TouchPoint, TouchResult, Touchable};
+use crate::ui::core::{
+    Action, DirtyRegion, Drawable, TouchEvent, TouchPoint, TouchResult, Touchable,
+};
 use crate::ui::styling::{ButtonVariant, ColorPalette, Style};
-use embedded_graphics::mono_font::{ascii::FONT_6X10, MonoTextStyle};
+use embedded_graphics::Drawable as EgDrawable;
+use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X10};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Rectangle, RoundedRectangle};
 use embedded_graphics::text::{Alignment as TextAlignment, Text};
-use embedded_graphics::Drawable as EgDrawable;
 
 /// Button state
 #[derive(Debug, Clone, Copy, PartialEq)]

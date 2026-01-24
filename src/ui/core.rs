@@ -100,12 +100,12 @@ impl DirtyRegion {
             // Calculate the bounding box that includes both rectangles
             let min_x = self.bounds.top_left.x.min(other.top_left.x);
             let min_y = self.bounds.top_left.y.min(other.top_left.y);
-            
+
             let max_x = (self.bounds.top_left.x + self.bounds.size.width as i32)
                 .max(other.top_left.x + other.size.width as i32);
             let max_y = (self.bounds.top_left.y + self.bounds.size.height as i32)
                 .max(other.top_left.y + other.size.height as i32);
-            
+
             self.bounds = Rectangle::new(
                 Point::new(min_x, min_y),
                 Size::new((max_x - min_x) as u32, (max_y - min_y) as u32),
@@ -175,15 +175,22 @@ pub enum PageEvent {
 pub struct SensorData {
     pub temperature: Option<f32>,
     pub humidity: Option<f32>,
-    pub pressure: Option<f32>,
     pub timestamp: u64,
 }
 
 /// Storage events for live monitoring
 #[derive(Debug, Clone)]
 pub enum StorageEvent {
-    RawSample { sensor: &'static str, value: f32, timestamp: u64 },
-    Rollup { interval: &'static str, count: usize, timestamp: u64 },
+    RawSample {
+        sensor: &'static str,
+        value: f32,
+        timestamp: u64,
+    },
+    Rollup {
+        interval: &'static str,
+        count: usize,
+        timestamp: u64,
+    },
 }
 
 /// System events

@@ -13,10 +13,10 @@ use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 
-use crate::pages::home::HomePage;
-use crate::pages::page_manager::Page;
+use crate::pages::page_manager::{Page, PageWrapper};
+use crate::pages::{home::HomePage, settings::SettingsPage};
 use crate::storage::accumulator::RollupEvent;
-use crate::ui::{Action, Drawable, PageId, TouchEvent};
+use crate::ui::{Action, PageId, TouchEvent};
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -50,7 +50,7 @@ where
     D: DrawTarget<Color = Rgb565>,
 {
     display: D,
-    current_page: HomePage,
+    current_page: PageWrapper,
     bounds: Rectangle,
     needs_redraw: bool,
 }
@@ -72,7 +72,7 @@ where
 
         Self {
             display,
-            current_page: home_page,
+            current_page: PageWrapper::Home(Box::new(home_page)),
             bounds,
             needs_redraw: true,
         }
@@ -84,11 +84,11 @@ where
             PageId::Home => {
                 let mut page = HomePage::new(self.bounds);
                 page.init();
-                self.current_page = page;
+                self.current_page = PageWrapper::Home(Box::new(page));
             }
             PageId::Settings => {
-                // TODO: Create settings page when implemented
-                rtt_target::rprintln!("Settings page not yet implemented");
+                let page = SettingsPage::new(self.bounds);
+                self.current_page = PageWrapper::Settings(Box::new(page));
             }
             PageId::Graphs => {
                 // TODO: Create graphs page when implemented
@@ -128,7 +128,8 @@ where
                 .draw(&mut self.display)?;
 
             // Draw the current page
-            Drawable::draw(&self.current_page, &mut self.display)?;
+            let current_page = &self.current_page;
+            current_page.draw_page(&mut self.display)?;
 
             self.needs_redraw = false;
         }
