@@ -8,12 +8,18 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use baro_rs::app_state::{AppError, AppRunState, AppState, FromUnchecked, GlobalStateType};
 use core::cell::RefCell;
 use critical_section::Mutex as CsMutex;
 use embassy_executor::Spawner;
-use embassy_net::{Config as EmbassyNetConfig, StackResources};
+use embassy_net::udp::{PacketMetadata, UdpSocket};
+use embassy_net::{Config as EmbassyNetConfig, Runner, StackResources};
+use embassy_net::{IpAddress, IpEndpoint, Ipv4Address};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
+use esp_radio::Controller;
+use heapless::String;
+// AppState, AppRunState, AppError, GlobalStateType are now in app_state.rs
 use embassy_time::{Duration, Timer};
 use embedded_sdmmc::SdCard;
 use esp_hal::{
@@ -24,7 +30,7 @@ use esp_hal::{
     time::Rate,
     timer::timg::TimerGroup,
 };
-use esp_radio::wifi::ClientConfig;
+use esp_radio::wifi::{ClientConfig, WifiDevice};
 use static_cell::StaticCell;
 
 use rtt_target::rprintln;
@@ -48,6 +54,7 @@ use mipidsi::{
 };
 
 static NET_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
+static RADIO_INIT: StaticCell<Controller<'static>> = StaticCell::new();
 
 const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 240;
@@ -65,6 +72,73 @@ extern crate alloc;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+async fn udp_time_sync(
+    stack: embassy_sync::mutex::Mutex<CriticalSectionRawMutex, embassy_net::Stack<'static>>,
+) -> Result<(), AppError> {
+    // NTP server: pool.ntp.org (hardcoded IPv4 for demo, should resolve DNS in production)
+    let ntp_server = IpEndpoint::new(IpAddress::v4(162, 159, 200, 1), 123); // pool.ntp.org
+    let local_port = 12345;
+
+    // UDP socket buffers
+    let mut rx_meta: [PacketMetadata; 4] = [PacketMetadata::EMPTY; 4];
+    let mut rx_buf: [u8; 128] = [0; 128];
+    let mut tx_meta: [PacketMetadata; 4] = [PacketMetadata::EMPTY; 4];
+    let mut tx_buf: [u8; 128] = [0; 128];
+
+    // Safety: single-threaded init
+    let stack_ref = stack.lock().await;
+    let mut socket = UdpSocket::new(
+        *stack_ref,
+        &mut rx_meta,
+        &mut rx_buf,
+        &mut tx_meta,
+        &mut tx_buf,
+    );
+    socket
+        .bind(IpEndpoint::new(
+            IpAddress::Ipv4(Ipv4Address::UNSPECIFIED),
+            local_port,
+        ))
+        .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP bind failed")))?;
+
+    // NTP request packet (48 bytes, first byte 0x1B)
+    socket
+        .bind(embassy_net::IpListenEndpoint {
+            addr: Some(IpAddress::v4(0, 0, 0, 0)),
+            port: local_port,
+        })
+        .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP bind failed")))?;
+
+    let mut ntp_packet = [0u8; 48];
+    ntp_packet[0] = 0x1B;
+
+    socket
+        .send_to(&ntp_packet, ntp_server)
+        .await
+        .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP send failed")))?;
+
+    let mut recv_buf = [0u8; 64];
+    let (len, _meta) = socket
+        .recv_from(&mut recv_buf)
+        .await
+        .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP recv failed")))?;
+
+    if len < 48 {
+        return Err(AppError::TimeSync(String::from_unchecked(
+            "NTP response too short",
+        )));
+    }
+
+    // Parse NTP response (Transmit Timestamp: bytes 40..44)
+    let secs = u32::from_be_bytes([recv_buf[40], recv_buf[41], recv_buf[42], recv_buf[43]]);
+    // NTP epoch starts in 1900, Unix in 1970
+    let unix_time = secs.wrapping_sub(2_208_988_800);
+    rprintln!("NTP time: {} (unix)", unix_time);
+
+    // TODO: Set system time here if possible
+    Ok(())
+}
+
 #[allow(clippy::large_stack_frames)]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
@@ -80,13 +154,11 @@ async fn main(spawner: Spawner) -> ! {
 
     // === Radio Init ===
     rprintln!("Configuring SVC...");
-    // esp_idf_svc::sys::link_patches();
-    // esp_idf_svc::EspLogger::initialize_default();
 
     rprintln!("Configuring radio...");
-    let radio_init = esp_radio::init().expect("Radio init failed");
+    let radio_init = RADIO_INIT.init(esp_radio::init().expect("Radio init failed"));
     let (mut wifi, interfaces) =
-        esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default())
+        esp_radio::wifi::new(radio_init, peripherals.WIFI, Default::default())
             .expect("WiFi init failed");
 
     rprintln!("Radio ready");
@@ -100,19 +172,26 @@ async fn main(spawner: Spawner) -> ! {
 
     wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config))
         .unwrap();
-
-    // TODO: Later, need connection timeout management and retry logic here... ideally after the display has been set up so we can render connection status to the user.
     wifi.start_async().await.unwrap();
     wifi.connect_async().await.unwrap();
 
+    rprintln!("WiFi connected");
+
     rprintln!("Initializing SNTP...");
-    // Open a new UDP socket for SNTP and pass it off
     let resources = NET_RESOURCES.init(StackResources::new());
     let net_config = EmbassyNetConfig::dhcpv4(Default::default());
-    let (_stack, _runner) = embassy_net::new(interfaces.sta, net_config, resources, 1024);
-    // spawner.spawn(runner).unwrap();
+    let (stack_inner, runner) = embassy_net::new(interfaces.sta, net_config, resources, 1024);
+    spawner.spawn(task_wifi_runner(runner)).unwrap();
 
-    rprintln!("WiFi connected");
+    let stack =
+        embassy_sync::mutex::Mutex::<CriticalSectionRawMutex, embassy_net::Stack>::new(stack_inner);
+
+    // Perform UDP time sync (NTP/SNTP)
+    if let Err(e) = udp_time_sync(stack).await {
+        rprintln!("Time sync failed: {:?}", e);
+    } else {
+        rprintln!("Time sync successful");
+    }
 
     // === Power Management ===
     // AXP2101 powers the display and other peripherals
@@ -286,6 +365,12 @@ async fn main(spawner: Spawner) -> ! {
 
         Timer::after(Duration::from_secs(10)).await;
     }
+}
+
+#[embassy_executor::task]
+async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) -> () {
+    rprintln!("WiFi runner task started");
+    runner.run().await;
 }
 
 #[embassy_executor::task]

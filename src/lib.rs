@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+pub mod app_state;
 pub mod async_i2c_bus;
 pub mod config;
 pub mod dual_mode_pin;
