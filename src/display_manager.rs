@@ -13,10 +13,10 @@ use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 
-use crate::page_manager::Page;
+use crate::pages::page_manager::Page;
 use crate::pages::home::HomePage;
 use crate::storage::accumulator::RollupEvent;
-use crate::ui_core::{Action, Drawable, PageId, TouchEvent};
+use crate::ui::{Action, Drawable, PageId, TouchEvent};
 
 const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 240;
@@ -64,7 +64,7 @@ where
         );
 
         // Start with the home page
-        let mut home_page = HomePage::new();
+        let mut home_page = HomePage::new(bounds);
         home_page.init();
 
         Self {
@@ -79,7 +79,7 @@ where
     fn navigate_to(&mut self, page_id: PageId) {
         match page_id {
             PageId::Home => {
-                let mut page = HomePage::new();
+                let mut page = HomePage::new(self.bounds);
                 page.init();
                 self.current_page = page;
             }
@@ -97,7 +97,7 @@ where
 
     /// Handle a touch event on the current page
     fn handle_touch(&mut self, event: TouchEvent) {
-        if let Some(action) = self.current_page.handle_touch(event) {
+        if let Some(action) = Page::handle_touch(&mut self.current_page, event) {
             match action {
                 Action::NavigateToPage(page_id) => {
                     self.navigate_to(page_id);
@@ -125,7 +125,7 @@ where
                 .draw(&mut self.display)?;
 
             // Draw the current page
-            self.current_page.draw(&mut self.display, self.bounds)?;
+            Drawable::draw(&self.current_page, &mut self.display)?;
 
             self.needs_redraw = false;
         }

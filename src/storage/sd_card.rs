@@ -48,6 +48,7 @@ where
         Self { volume_mgr }
     }
 
+    #[allow(dead_code)]
     fn read_config<'a>(&self) -> Result<ConfigBuffer, SdCardManagerError> {
         self.file_operation(CONFIG_FILE, Mode::ReadOnly, move |file| {
             let mut buffer = ConfigBuffer::default();
@@ -59,6 +60,7 @@ where
     }
 
     /// Allows you to read the config and perform an operation based on it.
+    #[allow(dead_code)]
     fn config_op_once<Outpt>(
         &self,
         operation: impl FnOnce(&Config<'_>) -> Outpt,
@@ -73,6 +75,7 @@ where
     /// Allows you to read the config, mutate it, and save it back to the SD card.
     /// Will always read the latest config from the SD card before performing the operation, and always
     /// saves it back after the operation.
+    #[allow(dead_code)]
     fn config_op_once_mut(
         &self,
         operation: impl FnOnce(&mut Config<'_>),

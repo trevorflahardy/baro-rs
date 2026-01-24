@@ -587,7 +587,7 @@ async fn touch_polling_task(
                         let point = &touch_data.points[i];
 
                         // Convert touch to our TouchEvent and send to display
-                        let touch_point = baro_rs::ui_core::TouchPoint {
+                        let touch_point = baro_rs::ui::TouchPoint {
                             x: point.x,
                             y: point.y,
                         };
@@ -595,7 +595,7 @@ async fn touch_polling_task(
 
                         // For now, always send a Press event
                         // TODO: Handle touch release based on point.status when the API is clarified
-                        let event = baro_rs::ui_core::TouchEvent::Press(touch_point);
+                        let event = baro_rs::ui::TouchEvent::Press(touch_point);
 
                         let display_sender = baro_rs::display_manager::get_display_sender();
                         let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));
