@@ -165,10 +165,10 @@ impl Style {
             builder = builder.fill_color(bg);
         }
 
-        if let Some(border) = self.border_color {
-            if self.border_width > 0 {
-                builder = builder.stroke_color(border).stroke_width(self.border_width);
-            }
+        if let Some(border) = self.border_color
+            && self.border_width > 0
+        {
+            builder = builder.stroke_color(border).stroke_width(self.border_width);
         }
 
         builder.build()
@@ -176,23 +176,12 @@ impl Style {
 }
 
 /// Padding around an element
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Padding {
     pub top: u32,
     pub right: u32,
     pub bottom: u32,
     pub left: u32,
-}
-
-impl Default for Padding {
-    fn default() -> Self {
-        Self {
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: 0,
-        }
-    }
 }
 
 impl Padding {

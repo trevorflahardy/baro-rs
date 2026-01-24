@@ -38,6 +38,12 @@ pub struct DualModePin<const PIN: u8> {
     _private: (),
 }
 
+impl<const PIN: u8> Default for DualModePin<PIN> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const PIN: u8> DualModePin<PIN> {
     /// Creates a new DualModePin for the specified GPIO number.
     ///
