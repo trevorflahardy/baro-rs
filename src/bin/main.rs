@@ -116,64 +116,104 @@ esp_bootloader_esp_idf::esp_app_desc!();
 /// Unix timestamp. The time can then be used to set the system clock for accurate
 /// timestamping of sensor data and rollups.
 async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppError> {
+    use embassy_time::with_timeout;
+
     // Wait for network to be configured
     stack.wait_config_up().await;
 
     rprintln!("Network configured, starting NTP time sync");
 
-    // NTP server: pool.ntp.org
-    let ntp_server = IpEndpoint::new(IpAddress::v4(162, 159, 200, 1), 123);
-    let local_port = 12345;
-
-    // UDP socket buffers
-    let mut rx_meta: [PacketMetadata; 4] = [PacketMetadata::EMPTY; 4];
-    let mut rx_buf: [u8; 128] = [0; 128];
-    let mut tx_meta: [PacketMetadata; 4] = [PacketMetadata::EMPTY; 4];
-    let mut tx_buf: [u8; 128] = [0; 128];
-
-    let mut socket = UdpSocket::new(*stack, &mut rx_meta, &mut rx_buf, &mut tx_meta, &mut tx_buf);
-
-    socket
-        .bind(IpListenEndpoint {
-            addr: Some(IpAddress::v4(0, 0, 0, 0)),
-            port: local_port,
-        })
-        .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP bind failed")))?;
-
-    // NTP request packet (48 bytes, first byte 0x1B)
-    let mut ntp_packet = [0u8; 48];
-    ntp_packet[0] = 0x1B;
-
-    rprintln!("Sending NTP request to {}", ntp_server);
-
-    socket
-        .send_to(&ntp_packet, ntp_server)
-        .await
-        .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP send failed")))?;
-
-    rprintln!("NTP request sent, waiting for response...");
-
-    let mut recv_buf = [0u8; 64];
-    let (len, _endpoint) = socket
-        .recv_from(&mut recv_buf)
-        .await
-        .map_err(|_| AppError::TimeSync(String::from_unchecked("UDP recv failed")))?;
-
-    rprintln!("NTP response received ({} bytes)", len);
-
-    if len < 48 {
-        return Err(AppError::TimeSync(String::from_unchecked(
-            "NTP response too short",
-        )));
+    // Print our IP address for debugging
+    if let Some(config) = stack.config_v4() {
+        rprintln!("Our IP: {}", config.address.address());
+        rprintln!("Gateway: {:?}", config.gateway);
+        rprintln!("DNS: {:?}", config.dns_servers);
+    } else {
+        rprintln!("WARNING: No IPv4 config available yet");
     }
 
-    // Parse NTP response (Transmit Timestamp: bytes 40..44)
-    let secs = u32::from_be_bytes([recv_buf[40], recv_buf[41], recv_buf[42], recv_buf[43]]);
-    // NTP epoch starts in 1900, Unix in 1970
-    let unix_time = secs.wrapping_sub(2_208_988_800);
-    rprintln!("NTP time: {} (unix)", unix_time);
+    // NTP servers to try (pool.ntp.org and time.google.com)
+    let ntp_servers = [
+        IpEndpoint::new(IpAddress::v4(162, 159, 200, 1), 123), // pool.ntp.org
+        IpEndpoint::new(IpAddress::v4(216, 239, 35, 0), 123),  // time.google.com
+        IpEndpoint::new(IpAddress::v4(216, 239, 35, 4), 123),  // time.google.com
+    ];
 
-    Ok(unix_time)
+    // Try each server
+    for (i, &ntp_server) in ntp_servers.iter().enumerate() {
+        rprintln!("Trying NTP server #{}: {}", i + 1, ntp_server);
+
+        // UDP socket buffers
+        let mut rx_meta: [PacketMetadata; 4] = [PacketMetadata::EMPTY; 4];
+        let mut rx_buf: [u8; 128] = [0; 128];
+        let mut tx_meta: [PacketMetadata; 4] = [PacketMetadata::EMPTY; 4];
+        let mut tx_buf: [u8; 128] = [0; 128];
+
+        let mut socket =
+            UdpSocket::new(*stack, &mut rx_meta, &mut rx_buf, &mut tx_meta, &mut tx_buf);
+
+        // Bind to any port (let OS choose)
+        if let Err(e) = socket.bind(IpListenEndpoint {
+            addr: None, // Changed from Some to None - let stack choose
+            port: 0,    // Changed from fixed port to 0 - let OS assign
+        }) {
+            rprintln!("UDP bind failed: {:?}", e);
+            continue;
+        }
+
+        rprintln!("Socket bound successfully");
+
+        // NTP request packet (48 bytes, first byte 0x1B)
+        // 0x1B = LI=0 (no warning), VN=3 (version 3), Mode=3 (client)
+        let mut ntp_packet = [0u8; 48];
+        ntp_packet[0] = 0x1B;
+
+        rprintln!("Sending NTP request to {}", ntp_server);
+
+        if let Err(e) = socket.send_to(&ntp_packet, ntp_server).await {
+            rprintln!("UDP send failed: {:?}", e);
+            continue;
+        }
+
+        rprintln!("NTP request sent successfully, waiting for response...");
+
+        // Add timeout to recv_from (5 seconds)
+        let mut recv_buf = [0u8; 64];
+        let recv_result =
+            with_timeout(Duration::from_secs(5), socket.recv_from(&mut recv_buf)).await;
+
+        match recv_result {
+            Ok(Ok((len, endpoint))) => {
+                rprintln!("NTP response received from {} ({} bytes)", endpoint, len);
+
+                if len < 48 {
+                    rprintln!("NTP response too short: {} bytes", len);
+                    continue;
+                }
+
+                // Parse NTP response (Transmit Timestamp: bytes 40..44)
+                let secs =
+                    u32::from_be_bytes([recv_buf[40], recv_buf[41], recv_buf[42], recv_buf[43]]);
+                // NTP epoch starts in 1900, Unix in 1970
+                let unix_time = secs.wrapping_sub(2_208_988_800);
+                rprintln!("NTP time: {} (unix)", unix_time);
+
+                return Ok(unix_time);
+            }
+            Ok(Err(e)) => {
+                rprintln!("UDP recv failed: {:?}", e);
+                continue;
+            }
+            Err(_) => {
+                rprintln!("NTP request timed out after 5 seconds");
+                continue;
+            }
+        }
+    }
+
+    Err(AppError::TimeSync(String::from_unchecked(
+        "All NTP servers failed",
+    )))
 }
 
 /// Simple time source for embedded-sdmmc that uses a counter
@@ -214,8 +254,12 @@ async fn main(spawner: Spawner) -> ! {
     rtt_target::rtt_init_print!();
     let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(hal_config);
-    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
-    // esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
+
+    // 225KB for heap in internal RAM
+    esp_alloc::heap_allocator!(size: 74_000);
+    // esp_alloc::psram_allocator!(&peripherals.PSRAM, esp_hal::psram);
+
+    rprintln!("PSRAM global allocator initialized (8MB)");
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timer_group.timer0);
@@ -269,6 +313,16 @@ async fn main(spawner: Spawner) -> ! {
         rprintln!("Waiting for network link...");
         Timer::after(Duration::from_secs(1)).await;
     }
+
+    rprintln!("Network link is up!");
+
+    // Wait for DHCP to complete and network to be fully configured
+    rprintln!("Waiting for network configuration (DHCP)...");
+    stack_ref.wait_config_up().await;
+
+    // Give the network stack a moment to stabilize
+    Timer::after(Duration::from_millis(500)).await;
+    rprintln!("Network fully configured and ready");
 
     // === Time Synchronization ===
     let mut time_known = false;
