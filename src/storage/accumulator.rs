@@ -1,5 +1,8 @@
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::Publisher};
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 use super::{MAX_SENSORS, RawSample, Rollup};
 
 /// Channel capacity for pub-sub events
@@ -53,11 +56,11 @@ pub enum RollupEvent {
 /// ```
 pub struct RollupAccumulator<'a> {
     /// Buffer for raw samples (up to 30 for 5-minute rollup)
-    raw_buffer: heapless::Vec<RawSample, 30>,
+    raw_buffer: Vec<RawSample>,
     /// Buffer for 5-minute rollups (up to 12 for hourly rollup)
-    rollup_5m_buffer: heapless::Vec<Rollup, 12>,
+    rollup_5m_buffer: Vec<Rollup>,
     /// Buffer for hourly rollups (up to 24 for daily rollup)
-    rollup_1h_buffer: heapless::Vec<Rollup, 24>,
+    rollup_1h_buffer: Vec<Rollup>,
     /// Publisher for sending rollup events
     publisher: Publisher<
         'a,
@@ -82,14 +85,14 @@ impl<'a> RollupAccumulator<'a> {
         >,
     ) -> Self {
         Self {
-            raw_buffer: heapless::Vec::new(),
-            rollup_5m_buffer: heapless::Vec::new(),
-            rollup_1h_buffer: heapless::Vec::new(),
+            raw_buffer: Vec::with_capacity(30),
+            rollup_5m_buffer: Vec::with_capacity(12),
+            rollup_1h_buffer: Vec::with_capacity(24),
             publisher,
         }
     }
 
-    fn compute_rollup(rollup: &heapless::Vec<RawSample, 30>) -> Rollup {
+    fn compute_rollup(rollup: &Vec<RawSample>) -> Rollup {
         let mut avg = [0i32; MAX_SENSORS];
         let mut min = [i32::MAX; MAX_SENSORS];
         let mut max = [i32::MIN; MAX_SENSORS];
@@ -114,7 +117,7 @@ impl<'a> RollupAccumulator<'a> {
         Rollup::new(rollup[0].timestamp, &avg, &min, &max)
     }
 
-    fn compute_rollup_from_rollups<const N: usize>(rollup: &heapless::Vec<Rollup, N>) -> Rollup {
+    fn compute_rollup_from_rollups(rollup: &Vec<Rollup>) -> Rollup {
         let mut avg = [0i32; MAX_SENSORS];
         let mut min = [i32::MAX; MAX_SENSORS];
         let mut max = [i32::MIN; MAX_SENSORS];
@@ -151,12 +154,14 @@ impl<'a> RollupAccumulator<'a> {
         self.publisher.publish(RollupEvent::RawSample(sample)).await;
 
         // Try to add to buffer; if full, generate rollup
-        if self.raw_buffer.push(sample).is_err() {
+        if self.raw_buffer.len() < 30 {
+            self.raw_buffer.push(sample);
+        } else {
             // Buffer is full (30 samples), generate 5-minute rollup
             self.generate_5m_rollup().await;
             // Clear buffer and add current sample
             self.raw_buffer.clear();
-            let _ = self.raw_buffer.push(sample);
+            self.raw_buffer.push(sample);
         }
     }
 
@@ -172,11 +177,13 @@ impl<'a> RollupAccumulator<'a> {
         self.publisher.publish(RollupEvent::Rollup5m(rollup)).await;
 
         // Add to hourly buffer
-        if self.rollup_5m_buffer.push(rollup).is_err() {
+        if self.rollup_5m_buffer.len() < 12 {
+            self.rollup_5m_buffer.push(rollup);
+        } else {
             // Buffer is full (12 rollups), generate hourly rollup
             self.generate_1h_rollup().await;
             self.rollup_5m_buffer.clear();
-            let _ = self.rollup_5m_buffer.push(rollup);
+            self.rollup_5m_buffer.push(rollup);
         }
     }
 
@@ -192,11 +199,13 @@ impl<'a> RollupAccumulator<'a> {
         self.publisher.publish(RollupEvent::Rollup1h(rollup)).await;
 
         // Add to daily buffer
-        if self.rollup_1h_buffer.push(rollup).is_err() {
+        if self.rollup_1h_buffer.len() < 24 {
+            self.rollup_1h_buffer.push(rollup);
+        } else {
             // Buffer is full (24 rollups), generate daily rollup
             self.generate_daily_rollup().await;
             self.rollup_1h_buffer.clear();
-            let _ = self.rollup_1h_buffer.push(rollup);
+            self.rollup_1h_buffer.push(rollup);
         }
     }
 
