@@ -10,22 +10,18 @@
 
 use baro_rs::app_state::{
     AppError, AppRunState, AppState, FromUnchecked, GlobalStateType, ROLLUP_CHANNEL, SensorsState,
-    create_i2c_bus, init_i2c_hardware,
+    create_i2c_bus, init_i2c_hardware, init_spi_hardware,
 };
 use baro_rs::display_manager::{DisplayManager, DisplayRequest, get_display_receiver};
-use baro_rs::storage::{
-    MAX_SENSORS, accumulator::RollupEvent, manager::StorageManager, sd_card::SdCardManager,
-};
+use baro_rs::storage::{MAX_SENSORS, manager::StorageManager, sd_card::SdCardManager};
 use core::cell::RefCell;
 use critical_section::Mutex as CsMutex;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{Config as EmbassyNetConfig, IpListenEndpoint, Runner, StackResources};
-use embassy_net::{IpAddress, IpEndpoint, Ipv4Address};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_net::{IpAddress, IpEndpoint};
 use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_time::{Duration, Timer};
-use embedded_sdmmc::SdCard;
 use esp_hal::{
     clock::CpuClock,
     gpio::{Level, Output, OutputConfig},
@@ -52,6 +48,48 @@ use mipidsi::{
     models::ILI9342CRgb565,
     options::{ColorInversion, ColorOrder},
 };
+
+// ====== Concrete Type Definitions for App State ======
+// These concrete types are required because embassy tasks cannot use generics or `impl Trait`
+
+/// Type alias for the SPI device used by the SD card
+/// InputModeSpiDevice wraps a CriticalSectionDevice for the SD card CS pin
+type SdCardSpiDevice = InputModeSpiDevice<
+    SpiCriticalSectionDevice<
+        'static,
+        Spi<'static, esp_hal::Async>,
+        Output<'static>,
+        esp_hal::delay::Delay,
+    >,
+    35,
+>;
+
+/// Type alias for the delay implementation used throughout the app
+type DelayImpl = esp_hal::delay::Delay;
+
+/// Type alias for the time source used by embedded-sdmmc
+type TimeSourceImpl = SimpleTimeSource;
+
+/// Type alias for the concrete global state type
+type ConcreteGlobalStateType = GlobalStateType<'static, SdCardSpiDevice, DelayImpl, TimeSourceImpl>;
+
+/// Type alias for the SPI device used by the display
+/// OutputModeSpiDevice wraps a CriticalSectionDevice for the display CS pin
+type DisplaySpiDevice = OutputModeSpiDevice<
+    SpiCriticalSectionDevice<
+        'static,
+        Spi<'static, esp_hal::Async>,
+        Output<'static>,
+        esp_hal::delay::Delay,
+    >,
+    35,
+>;
+
+/// Type alias for the display interface (SPI + DC pin)
+type DisplayInterface<'a> = SpiInterface<'a, DisplaySpiDevice, DualModePinAsOutput<35>>;
+
+/// Type alias for the complete display type used throughout the application
+type DisplayType = mipidsi::Display<DisplayInterface<'static>, ILI9342CRgb565, Output<'static>>;
 
 static NET_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
 static RADIO_INIT: StaticCell<Controller<'static>> = StaticCell::new();
@@ -248,28 +286,30 @@ async fn main(spawner: Spawner) -> ! {
     .with_miso(peripherals.GPIO35)
     .into_async();
 
-    let spi_bus = CsMutex::new(RefCell::new(spi_bus_inner));
+    static SPI_BUS: StaticCell<CsMutex<RefCell<Spi<'static, esp_hal::Async>>>> = StaticCell::new();
+    let spi_bus = SPI_BUS.init(CsMutex::new(RefCell::new(spi_bus_inner)));
 
     let cs_display = Output::new(peripherals.GPIO3, Level::High, OutputConfig::default());
     let cs_sd_card = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
     let display_spi_inner =
-        SpiCriticalSectionDevice::new(&spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
+        SpiCriticalSectionDevice::new(spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
     let sd_card_spi_inner =
-        SpiCriticalSectionDevice::new(&spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
+        SpiCriticalSectionDevice::new(spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
 
     // Wrap SPI devices with dual-mode pin wrappers
     let display_spi = OutputModeSpiDevice::new(display_spi_inner, &GPIO35_PIN);
     let sd_card_spi = InputModeSpiDevice::new(sd_card_spi_inner, &GPIO35_PIN);
 
-    let mut display_spi_buffer = [0u8; 512];
+    static DISPLAY_SPI_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
+    let display_spi_buffer = DISPLAY_SPI_BUFFER.init([0u8; 512]);
     // Use DualModePinAsOutput for display DC instead of direct Output
     let display_dc = DualModePinAsOutput::new(&GPIO35_PIN);
     let display_reset = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
 
-    let display_interface = SpiInterface::new(display_spi, display_dc, &mut display_spi_buffer);
+    let display_interface = SpiInterface::new(display_spi, display_dc, display_spi_buffer);
 
-    let mut display = MipidsiBuilder::new(ILI9342CRgb565, display_interface)
+    let display = MipidsiBuilder::new(ILI9342CRgb565, display_interface)
         .reset_pin(display_reset)
         .display_size(DISPLAY_WIDTH, DISPLAY_HEIGHT)
         .color_order(ColorOrder::Bgr)
@@ -282,7 +322,7 @@ async fn main(spawner: Spawner) -> ! {
     // Load up the SD card as well
     rprintln!("Configuring SD card...");
 
-    let sd_card = SdCard::new(sd_card_spi, esp_hal::delay::Delay::new());
+    let sd_card = init_spi_hardware(sd_card_spi, esp_hal::delay::Delay::new());
     let sd_card_size = match sd_card.num_bytes() {
         Ok(size) => size,
         Err(e) => {
@@ -321,7 +361,7 @@ async fn main(spawner: Spawner) -> ! {
     let sd_card_manager = SdCardManager::new(sd_card, time_source);
     let storage_manager = StorageManager::new(sd_card_manager);
 
-    static APP_STATE = StaticCell::new();
+    static APP_STATE: StaticCell<ConcreteGlobalStateType> = StaticCell::new();
     let mut app_state = AppState::new();
     app_state.wifi_connected = wifi_connected;
     app_state.time_known = time_known;
@@ -388,14 +428,8 @@ async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) {
 #[embassy_executor::task]
 async fn background_sensor_reading_task(
     mut sensors: SensorsState<'static>,
-    app_state: &'static GlobalStateType<
-        'static,
-        impl embedded_hal::spi::SpiDevice<u8>,
-        impl embedded_hal::delay::DelayNs,
-        impl embedded_sdmmc::TimeSource,
-    >,
-)
-{
+    app_state: &'static ConcreteGlobalStateType,
+) {
     rprintln!("Sensor reading task started");
 
     let mut timestamp: u32 = 0;
@@ -426,14 +460,7 @@ async fn background_sensor_reading_task(
 /// 2. Receives events from the accumulator
 /// 3. Passes events to the storage manager for persistence
 #[embassy_executor::task]
-async fn storage_event_processing_task(
-    app_state: &'static GlobalStateType<
-        'static,
-        impl embedded_hal::spi::SpiDevice<u8>,
-        impl embedded_hal::delay::DelayNs,
-        impl embedded_sdmmc::TimeSource,
-    >,
-) {
+async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateType) {
     rprintln!("Storage event processing task started");
 
     // Subscribe to rollup events
@@ -482,14 +509,9 @@ async fn touch_polling_task(
                             y: point.y,
                         };
 
-                        let event = match point.status {
-                            ft6336u_driver::TouchStatus::Contact => {
-                                baro_rs::ui_core::TouchEvent::Press(touch_point)
-                            }
-                            ft6336u_driver::TouchStatus::Lift => {
-                                baro_rs::ui_core::TouchEvent::Release(touch_point)
-                            }
-                        };
+                        // For now, always send a Press event
+                        // TODO: Handle touch release based on point.status when the API is clarified
+                        let event = baro_rs::ui_core::TouchEvent::Press(touch_point);
 
                         let display_sender = baro_rs::display_manager::get_display_sender();
                         let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));
@@ -507,11 +529,7 @@ async fn touch_polling_task(
 
 /// Display manager task for rendering pages
 #[embassy_executor::task]
-async fn display_manager_task(
-    mut display_manager: DisplayManager<
-        impl embedded_graphics::prelude::DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>,
-    >,
-) {
+async fn display_manager_task(mut display_manager: DisplayManager<DisplayType>) {
     let receiver = get_display_receiver();
     display_manager.run(receiver).await;
 }

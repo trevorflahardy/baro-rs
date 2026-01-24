@@ -115,3 +115,22 @@ pub fn create_i2c_bus(
     .with_scl(scl)
     .into_async()
 }
+
+/// Initialize SPI hardware for the SD card
+///
+/// This function takes an SPI device and wraps it with a delay implementation
+/// to create an SD card instance ready for use.
+///
+/// # Type Parameters
+/// - `S`: The SPI device type for the SD card
+/// - `D`: The delay implementation type
+///
+/// # Returns
+/// An SdCard instance with the provided SPI device and delay
+pub fn init_spi_hardware<S, D>(sd_card_spi: S, delay: D) -> embedded_sdmmc::SdCard<S, D>
+where
+    S: embedded_hal::spi::SpiDevice<u8>,
+    D: embedded_hal::delay::DelayNs,
+{
+    embedded_sdmmc::SdCard::new(sd_card_spi, delay)
+}
