@@ -9,6 +9,9 @@ use embedded_graphics::primitives::Rectangle;
 use heapless::Vec;
 
 /// Alignment options for container children
+///
+/// Determines how children are positioned along the cross-axis
+/// (perpendicular to the layout direction).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Alignment {
     /// Align to start (left for horizontal, top for vertical)
@@ -22,6 +25,9 @@ pub enum Alignment {
 }
 
 /// Direction for container layout
+///
+/// Determines how children are arranged within the container.
+/// Children are laid out sequentially along the main axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Direction {
     /// Horizontal layout (left to right)
@@ -31,6 +37,11 @@ pub enum Direction {
 }
 
 /// Size constraint for container children
+///
+/// Controls how a child element's size is calculated during layout.
+/// - `Fit`: Child uses its natural content size
+/// - `Expand`: Child expands to fill available space (shared equally among all Expand children)
+/// - `Fixed(n)`: Child has a fixed size of n pixels
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SizeConstraint {
     /// Fit to content size
@@ -70,6 +81,29 @@ impl ChildElement {
 }
 
 /// Container that arranges children in a direction with alignment
+///
+/// A flexible layout container that arranges child elements either horizontally
+/// or vertically with configurable spacing and alignment. Children can have
+/// different size constraints (Fit, Expand, or Fixed) that control how they
+/// are sized within the available space.
+///
+/// # Type Parameters
+/// - `N`: Maximum number of child elements (compile-time constant)
+///
+/// # Examples
+/// ```ignore
+/// // Create a vertical container with 4 children, centered alignment
+/// let mut container = Container::<4>::new(
+///     Rectangle::new(Point::new(10, 10), Size::new(300, 200)),
+///     Direction::Vertical
+/// )
+/// .with_alignment(Alignment::Center)
+/// .with_spacing(10);
+///
+/// // Add children with different size constraints
+/// container.add_child(Size::new(280, 50), SizeConstraint::Fixed(50)).ok();
+/// container.add_child(Size::new(280, 0), SizeConstraint::Expand).ok();
+/// ```
 pub struct Container<const N: usize> {
     bounds: Rectangle,
     direction: Direction,
@@ -81,33 +115,58 @@ pub struct Container<const N: usize> {
 }
 
 impl<const N: usize> Container<N> {
+    /// Create a new container with the specified bounds and layout direction.
+    ///
+    /// By default, spacing is 0 and alignment is Start. Use builder methods
+    /// to configure spacing and alignment.
     pub fn new(bounds: Rectangle, direction: Direction) -> Self {
         Self {
             bounds,
             direction,
             alignment: Alignment::Start,
-            spacing: 8,
+            spacing: 0,
             style: Style::default(),
             children: Vec::new(),
             dirty: true,
         }
     }
 
+    /// Set the cross-axis alignment for children.
+    ///
+    /// Alignment controls how children are positioned perpendicular to the
+    /// layout direction (e.g., for vertical layout, alignment controls horizontal positioning).
     pub fn with_alignment(mut self, alignment: Alignment) -> Self {
         self.alignment = alignment;
         self
     }
 
+    /// Set the spacing between children in pixels.
+    ///
+    /// Spacing is applied between each child element along the layout direction.
     pub fn with_spacing(mut self, spacing: u32) -> Self {
         self.spacing = spacing;
         self
     }
 
+    /// Set the container's visual style.
+    ///
+    /// Style controls background color, border, and padding.
     pub fn with_style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
 
+    /// Add a child element to the container.
+    ///
+    /// # Parameters
+    /// - `size`: Initial size hint for the child (may be overridden by constraint and layout)
+    /// - `constraint`: How the child's size should be determined during layout
+    ///
+    /// # Returns
+    /// - `Ok(index)`: Index of the added child
+    /// - `Err`: Container is full (reached capacity N)
+    ///
+    /// After adding a child, the container automatically recalculates its layout.
     pub fn add_child(
         &mut self,
         size: Size,
@@ -121,6 +180,14 @@ impl<const N: usize> Container<N> {
         Ok(self.children.len() - 1)
     }
 
+    /// Get the computed bounds for a child at the given index.
+    ///
+    /// Returns `None` if the index is out of bounds.
+    /// Get the computed bounds for a child at the given index.
+    ///
+    /// Returns `None` if the index is out of bounds.
+    /// The bounds are calculated by the layout system based on
+    /// the child's size constraint and the container's layout direction.
     pub fn child_bounds(&self, index: usize) -> Option<Rectangle> {
         self.children.get(index).map(|c| c.bounds)
     }

@@ -21,6 +21,32 @@ enum ButtonState {
 }
 
 /// Button component with label and action
+///
+/// An interactive button that responds to touch events and can trigger actions.
+/// Supports multiple visual variants (Primary, Secondary, etc.) and states
+/// (Normal, Pressed, Disabled).
+///
+/// # Visual Features
+/// - Rounded corners (configurable radius)
+/// - Color variants based on ColorPalette
+/// - Visual feedback on press (darkened background)
+/// - Disabled state with dimmed appearance
+///
+/// # Touch Behavior
+/// - Triggers action immediately on press
+/// - Provides visual feedback during press
+/// - Updates state during drag (pressed if over button, normal if dragged away)
+///
+/// # Examples
+/// ```ignore
+/// let button = Button::new(
+///     Rectangle::new(Point::new(20, 50), Size::new(280, 50)),
+///     "Settings",
+///     Action::NavigateToPage(PageId::Settings)
+/// )
+/// .with_variant(ButtonVariant::Primary)
+/// .with_palette(ColorPalette::default());
+/// ```
 pub struct Button {
     bounds: Rectangle,
     label: heapless::String<32>,
@@ -33,6 +59,14 @@ pub struct Button {
 }
 
 impl Button {
+    /// Create a new button with the specified bounds, label, and action.
+    ///
+    /// # Parameters
+    /// - `bounds`: Position and size of the button
+    /// - `label`: Text displayed on the button (max 32 characters)
+    /// - `action`: Action triggered when button is pressed
+    ///
+    /// By default, buttons use Primary variant with default ColorPalette.
     pub fn new(bounds: Rectangle, label: &str, action: Action) -> Self {
         let mut label_string = heapless::String::new();
         label_string.push_str(label).ok();
@@ -49,24 +83,51 @@ impl Button {
         }
     }
 
+    /// Set the button's visual variant.
+    ///
+    /// Variants control the button's color scheme (Primary, Secondary, etc.).
     pub fn with_variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
         self.dirty = true;
         self
     }
 
+    /// Set the button's color palette.
+    ///
+    /// The palette defines the base colors used for rendering.
     pub fn with_palette(mut self, palette: ColorPalette) -> Self {
         self.palette = palette;
         self.dirty = true;
         self
     }
 
+    /// Set the border radius for rounded corners.
+    ///
+    /// Default is 8 pixels.
     pub fn with_border_radius(mut self, radius: u32) -> Self {
         self.border_radius = radius;
         self.dirty = true;
         self
     }
 
+    /// Update the button's bounds (useful when managed by a layout container)
+    pub fn with_bounds(mut self, bounds: Rectangle) -> Self {
+        self.bounds = bounds;
+        self.dirty = true;
+        self
+    }
+
+    /// Set the button's bounds (for dynamic repositioning)
+    pub fn set_bounds(&mut self, bounds: Rectangle) {
+        if self.bounds != bounds {
+            self.bounds = bounds;
+            self.dirty = true;
+        }
+    }
+
+    /// Enable or disable the button.
+    ///
+    /// Disabled buttons don't respond to touch and are rendered with dimmed colors.
     pub fn set_enabled(&mut self, enabled: bool) {
         let new_state = if enabled {
             ButtonState::Normal
@@ -80,10 +141,12 @@ impl Button {
         }
     }
 
+    /// Check if the button is enabled.
     pub fn is_enabled(&self) -> bool {
         !matches!(self.state, ButtonState::Disabled)
     }
 
+    /// Get the action that will be triggered when the button is pressed.
     pub fn action(&self) -> Action {
         self.action
     }

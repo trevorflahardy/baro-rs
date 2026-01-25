@@ -11,6 +11,11 @@ use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::text::{Alignment, Text as EgText};
 
 /// Text size variants
+///
+/// Provides three preset text sizes with corresponding embedded-graphics fonts:
+/// - `Small`: 5x8 font
+/// - `Medium`: 6x10 font (default)
+/// - `Large`: 10x20 font
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TextSize {
     Small,
@@ -28,7 +33,26 @@ impl TextSize {
     }
 }
 
-/// Text component
+/// Text component for displaying styled text
+///
+/// A simple text display component with configurable size, alignment, and styling.
+/// Supports up to 128 characters of text content.
+///
+/// # Features
+/// - Three size presets (Small, Medium, Large)
+/// - Left, Center, or Right alignment
+/// - Optional background and border styling
+/// - Automatic dirty tracking when text changes
+///
+/// # Examples
+/// ```ignore
+/// let text = TextComponent::new(
+///     Rectangle::new(Point::new(20, 60), Size::new(280, 20)),
+///     "Temperature: 22.5°C",
+///     TextSize::Medium
+/// )
+/// .with_alignment(Alignment::Center);
+/// ```
 pub struct TextComponent {
     bounds: Rectangle,
     text: heapless::String<128>,
@@ -53,6 +77,7 @@ impl TextComponent {
         }
     }
 
+    /// Set the text alignment (Left, Center, or Right).
     pub fn with_alignment(mut self, alignment: Alignment) -> Self {
         self.alignment = alignment;
         self
@@ -63,6 +88,9 @@ impl TextComponent {
         self
     }
 
+    /// Update the displayed text.
+    ///
+    /// Automatically marks the component as dirty if the text changed.
     pub fn set_text(&mut self, text: &str) {
         let mut new_text = heapless::String::new();
         new_text.push_str(text).ok();
@@ -73,6 +101,7 @@ impl TextComponent {
         }
     }
 
+    /// Get the current text content.
     pub fn text(&self) -> &str {
         &self.text
     }

@@ -8,6 +8,9 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle};
 
 /// Direction that can be scrolled
+///
+/// Controls which directions the scrollable container allows scrolling.
+/// Content can be scrolled vertically, horizontally, or in both directions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScrollDirection {
     Vertical,
@@ -16,6 +19,35 @@ pub enum ScrollDirection {
 }
 
 /// Scrollable container with viewport and content size tracking
+///
+/// A container that displays a viewport into larger content, allowing the user
+/// to scroll through content that exceeds the visible area. Supports vertical,
+/// horizontal, or bidirectional scrolling with touch drag gestures.
+///
+/// The viewport defines the visible area, while content_size defines the total
+/// scrollable area. Scroll offset tracks the current scroll position.
+///
+/// # Touch Interaction
+/// - Press: Begins tracking touch for scrolling
+/// - Drag: Scrolls the content (inverted: drag down scrolls content up)
+///
+/// # Visual Feedback
+/// Automatically draws scrollbar indicators when content exceeds viewport size.
+///
+/// # Examples
+/// ```ignore
+/// // Create a vertical scrolling container
+/// let viewport = Rectangle::new(Point::new(0, 0), Size::new(320, 240));
+/// let content_size = Size::new(320, 600); // Content is taller than viewport
+/// let mut scrollable = ScrollableContainer::new(
+///     viewport,
+///     content_size,
+///     ScrollDirection::Vertical
+/// );
+///
+/// // Scroll programmatically
+/// scrollable.scroll_by(Point::new(0, -50)); // Scroll up by 50 pixels
+/// ```
 pub struct ScrollableContainer {
     /// Visible bounds (viewport)
     viewport: Rectangle,
@@ -34,6 +66,12 @@ pub struct ScrollableContainer {
 }
 
 impl ScrollableContainer {
+    /// Create a new scrollable container.
+    ///
+    /// # Parameters
+    /// - `viewport`: The visible area rectangle
+    /// - `content_size`: Total size of the scrollable content
+    /// - `direction`: Which directions scrolling is allowed
     pub fn new(viewport: Rectangle, content_size: Size, direction: ScrollDirection) -> Self {
         Self {
             viewport,
@@ -46,12 +84,18 @@ impl ScrollableContainer {
         }
     }
 
+    /// Set the visual style for the container.
+    ///
+    /// Controls background color and border appearance.
     pub fn with_style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
 
-    /// Set the total content size
+    /// Set the total content size.
+    ///
+    /// Updates the scrollable area and constrains the scroll offset
+    /// to valid bounds. Marks the container as dirty if size changed.
     pub fn set_content_size(&mut self, size: Size) {
         if self.content_size != size {
             self.content_size = size;
@@ -60,19 +104,27 @@ impl ScrollableContainer {
         }
     }
 
-    /// Get the current scroll offset
+    /// Get the current scroll offset in content space.
+    ///
+    /// The offset represents the top-left corner of the visible viewport
+    /// within the total content area.
     pub fn scroll_offset(&self) -> Point {
         self.scroll_offset
     }
 
-    /// Scroll by a delta amount
+    /// Scroll by a relative delta amount.
+    ///
+    /// Positive delta scrolls right/down, negative scrolls left/up.
+    /// The scroll position is automatically constrained to valid bounds.
     pub fn scroll_by(&mut self, delta: Point) {
         self.scroll_offset += delta;
         self.constrain_scroll();
         self.dirty = true;
     }
 
-    /// Scroll to a specific offset
+    /// Scroll to a specific absolute offset.
+    ///
+    /// The offset is automatically constrained to valid bounds.
     pub fn scroll_to(&mut self, offset: Point) {
         self.scroll_offset = offset;
         self.constrain_scroll();
@@ -102,12 +154,25 @@ impl ScrollableContainer {
         }
     }
 
-    /// Get the visible content rectangle (in content space)
+    /// Get the visible content rectangle in content space.
+    ///
+    /// Returns a rectangle representing which portion of the total content
+    /// is currently visible in the viewport. Useful for clipping child rendering.
     pub fn visible_content_rect(&self) -> Rectangle {
         Rectangle::new(self.scroll_offset, self.viewport.size)
     }
 
-    /// Transform a point from viewport space to content space
+    /// Transform a point from viewport space to content space.
+    ///
+    /// # Parameters
+    /// - `point`: Touch point in viewport coordinates
+    ///
+    /// # Returns
+    /// - `Some(point)`: Transformed point in content space
+    /// - `None`: Point is outside the viewport
+    ///
+    /// Useful for forwarding touch events to child elements that are
+    /// positioned in content space.
     pub fn viewport_to_content(&self, point: TouchPoint) -> Option<TouchPoint> {
         let p = point.to_point();
         if !self.viewport.contains(p) {
@@ -123,7 +188,10 @@ impl ScrollableContainer {
         ))
     }
 
-    /// Check if content can scroll in a direction
+    /// Check if content can scroll vertically.
+    ///
+    /// Returns true if vertical scrolling is enabled and content height
+    /// exceeds viewport height.
     pub fn can_scroll_vertical(&self) -> bool {
         matches!(
             self.direction,
@@ -131,6 +199,10 @@ impl ScrollableContainer {
         ) && self.content_size.height > self.viewport.size.height
     }
 
+    /// Check if content can scroll horizontally.
+    ///
+    /// Returns true if horizontal scrolling is enabled and content width
+    /// exceeds viewport width.
     pub fn can_scroll_horizontal(&self) -> bool {
         matches!(
             self.direction,

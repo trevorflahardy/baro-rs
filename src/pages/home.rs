@@ -10,64 +10,91 @@ use heapless::Vec;
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Button, ButtonVariant, ColorPalette, Drawable, PageId, TouchEvent, TouchResult,
-    Touchable,
+    Action, Alignment, Button, ButtonVariant, ColorPalette, Container, Direction, Drawable, PageId,
+    SizeConstraint, TouchEvent, TouchResult, Touchable,
 };
+
+const BUTTON_HEIGHT: u32 = 50;
+const BUTTON_SPACING: u32 = 10;
+const TOP_MARGIN: u32 = 50;
+const SIDE_MARGIN: u32 = 20;
 
 pub struct HomePage {
     bounds: Rectangle,
+    container: Container<4>,
     buttons: Vec<Button, 4>,
     dirty: bool,
 }
 
 impl HomePage {
     pub fn new(bounds: Rectangle) -> Self {
+        // Create container for button layout
+        // Positioned below title with margins
+        let container_bounds = Rectangle::new(
+            Point::new(SIDE_MARGIN as i32, TOP_MARGIN as i32),
+            Size::new(
+                bounds.size.width.saturating_sub(SIDE_MARGIN * 2),
+                bounds.size.height.saturating_sub(TOP_MARGIN),
+            ),
+        );
+
+        let container = Container::<4>::new(container_bounds, Direction::Vertical)
+            .with_alignment(Alignment::Start)
+            .with_spacing(BUTTON_SPACING);
+
         Self {
             bounds,
+            container,
             buttons: Vec::new(),
             dirty: true,
         }
     }
 
     pub fn init(&mut self) {
-        let button_height = 50;
-        let button_width = 280;
-        let y_start = 50;
-        let spacing = 10;
-
         let palette = ColorPalette::default();
+        let button_width = self.bounds.size.width.saturating_sub(SIDE_MARGIN * 2);
 
         // Settings button
-        self.buttons
-            .push(
-                Button::new(
-                    Rectangle::new(
-                        Point::new(20, y_start),
-                        Size::new(button_width, button_height),
-                    ),
-                    "Settings",
-                    Action::NavigateToPage(PageId::Settings),
-                )
-                .with_palette(palette)
-                .with_variant(ButtonVariant::Primary),
+        let settings_button = Button::new(
+            Rectangle::new(Point::zero(), Size::new(button_width, BUTTON_HEIGHT)),
+            "Settings",
+            Action::NavigateToPage(PageId::Settings),
+        )
+        .with_palette(palette)
+        .with_variant(ButtonVariant::Primary);
+
+        // Data button
+        let data_button = Button::new(
+            Rectangle::new(Point::zero(), Size::new(button_width, BUTTON_HEIGHT)),
+            "View Graphs",
+            Action::NavigateToPage(PageId::Graphs),
+        )
+        .with_palette(palette)
+        .with_variant(ButtonVariant::Secondary);
+
+        // Add buttons to container with fixed height constraint
+        self.container
+            .add_child(
+                Size::new(button_width, BUTTON_HEIGHT),
+                SizeConstraint::Fixed(BUTTON_HEIGHT),
             )
             .ok();
 
-        // Data button
-        self.buttons
-            .push(
-                Button::new(
-                    Rectangle::new(
-                        Point::new(20, y_start + button_height as i32 + spacing),
-                        Size::new(button_width, button_height),
-                    ),
-                    "View Graphs",
-                    Action::NavigateToPage(PageId::Graphs),
-                )
-                .with_palette(palette)
-                .with_variant(ButtonVariant::Secondary),
+        self.container
+            .add_child(
+                Size::new(button_width, BUTTON_HEIGHT),
+                SizeConstraint::Fixed(BUTTON_HEIGHT),
             )
             .ok();
+
+        // Store buttons with their positions from container
+        if let Some(bounds) = self.container.child_bounds(0) {
+            self.buttons.push(settings_button.with_bounds(bounds)).ok();
+        }
+
+        if let Some(bounds) = self.container.child_bounds(1) {
+            self.buttons.push(data_button.with_bounds(bounds)).ok();
+        }
 
         self.dirty = true;
     }
