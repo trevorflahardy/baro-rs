@@ -217,33 +217,63 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
     )))
 }
 
-/// Simple time source for embedded-sdmmc that uses a counter
-/// In production, this should use the actual RTC or system time from NTP
+/// Simple time source for embedded-sdmmc that uses actual Unix time
 struct SimpleTimeSource {
-    counter: core::cell::RefCell<u32>,
+    /// Unix timestamp (seconds since 1970-01-01)
+    unix_time: core::cell::RefCell<u32>,
 }
 
 impl SimpleTimeSource {
-    fn new() -> Self {
+    fn new(initial_time: u32) -> Self {
         Self {
-            counter: core::cell::RefCell::new(0),
+            unix_time: core::cell::RefCell::new(initial_time),
         }
+    }
+
+    /// Update the current Unix time
+    #[allow(dead_code)]
+    fn set_time(&self, unix_time: u32) {
+        *self.unix_time.borrow_mut() = unix_time;
+    }
+
+    /// Get current Unix time
+    #[allow(dead_code)]
+    fn get_unix_time(&self) -> u32 {
+        *self.unix_time.borrow()
     }
 }
 
 impl embedded_sdmmc::TimeSource for SimpleTimeSource {
     fn get_timestamp(&self) -> embedded_sdmmc::Timestamp {
-        let count = *self.counter.borrow();
-        *self.counter.borrow_mut() = count.wrapping_add(1);
-
-        // Return a default timestamp (2024-01-01 00:00:00)
+        let unix_time = *self.unix_time.borrow();
+        
+        // Convert Unix timestamp to FAT timestamp
+        // This is a simplified conversion - for production use a proper datetime library
+        const SECONDS_PER_DAY: u32 = 86400;
+        const SECONDS_PER_HOUR: u32 = 3600;
+        const SECONDS_PER_MINUTE: u32 = 60;
+        
+        // Days since Unix epoch (1970-01-01)
+        let days_since_epoch = unix_time / SECONDS_PER_DAY;
+        let seconds_today = unix_time % SECONDS_PER_DAY;
+        
+        // Approximate year calculation (ignoring leap years for simplicity)
+        let years_since_1970 = (days_since_epoch / 365).min(255) as u8;
+        let days_this_year = days_since_epoch % 365;
+        let month = (days_this_year / 30).min(11) as u8;
+        let day = (days_this_year % 30) as u8;
+        
+        let hours = (seconds_today / SECONDS_PER_HOUR) as u8;
+        let minutes = ((seconds_today % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE) as u8;
+        let seconds = (seconds_today % SECONDS_PER_MINUTE) as u8;
+        
         embedded_sdmmc::Timestamp {
-            year_since_1970: 54,
-            zero_indexed_month: 0,
-            zero_indexed_day: 0,
-            hours: 0,
-            minutes: 0,
-            seconds: 0,
+            year_since_1970: years_since_1970,
+            zero_indexed_month: month,
+            zero_indexed_day: day,
+            hours,
+            minutes,
+            seconds,
         }
     }
 }
@@ -437,14 +467,18 @@ async fn main(spawner: Spawner) -> ! {
     info!("=== Hardware initialization complete ===\n");
 
     // === Application State Setup ===
-    let time_source = SimpleTimeSource::new();
+    let initial_time = time.unwrap_or(0);
+    let time_source = SimpleTimeSource::new(initial_time);
     let sd_card_manager = SdCardManager::new(sd_card, time_source);
     let mut storage_manager = StorageManager::new(sd_card_manager);
     if let Some(t) = time {
+        info!("Initializing storage manager with synced time: {}", t);
         match storage_manager.init(t).await {
             Ok(_) => info!("Storage manager initialized successfully"),
             Err(e) => error!("Storage manager initialization failed: {:?}", e),
         }
+    } else {
+        error!("Storage manager initialized without time sync (using fallback)");
     }
 
     static APP_STATE: StaticCell<ConcreteGlobalStateType> = StaticCell::new();
@@ -470,7 +504,7 @@ async fn main(spawner: Spawner) -> ! {
         // Create sensors state
         let sensors = SensorsState::new(i2c_for_sensors);
         spawner
-            .spawn(background_sensor_reading_task(sensors, app_state_ref))
+            .spawn(background_sensor_reading_task(sensors, app_state_ref, initial_time))
             .ok();
 
         // Start storage event processing task
@@ -515,10 +549,11 @@ async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) {
 async fn background_sensor_reading_task(
     mut sensors: SensorsState<'static>,
     app_state: &'static ConcreteGlobalStateType,
+    initial_unix_time: u32,
 ) {
-    info!("Sensor reading task started");
+    info!("Sensor reading task started with initial time: {}", initial_unix_time);
 
-    let mut timestamp: u32 = 0;
+    let mut timestamp: u32 = initial_unix_time;
 
     loop {
         let mut values = [0i32; MAX_SENSORS];
@@ -526,7 +561,7 @@ async fn background_sensor_reading_task(
         // Read all sensors
         sensors.read_all(&mut values).await;
         debug!(
-            "Sensor readings at {}: {:?}",
+            "Sensor readings at {} (unix time): {:?}",
             timestamp,
             &values[..MAX_SENSORS]
         );
