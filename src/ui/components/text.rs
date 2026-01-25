@@ -101,6 +101,14 @@ impl TextComponent {
         }
     }
 
+    /// Set the bounds (for dynamic repositioning by layout containers)
+    pub fn set_bounds(&mut self, bounds: Rectangle) {
+        if self.bounds != bounds {
+            self.bounds = bounds;
+            self.dirty = true;
+        }
+    }
+
     /// Get the current text content.
     pub fn text(&self) -> &str {
         &self.text
@@ -241,6 +249,15 @@ impl MultiLineText {
         }
 
         self.dirty = true;
+    }
+
+    /// Set the bounds (for dynamic repositioning by layout containers)
+    /// Set the bounds (for dynamic repositioning by layout containers)
+    pub fn set_bounds(&mut self, bounds: Rectangle) {
+        if self.bounds != bounds {
+            self.bounds = bounds;
+            self.dirty = true;
+        }
     }
 }
 

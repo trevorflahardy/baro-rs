@@ -4,10 +4,13 @@ pub use sht40::*;
 
 use super::storage::MAX_SENSORS;
 use core::{future::Future, marker::PhantomData};
+use thiserror_no_std::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum SensorError {
+    #[error("Unknown sensor error")]
     UnknownError,
+    #[error("Sensor read error")]
     ReadError,
 }
 

@@ -93,7 +93,8 @@ where
                 self.current_page = PageWrapper::Home(Box::new(page));
             }
             PageId::Settings => {
-                let page = SettingsPage::new(self.bounds);
+                let mut page = SettingsPage::new(self.bounds);
+                page.init();
                 self.current_page = PageWrapper::Settings(Box::new(page));
             }
             PageId::Graphs => {

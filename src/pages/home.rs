@@ -1,52 +1,73 @@
 use embedded_graphics::prelude::*;
 use embedded_graphics::{
     Drawable as EgDrawable,
-    mono_font::{MonoTextStyle, ascii::FONT_10X20},
     pixelcolor::Rgb565,
     primitives::{PrimitiveStyle, Rectangle},
-    text::Text,
 };
 use heapless::Vec;
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Button, ButtonVariant, ColorPalette, Drawable, PageId, TouchEvent, TouchResult,
-    Touchable,
+    Action, Alignment, Button, ButtonVariant, ColorPalette, Container, Direction, Drawable,
+    PageId, SizeConstraint, TextComponent, TextSize, TouchEvent, TouchResult, Touchable,
 };
-
-const BUTTON_HEIGHT: u32 = 50;
-const BUTTON_SPACING: u32 = 10;
-const TOP_MARGIN: i32 = 50;
-const SIDE_MARGIN: i32 = 20;
 
 pub struct HomePage {
     bounds: Rectangle,
+    container: Container<4>,
     buttons: Vec<Button, 4>,
+    title: TextComponent,
     dirty: bool,
 }
 
 impl HomePage {
     pub fn new(bounds: Rectangle) -> Self {
+        // Create a vertical container with stretch alignment and spacing
+        let container = Container::new(bounds, Direction::Vertical)
+            .with_alignment(Alignment::Stretch)
+            .with_spacing(10);
+
+        // Create title text component
+        let title = TextComponent::new(
+            Rectangle::new(Point::zero(), Size::new(bounds.size.width, 30)),
+            "Baro Dashboard",
+            TextSize::Large,
+        )
+        .with_alignment(embedded_graphics::text::Alignment::Center);
+
         Self {
             bounds,
+            container,
             buttons: Vec::new(),
+            title,
             dirty: true,
         }
     }
 
     pub fn init(&mut self) {
         let palette = ColorPalette::default();
-        let button_width = (self.bounds.size.width as i32 - SIDE_MARGIN * 2) as u32;
 
-        // Calculate button positions manually
-        let mut y_pos = TOP_MARGIN;
+        // Add title with fixed height
+        self.container
+            .add_child(Size::new(self.bounds.size.width, 30), SizeConstraint::Fixed(30))
+            .ok();
 
+        // Add spacer
+        self.container
+            .add_child(Size::new(self.bounds.size.width, 10), SizeConstraint::Fixed(10))
+            .ok();
+
+        // Add buttons with expanding size - they will share remaining space equally
         // Settings button
+        let settings_bounds =
+            self.container
+                .add_child(Size::new(0, 0), SizeConstraint::Expand)
+                .ok()
+                .and_then(|idx| self.container.child_bounds(idx))
+                .unwrap_or(Rectangle::new(Point::zero(), Size::zero()));
+
         let settings_button = Button::new(
-            Rectangle::new(
-                Point::new(SIDE_MARGIN, y_pos),
-                Size::new(button_width, BUTTON_HEIGHT),
-            ),
+            settings_bounds,
             "Settings",
             Action::NavigateToPage(PageId::Settings),
         )
@@ -55,15 +76,16 @@ impl HomePage {
 
         self.buttons.push(settings_button).ok();
 
-        // Move to next button position
-        y_pos += BUTTON_HEIGHT as i32 + BUTTON_SPACING as i32;
+        // View Graphs button
+        let graphs_bounds =
+            self.container
+                .add_child(Size::new(0, 0), SizeConstraint::Expand)
+                .ok()
+                .and_then(|idx| self.container.child_bounds(idx))
+                .unwrap_or(Rectangle::new(Point::zero(), Size::zero()));
 
-        // Data button
         let data_button = Button::new(
-            Rectangle::new(
-                Point::new(SIDE_MARGIN, y_pos),
-                Size::new(button_width, BUTTON_HEIGHT),
-            ),
+            graphs_bounds,
             "View Graphs",
             Action::NavigateToPage(PageId::Graphs),
         )
@@ -71,6 +93,11 @@ impl HomePage {
         .with_variant(ButtonVariant::Secondary);
 
         self.buttons.push(data_button).ok();
+
+        // Update title bounds from container
+        if let Some(title_bounds) = self.container.child_bounds(0) {
+            self.title.set_bounds(title_bounds);
+        }
 
         self.dirty = true;
     }
@@ -133,8 +160,7 @@ impl Drawable for HomePage {
             .draw(display)?;
 
         // Draw title
-        let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
-        Text::new("Baro Dashboard", Point::new(60, 20), text_style).draw(display)?;
+        self.title.draw(display)?;
 
         // Draw all buttons
         for button in &self.buttons {
@@ -149,11 +175,12 @@ impl Drawable for HomePage {
     }
 
     fn is_dirty(&self) -> bool {
-        self.dirty || self.buttons.iter().any(|b| b.is_dirty())
+        self.dirty || self.buttons.iter().any(|b| b.is_dirty()) || self.title.is_dirty()
     }
 
     fn mark_clean(&mut self) {
         self.dirty = false;
+        self.title.mark_clean();
         for button in &mut self.buttons {
             button.mark_clean();
         }
