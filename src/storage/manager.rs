@@ -192,6 +192,16 @@ where
                 } else {
                     info!(" Updating rollup file 5m.");
                 }
+
+                // Rewrite the lifetime stats as well
+                if let Err(e) = self
+                    .sd_card_manager
+                    .overwrite_lifetime_data(self.lifetime_stats.as_ref())
+                {
+                    error!(" Failed to write lifetime stats to SD: {:?}", e);
+                } else {
+                    info!(" Updated lifetime stats on SD card.");
+                }
             }
             RollupEvent::Rollup1h(rollup) => {
                 if self.rollups_1h.len() >= ROLLUPS_1H_CAPACITY {
