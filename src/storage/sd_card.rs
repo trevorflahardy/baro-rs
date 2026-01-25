@@ -253,4 +253,34 @@ where
             Ok(bytes_read)
         })
     }
+
+    pub fn overwrite_lifetime_data(
+        &self,
+        data: &[u8],
+    ) -> Result<(), SdCardManagerError> {
+        self.file_operation(
+            ROLLUP_FILE_LIFETIME,
+            Mode::ReadWriteCreateOrTruncate,
+            move |file| {
+                debug!(
+                    "Writing {} bytes to {}",
+                    data.len(),
+                    ROLLUP_FILE_LIFETIME
+                );
+
+                // Write the data
+                file.write(data)
+                    .map_err(SdCardManagerError::SdmmcError)?;
+
+                debug!("Successfully wrote data to {}", ROLLUP_FILE_LIFETIME);
+
+                // Explicitly flush to ensure data is written to the SD card
+                file.flush().map_err(SdCardManagerError::SdmmcError)?;
+
+                debug!("Flushed data to {}", ROLLUP_FILE_LIFETIME);
+
+                Ok(())
+            },
+        )
+    }
 }
