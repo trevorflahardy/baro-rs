@@ -4,13 +4,31 @@
 //! in the correct order, ensuring dependencies are properly initialized.
 
 use axp2101_embedded::AsyncAxp2101;
+use core::cell::RefCell;
+use critical_section::Mutex as CsMutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
-use esp_hal::{i2c::master::Config as I2cConfig, time::Rate};
+use embedded_hal_bus::spi::CriticalSectionDevice as SpiCriticalSectionDevice;
+use esp_hal::{
+    gpio::{Level, Output, OutputConfig},
+    i2c::master::Config as I2cConfig,
+    spi::master::{Config as SpiConfig, Spi},
+    time::Rate,
+};
+use ft6336u_driver::FT6336U;
 use log::info;
+use mipidsi::{
+    Builder as MipidsiBuilder,
+    interface::SpiInterface,
+    models::ILI9342CRgb565,
+    options::{ColorInversion, ColorOrder},
+};
 use static_cell::StaticCell;
 
 use crate::async_i2c_bus::AsyncI2cDevice;
+use crate::dual_mode_pin::{
+    DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
+};
 
 /// Container for I2C-based hardware components
 pub struct I2cHardware<'a> {
@@ -19,6 +37,43 @@ pub struct I2cHardware<'a> {
         embedded_hal::i2c::SevenBitAddress,
         AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>,
     >,
+    pub touch_interface: FT6336U<AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>>,
+}
+
+/// Container for SPI-based hardware components
+///
+/// Uses concrete types for ESP32-S3 SPI peripherals
+pub struct SpiHardware {
+    pub display: mipidsi::Display<
+        SpiInterface<
+            'static,
+            OutputModeSpiDevice<
+                SpiCriticalSectionDevice<
+                    'static,
+                    Spi<'static, esp_hal::Async>,
+                    Output<'static>,
+                    esp_hal::delay::Delay,
+                >,
+                35,
+            >,
+            DualModePinAsOutput<35>,
+        >,
+        ILI9342CRgb565,
+        Output<'static>,
+    >,
+    pub sd_card: embedded_sdmmc::SdCard<
+        InputModeSpiDevice<
+            SpiCriticalSectionDevice<
+                'static,
+                Spi<'static, esp_hal::Async>,
+                Output<'static>,
+                esp_hal::delay::Delay,
+            >,
+            35,
+        >,
+        esp_hal::delay::Delay,
+    >,
+    pub sd_card_size: u64,
 }
 
 /// Initialize the I2C bus and all I2C-based peripherals
@@ -27,14 +82,14 @@ pub struct I2cHardware<'a> {
 /// - I2C bus (400 kHz)
 /// - AXP2101 power management chip
 /// - AW9523 GPIO expander
+/// - FT6336U capacitive touch controller
 ///
 /// # Returns
-/// A tuple of (I2cHardware, AsyncI2cDevice for touch, AsyncI2cDevice for sensors)
+/// A tuple of (I2cHardware, AsyncI2cDevice for sensors)
 pub async fn init_i2c_hardware(
     i2c0: esp_hal::i2c::master::I2c<'static, esp_hal::Async>,
 ) -> (
     I2cHardware<'static>,
-    AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
     AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
 ) {
     // Create shared I2C bus
@@ -89,12 +144,32 @@ pub async fn init_i2c_hardware(
 
     info!("GPIO expander ready (P1_2 configured for touch interrupt)");
 
+    // Initialize touch controller
+    info!("Configuring touch controller...");
+    let mut touch_interface = FT6336U::new(i2c_for_touch);
+    let library_version = touch_interface.read_library_version().await.unwrap_or(0);
+    let chip_id = touch_interface.read_chip_id().await.unwrap();
+
+    // Configure touch controller in Polling mode (INT stays LOW while touched)
+    // This is better than Trigger mode for continuous touch detection
+    touch_interface
+        .write_g_mode(ft6336u_driver::GestureMode::Polling)
+        .await
+        .unwrap();
+    let g_mode = touch_interface.read_g_mode().await.unwrap();
+
+    info!(
+        "Touch controller ready (library: 0x{:04X}, chip: 0x{:02X}, mode: 0x{:02X})",
+        library_version, chip_id, g_mode
+    );
+
     let hardware = I2cHardware {
         power_mgmt: power_mgmt_chip,
         gpio_expander,
+        touch_interface,
     };
 
-    (hardware, i2c_for_touch, i2c_for_sensors)
+    (hardware, i2c_for_sensors)
 }
 
 /// Initialize the I2C bus hardware
@@ -132,4 +207,108 @@ where
     D: embedded_hal::delay::DelayNs,
 {
     embedded_sdmmc::SdCard::new(sd_card_spi, delay)
+}
+
+/// Initialize all SPI-based peripherals including display and SD card
+///
+/// This function sets up:
+/// - SPI bus (40 MHz)
+/// - Display (ILI9342C with MIPIDSI)
+/// - SD card with embedded-sdmmc
+///
+/// # Arguments
+/// - `spi2`: SPI2 peripheral
+/// - `gpio3`: Display CS pin
+/// - `gpio4`: SD card CS pin
+/// - `gpio15`: Display reset pin
+/// - `gpio35_pin`: Dual-mode pin for MISO/DC switching
+/// - `gpio36`: SPI SCK pin
+/// - `gpio37`: SPI MOSI pin
+/// - `gpio35`: SPI MISO pin
+/// - `display_width`: Display width in pixels
+/// - `display_height`: Display height in pixels
+///
+/// # Returns
+/// A SpiHardware struct containing the initialized display and SD card
+pub fn init_spi_peripherals(
+    spi2: esp_hal::peripherals::SPI2<'static>,
+    gpio3: esp_hal::peripherals::GPIO3<'static>,
+    gpio4: esp_hal::peripherals::GPIO4<'static>,
+    gpio15: esp_hal::peripherals::GPIO15<'static>,
+    gpio35_pin: &'static DualModePin<35>,
+    gpio36: esp_hal::peripherals::GPIO36<'static>,
+    gpio37: esp_hal::peripherals::GPIO37<'static>,
+    gpio35: esp_hal::peripherals::GPIO35<'static>,
+    display_width: u16,
+    display_height: u16,
+) -> SpiHardware {
+    info!("Configuring SPI devices...");
+
+    // Create SPI bus
+    let spi_bus_inner = Spi::new(
+        spi2,
+        SpiConfig::default()
+            .with_frequency(Rate::from_mhz(40))
+            .with_mode(esp_hal::spi::Mode::_0),
+    )
+    .unwrap()
+    .with_sck(gpio36)
+    .with_mosi(gpio37)
+    .with_miso(gpio35)
+    .into_async();
+
+    static SPI_BUS: StaticCell<CsMutex<RefCell<Spi<'static, esp_hal::Async>>>> = StaticCell::new();
+    let spi_bus = SPI_BUS.init(CsMutex::new(RefCell::new(spi_bus_inner)));
+
+    // Create CS pins
+    let cs_display = Output::new(gpio3, Level::High, OutputConfig::default());
+    let cs_sd_card = Output::new(gpio4, Level::High, OutputConfig::default());
+
+    // Create SPI devices
+    let display_spi_inner =
+        SpiCriticalSectionDevice::new(spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
+    let sd_card_spi_inner =
+        SpiCriticalSectionDevice::new(spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
+
+    // Wrap SPI devices with dual-mode pin wrappers
+    let display_spi = OutputModeSpiDevice::new(display_spi_inner, gpio35_pin);
+    let sd_card_spi = InputModeSpiDevice::new(sd_card_spi_inner, gpio35_pin);
+
+    // Initialize display
+    static DISPLAY_SPI_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
+    let display_spi_buffer = DISPLAY_SPI_BUFFER.init([0u8; 512]);
+    let display_dc = DualModePinAsOutput::new(gpio35_pin);
+    let display_reset = Output::new(gpio15, Level::High, OutputConfig::default());
+
+    let display_interface = SpiInterface::new(display_spi, display_dc, display_spi_buffer);
+
+    let display = MipidsiBuilder::new(ILI9342CRgb565, display_interface)
+        .reset_pin(display_reset)
+        .display_size(display_width, display_height)
+        .color_order(ColorOrder::Bgr)
+        .invert_colors(ColorInversion::Inverted)
+        .init(&mut embassy_time::Delay)
+        .expect("Display init failed");
+
+    info!("Display ready");
+
+    // Initialize SD card
+    info!("Configuring SD card...");
+    let sd_card = init_spi_hardware(sd_card_spi, esp_hal::delay::Delay::new());
+    let sd_card_size = match sd_card.num_bytes() {
+        Ok(size) => {
+            info!("SD card ready (size: {} bytes)", size);
+            size
+        }
+        Err(e) => {
+            info!("SD card init failed: {:?}", e);
+            0
+        }
+    };
+
+    SpiHardware {
+        display,
+        sd_card,
+        sd_card_size,
+    }
 }

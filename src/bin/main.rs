@@ -11,25 +11,18 @@
 use alloc::boxed::Box;
 use baro_rs::app_state::{
     AppError, AppRunState, AppState, FromUnchecked, GlobalStateType, ROLLUP_CHANNEL, SensorsState,
-    create_i2c_bus, init_i2c_hardware, init_spi_hardware,
+    create_i2c_bus, init_i2c_hardware, init_spi_peripherals,
 };
 use baro_rs::display_manager::{DisplayManager, DisplayRequest, get_display_receiver};
 use baro_rs::storage::{MAX_SENSORS, manager::StorageManager, sd_card::SdCardManager};
-use core::cell::RefCell;
-use critical_section::Mutex as CsMutex;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{Config as EmbassyNetConfig, IpListenEndpoint, Runner, StackResources};
 use embassy_net::{IpAddress, IpEndpoint};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_time::{Duration, Timer};
-use esp_hal::{
-    clock::CpuClock,
-    gpio::{Level, Output, OutputConfig},
-    spi::master::{Config as SpiConfig, Spi},
-    time::Rate,
-    timer::timg::TimerGroup,
-};
+use esp_hal::{clock::CpuClock, gpio::Output, spi::master::Spi, timer::timg::TimerGroup};
 use esp_radio::Controller;
 use esp_radio::wifi::{ClientConfig, WifiDevice};
 use heapless::String;
@@ -43,12 +36,7 @@ use baro_rs::{
 };
 use embedded_hal_bus::spi::CriticalSectionDevice as SpiCriticalSectionDevice;
 use ft6336u_driver::{FT6336U, TouchStatus};
-use mipidsi::{
-    Builder as MipidsiBuilder,
-    interface::SpiInterface,
-    models::ILI9342CRgb565,
-    options::{ColorInversion, ColorOrder},
-};
+use mipidsi::{interface::SpiInterface, models::ILI9342CRgb565};
 
 // ====== Concrete Type Definitions for App State ======
 // These concrete types are required because embassy tasks cannot use generics or `impl Trait`
@@ -246,27 +234,27 @@ impl SimpleTimeSource {
 impl embedded_sdmmc::TimeSource for SimpleTimeSource {
     fn get_timestamp(&self) -> embedded_sdmmc::Timestamp {
         let unix_time = *self.unix_time.borrow();
-        
+
         // Convert Unix timestamp to FAT timestamp
         // This is a simplified conversion - for production use a proper datetime library
         const SECONDS_PER_DAY: u32 = 86400;
         const SECONDS_PER_HOUR: u32 = 3600;
         const SECONDS_PER_MINUTE: u32 = 60;
-        
+
         // Days since Unix epoch (1970-01-01)
         let days_since_epoch = unix_time / SECONDS_PER_DAY;
         let seconds_today = unix_time % SECONDS_PER_DAY;
-        
+
         // Approximate year calculation (ignoring leap years for simplicity)
         let years_since_1970 = (days_since_epoch / 365).min(255) as u8;
         let days_this_year = days_since_epoch % 365;
         let month = (days_this_year / 30).min(11) as u8;
         let day = (days_this_year % 30) as u8;
-        
+
         let hours = (seconds_today / SECONDS_PER_HOUR) as u8;
         let minutes = ((seconds_today % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE) as u8;
         let seconds = (seconds_today % SECONDS_PER_MINUTE) as u8;
-        
+
         embedded_sdmmc::Timestamp {
             year_since_1970: years_since_1970,
             zero_indexed_month: month,
@@ -276,6 +264,66 @@ impl embedded_sdmmc::TimeSource for SimpleTimeSource {
             seconds,
         }
     }
+}
+
+/// Initialize application state with storage manager
+///
+/// This function sets up the application state including:
+/// - SimpleTimeSource with synced time
+/// - SD card manager with time source
+/// - Storage manager with rollup loading
+/// - App state with WiFi and time status
+///
+/// # Arguments
+/// - `sd_card`: The SD card instance
+/// - `time`: Optional Unix timestamp from NTP sync
+/// - `wifi_connected`: Whether WiFi connection was successful
+///
+/// # Returns
+/// A tuple of (app_state_ref, initial_time) where:
+/// - app_state_ref: Static reference to the app state wrapped in AsyncMutex
+/// - initial_time: The Unix timestamp to use for sensor readings (0 if no sync)
+async fn setup_app_state(
+    sd_card: embedded_sdmmc::SdCard<SdCardSpiDevice, DelayImpl>,
+    time: Option<u32>,
+    wifi_connected: bool,
+) -> (
+    &'static AsyncMutex<
+        CriticalSectionRawMutex,
+        AppState<'static, SdCardSpiDevice, DelayImpl, TimeSourceImpl>,
+    >,
+    u32,
+) {
+    let initial_time = time.unwrap_or(0);
+    let time_source = SimpleTimeSource::new(initial_time);
+    let sd_card_manager = SdCardManager::new(sd_card, time_source);
+    let mut storage_manager = StorageManager::new(sd_card_manager);
+
+    if let Some(t) = time {
+        info!("Initializing storage manager with synced time: {}", t);
+        match storage_manager.init(t).await {
+            Ok(_) => info!("Storage manager initialized successfully"),
+            Err(e) => error!("Storage manager initialization failed: {:?}", e),
+        }
+    } else {
+        error!("Storage manager initialized without time sync (using fallback)");
+    }
+
+    static APP_STATE: StaticCell<ConcreteGlobalStateType> = StaticCell::new();
+    let mut app_state = AppState::new();
+    app_state.wifi_connected = wifi_connected;
+    app_state.time_known = time.is_some();
+    app_state.run_state = if wifi_connected {
+        AppRunState::WifiConnected
+    } else {
+        AppRunState::Error
+    };
+    app_state.init_accumulator();
+    app_state.set_storage_manager(storage_manager);
+
+    let app_state_ref = APP_STATE.init(AsyncMutex::new(app_state));
+
+    (app_state_ref, initial_time)
 }
 
 #[allow(clippy::large_stack_frames)]
@@ -380,120 +428,32 @@ async fn main(spawner: Spawner) -> ! {
 
     // === Hardware Initialization (in correct order) ===
 
-    // 1. I2C and power management (CRITICAL - must be first)
+    // 1. I2C hardware (power management, GPIO expander, touch controller)
     let i2c0 = create_i2c_bus(peripherals.I2C0, peripherals.GPIO12, peripherals.GPIO11);
-    let (_i2c_hardware, i2c_for_touch, i2c_for_sensors) = init_i2c_hardware(i2c0).await;
+    let (i2c_hardware, i2c_for_sensors) = init_i2c_hardware(i2c0).await;
+    let touch_interface = i2c_hardware.touch_interface;
 
-    // 2. SPI devices (display and SD card)
-    info!("Configuring SPI devices...");
-    let spi_bus_inner = Spi::new(
+    // 2. SPI hardware (display and SD card)
+    let spi_hardware = init_spi_peripherals(
         peripherals.SPI2,
-        SpiConfig::default()
-            .with_frequency(Rate::from_mhz(40))
-            .with_mode(esp_hal::spi::Mode::_0),
-    )
-    .unwrap()
-    .with_sck(peripherals.GPIO36)
-    .with_mosi(peripherals.GPIO37)
-    .with_miso(peripherals.GPIO35)
-    .into_async();
-
-    static SPI_BUS: StaticCell<CsMutex<RefCell<Spi<'static, esp_hal::Async>>>> = StaticCell::new();
-    let spi_bus = SPI_BUS.init(CsMutex::new(RefCell::new(spi_bus_inner)));
-
-    let cs_display = Output::new(peripherals.GPIO3, Level::High, OutputConfig::default());
-    let cs_sd_card = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
-
-    let display_spi_inner =
-        SpiCriticalSectionDevice::new(spi_bus, cs_display, esp_hal::delay::Delay::new()).unwrap();
-    let sd_card_spi_inner =
-        SpiCriticalSectionDevice::new(spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
-
-    // Wrap SPI devices with dual-mode pin wrappers
-    let display_spi = OutputModeSpiDevice::new(display_spi_inner, &GPIO35_PIN);
-    let sd_card_spi = InputModeSpiDevice::new(sd_card_spi_inner, &GPIO35_PIN);
-
-    static DISPLAY_SPI_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
-    let display_spi_buffer = DISPLAY_SPI_BUFFER.init([0u8; 512]);
-    // Use DualModePinAsOutput for display DC instead of direct Output
-    let display_dc = DualModePinAsOutput::new(&GPIO35_PIN);
-    let display_reset = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
-
-    let display_interface = SpiInterface::new(display_spi, display_dc, display_spi_buffer);
-
-    let display = MipidsiBuilder::new(ILI9342CRgb565, display_interface)
-        .reset_pin(display_reset)
-        .display_size(DISPLAY_WIDTH, DISPLAY_HEIGHT)
-        .color_order(ColorOrder::Bgr)
-        .invert_colors(ColorInversion::Inverted)
-        .init(&mut embassy_time::Delay)
-        .expect("Display init failed");
-
-    info!("Display ready");
-
-    // Load up the SD card as well
-    info!("Configuring SD card...");
-
-    let sd_card = init_spi_hardware(sd_card_spi, esp_hal::delay::Delay::new());
-    let sd_card_size = match sd_card.num_bytes() {
-        Ok(size) => size,
-        Err(e) => {
-            error!("SD card init failed: {:?}", e);
-            0
-        }
-    };
-    info!("SD card ready (size: {} bytes)", sd_card_size);
-
-    // Load up the capacitive touch controller
-    // Create I2C interface on the FT6336U@Capacitive touch, touch area pixels 320 x 280
-    info!("Configuring touch controller...");
-    let mut touch_interface = FT6336U::new(i2c_for_touch);
-    let library_version = touch_interface.read_library_version().await.unwrap_or(0);
-    let chip_id = touch_interface.read_chip_id().await.unwrap();
-
-    // Configure touch controller in Polling mode (INT stays LOW while touched)
-    // This is better than Trigger mode for continuous touch detection
-    touch_interface
-        .write_g_mode(ft6336u_driver::GestureMode::Polling)
-        .await
-        .unwrap();
-    let g_mode = touch_interface.read_g_mode().await.unwrap();
-
-    info!(
-        "Touch controller ready (library: 0x{:04X}, chip: 0x{:02X}, mode: 0x{:02X})",
-        library_version, chip_id, g_mode
+        peripherals.GPIO3,
+        peripherals.GPIO4,
+        peripherals.GPIO15,
+        &GPIO35_PIN,
+        peripherals.GPIO36,
+        peripherals.GPIO37,
+        peripherals.GPIO35,
+        DISPLAY_WIDTH,
+        DISPLAY_HEIGHT,
     );
+    let display = spi_hardware.display;
+    let sd_card = spi_hardware.sd_card;
+    let sd_card_size = spi_hardware.sd_card_size;
 
     info!("=== Hardware initialization complete ===\n");
 
     // === Application State Setup ===
-    let initial_time = time.unwrap_or(0);
-    let time_source = SimpleTimeSource::new(initial_time);
-    let sd_card_manager = SdCardManager::new(sd_card, time_source);
-    let mut storage_manager = StorageManager::new(sd_card_manager);
-    if let Some(t) = time {
-        info!("Initializing storage manager with synced time: {}", t);
-        match storage_manager.init(t).await {
-            Ok(_) => info!("Storage manager initialized successfully"),
-            Err(e) => error!("Storage manager initialization failed: {:?}", e),
-        }
-    } else {
-        error!("Storage manager initialized without time sync (using fallback)");
-    }
-
-    static APP_STATE: StaticCell<ConcreteGlobalStateType> = StaticCell::new();
-    let mut app_state = AppState::new();
-    app_state.wifi_connected = wifi_connected;
-    app_state.time_known = time.is_some();
-    app_state.run_state = if wifi_connected {
-        AppRunState::WifiConnected
-    } else {
-        AppRunState::Error
-    };
-    app_state.init_accumulator();
-    app_state.set_storage_manager(storage_manager);
-
-    let app_state_ref = APP_STATE.init(AsyncMutex::new(app_state));
+    let (app_state_ref, initial_time) = setup_app_state(sd_card, time, wifi_connected).await;
 
     // === Spawn Background Tasks ===
 
@@ -504,7 +464,11 @@ async fn main(spawner: Spawner) -> ! {
         // Create sensors state
         let sensors = SensorsState::new(i2c_for_sensors);
         spawner
-            .spawn(background_sensor_reading_task(sensors, app_state_ref, initial_time))
+            .spawn(background_sensor_reading_task(
+                sensors,
+                app_state_ref,
+                initial_time,
+            ))
             .ok();
 
         // Start storage event processing task
@@ -551,7 +515,10 @@ async fn background_sensor_reading_task(
     app_state: &'static ConcreteGlobalStateType,
     initial_unix_time: u32,
 ) {
-    info!("Sensor reading task started with initial time: {}", initial_unix_time);
+    info!(
+        "Sensor reading task started with initial time: {}",
+        initial_unix_time
+    );
 
     let mut timestamp: u32 = initial_unix_time;
 
