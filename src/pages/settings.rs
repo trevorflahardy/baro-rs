@@ -53,7 +53,7 @@ impl SettingsPage {
 
         // Live log feed area
         let log_display = MultiLineText::new(
-            Rectangle::new(Point::new(10, 140), Size::new(300, 100)),
+            Rectangle::new(Point::new(10, 150), Size::new(300, 100)),
             "Waiting for data...",
             TextSize::Small,
         );
