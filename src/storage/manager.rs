@@ -1,5 +1,7 @@
 // cSpell: disable
-use crate::storage::sd_card::{ROLLUP_FILE_1H, ROLLUP_FILE_5M, ROLLUP_FILE_DAILY, SdCardManager};
+use crate::storage::sd_card::{
+    ROLLUP_FILE_1H, ROLLUP_FILE_5M, ROLLUP_FILE_DAILY, SdCardManager, SdCardManagerError,
+};
 
 use super::{LifetimeStats, RawSample, Rollup, accumulator::RollupEvent};
 use log::{debug, error, info};
@@ -63,8 +65,22 @@ where
         }
     }
 
-    pub async fn init(&mut self, time: u32) {
+    pub async fn init(&mut self, time: u32) -> Result<(), SdCardManagerError> {
         info!(" Initializing storage manager, loading rollups from SD card...");
+
+        let lifetime_data_buffer = &mut [0u8; core::mem::size_of::<LifetimeStats>()];
+        let lifetime_data = match self
+            .sd_card_manager
+            .read_lifetime_data(lifetime_data_buffer)
+        {
+            Ok(_) => Ok(LifetimeStats::from(lifetime_data_buffer)),
+            Err(e) => {
+                error!(" Failed to load lifetime stats from SD card: {:?}", e);
+                Err(e)
+            }
+        }?;
+
+        self.lifetime_stats = lifetime_data;
 
         // Calculate time window - load the max capacity worth of data
         // For each rollup type, we want to load the last N entries where N is the capacity
@@ -84,11 +100,14 @@ where
                 for i in 0..count {
                     self.rollups_5m.push_back(buffer_5m[i]);
                 }
+
+                Ok(())
             }
             Err(e) => {
                 error!(" Failed to load 5-minute rollups: {:?}", e);
+                Err(e)
             }
-        }
+        }?;
 
         // Load hourly rollups (last 30 days)
         let window_1h = (
@@ -105,11 +124,14 @@ where
                 for i in 0..count {
                     self.rollups_1h.push_back(buffer_1h[i]);
                 }
+
+                Ok(())
             }
             Err(e) => {
                 error!(" Failed to load hourly rollups: {:?}", e);
+                Err(e)
             }
-        }
+        }?;
 
         // Load daily rollups (last 365 days)
         let window_daily = (
@@ -127,13 +149,18 @@ where
                 for i in 0..count {
                     self.rollups_daily.push_back(buffer_daily[i]);
                 }
+
+                Ok(())
             }
             Err(e) => {
                 error!(" Failed to load daily rollups: {:?}", e);
+
+                Err(e)
             }
-        }
+        }?;
 
         info!(" Storage manager initialization complete");
+        Ok(())
     }
 
     /// Process a rollup event (store in RAM and write to SD card)

@@ -151,4 +151,55 @@ impl LifetimeStats {
             self.sensor_min[i] = self.sensor_min[i].min(sample.values[i]);
         }
     }
+
+    fn to_slice(&self) -> &[u8] {
+        // Safety: LifetimeStats is #[repr(C)] and contains only plain data types
+        unsafe {
+            core::slice::from_raw_parts(
+                (self as *const LifetimeStats) as *const u8,
+                core::mem::size_of::<LifetimeStats>(),
+            )
+        }
+    }
+}
+
+impl AsMut<[u8]> for LifetimeStats {
+    fn as_mut(&mut self) -> &mut [u8] {
+        // Safety: LifetimeStats is #[repr(C)] and contains only plain data types
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                (self as *mut LifetimeStats) as *mut u8,
+                core::mem::size_of::<LifetimeStats>(),
+            )
+        }
+    }
+}
+
+impl AsRef<[u8]> for LifetimeStats {
+    fn as_ref(&self) -> &[u8] {
+        self.to_slice()
+    }
+}
+
+impl From<&[u8]> for LifetimeStats {
+    fn from(bytes: &[u8]) -> Self {
+        // Safety: We copy only up to the size of LifetimeStats
+        let mut stats = LifetimeStats::default();
+        let len = core::mem::size_of::<LifetimeStats>().min(bytes.len());
+        stats.as_mut()[..len].copy_from_slice(&bytes[..len]);
+        stats
+    }
+}
+
+impl<const N: usize> From<&mut [u8; N]> for LifetimeStats {
+    fn from(bytes: &mut [u8; N]) -> Self {
+        // Verify that N is at least the size of LifetimeStats
+        assert!(N >= core::mem::size_of::<LifetimeStats>());
+
+        // Safety: We copy only up to the size of LifetimeStats
+        let mut stats = LifetimeStats::default();
+        let len = core::mem::size_of::<LifetimeStats>().min(bytes.len());
+        stats.as_mut()[..len].copy_from_slice(&bytes[..len]);
+        stats
+    }
 }

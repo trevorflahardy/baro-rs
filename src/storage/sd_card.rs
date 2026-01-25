@@ -245,4 +245,12 @@ where
             Ok(count)
         })
     }
+
+    pub fn read_lifetime_data(&self, buffer: &mut [u8]) -> Result<usize, SdCardManagerError> {
+        self.file_operation(ROLLUP_FILE_LIFETIME, Mode::ReadOnly, move |file| {
+            let bytes_read = file.read(buffer).map_err(SdCardManagerError::SdmmcError)?;
+
+            Ok(bytes_read)
+        })
+    }
 }

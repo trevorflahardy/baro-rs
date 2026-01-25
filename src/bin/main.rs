@@ -441,7 +441,10 @@ async fn main(spawner: Spawner) -> ! {
     let sd_card_manager = SdCardManager::new(sd_card, time_source);
     let mut storage_manager = StorageManager::new(sd_card_manager);
     if let Some(t) = time {
-        storage_manager.init(t).await;
+        match storage_manager.init(t).await {
+            Ok(_) => info!("Storage manager initialized successfully"),
+            Err(e) => error!("Storage manager initialization failed: {:?}", e),
+        }
     }
 
     static APP_STATE: StaticCell<ConcreteGlobalStateType> = StaticCell::new();

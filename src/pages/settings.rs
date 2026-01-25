@@ -3,8 +3,8 @@
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Drawable, MultiLineText, PageEvent, PageId,
-    StorageEvent, TextComponent, TextSize, TouchEvent,
+    Action, Drawable, MultiLineText, PageEvent, PageId, StorageEvent, TextComponent, TextSize,
+    TouchEvent,
 };
 use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_10X20};
@@ -46,14 +46,14 @@ impl SettingsPage {
         );
 
         let humidity_text = TextComponent::new(
-            Rectangle::new(Point::new(20, 85), Size::new(280, 20)),
+            Rectangle::new(Point::new(20, 80), Size::new(280, 20)),
             "Humidity: --",
             TextSize::Medium,
         );
 
         // Live log feed area
         let log_display = MultiLineText::new(
-            Rectangle::new(Point::new(10, 150), Size::new(300, 100)),
+            Rectangle::new(Point::new(10, 140), Size::new(300, 100)),
             "Waiting for data...",
             TextSize::Small,
         );
@@ -259,15 +259,6 @@ impl Drawable for SettingsPage {
         self.humidity_text.draw(display)?;
 
         // Draw log section
-        let log_header_bounds = Rectangle::new(Point::new(10, 135), Size::new(300, 10));
-        log_header_bounds
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(Rgb565::CSS_DARK_GRAY)
-                    .build(),
-            )
-            .draw(display)?;
-
         Text::new("Live Data Feed:", Point::new(15, 145), section_style).draw(display)?;
 
         // Draw log box
@@ -276,7 +267,7 @@ impl Drawable for SettingsPage {
             .into_styled(
                 PrimitiveStyleBuilder::new()
                     .fill_color(Rgb565::new(0x08, 0x08, 0x10))
-                    .stroke_color(Rgb565::CSS_GRAY)
+                    .stroke_color(Rgb565::CSS_DARK_BLUE)
                     .stroke_width(1)
                     .build(),
             )
