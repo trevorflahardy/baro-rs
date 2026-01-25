@@ -107,7 +107,7 @@ impl Rollup {
         }
     }
 
-    pub fn to_slice(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &[u8] {
         // Safety: Rollup is #[repr(C)] and contains only plain data types
         unsafe {
             core::slice::from_raw_parts(
@@ -120,7 +120,7 @@ impl Rollup {
 
 impl AsRef<[u8]> for Rollup {
     fn as_ref(&self) -> &[u8] {
-        self.to_slice()
+        self.as_slice()
     }
 }
 
@@ -152,7 +152,7 @@ impl LifetimeStats {
         }
     }
 
-    fn to_slice(&self) -> &[u8] {
+    fn as_slice(&self) -> &[u8] {
         // Safety: LifetimeStats is #[repr(C)] and contains only plain data types
         unsafe {
             core::slice::from_raw_parts(
@@ -177,7 +177,7 @@ impl AsMut<[u8]> for LifetimeStats {
 
 impl AsRef<[u8]> for LifetimeStats {
     fn as_ref(&self) -> &[u8] {
-        self.to_slice()
+        self.as_slice()
     }
 }
 

@@ -6,13 +6,13 @@ use crate::pages::Page;
 use crate::ui::core::{Action, Drawable, PageId, TouchEvent};
 use core::cell::Cell;
 use embedded_graphics::{
+    Drawable as EgDrawable,
     geometry::{Point, Size},
-    mono_font::{ascii::FONT_10X20, MonoTextStyle},
+    mono_font::{MonoTextStyle, ascii::FONT_10X20},
     pixelcolor::Rgb565,
     prelude::*,
     primitives::Rectangle,
     text::{Alignment, Text},
-    Drawable as EgDrawable,
 };
 
 const DISPLAY_WIDTH: u16 = 320;
@@ -72,10 +72,7 @@ impl Page for WifiErrorPage {
         // No updates needed for static error page
     }
 
-    fn draw_page<D: DrawTarget<Color = Rgb565>>(
-        &self,
-        display: &mut D,
-    ) -> Result<(), D::Error> {
+    fn draw_page<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
         Drawable::draw(self, display)
     }
 

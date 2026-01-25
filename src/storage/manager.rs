@@ -97,8 +97,8 @@ where
         {
             Ok(count) => {
                 info!(" Loaded {} 5-minute rollups from SD card", count);
-                for i in 0..count {
-                    self.rollups_5m.push_back(buffer_5m[i]);
+                for rollup in &buffer_5m[..count] {
+                    self.rollups_5m.push_back(*rollup);
                 }
 
                 Ok(())
@@ -121,8 +121,8 @@ where
         {
             Ok(count) => {
                 info!(" Loaded {} hourly rollups from SD card", count);
-                for i in 0..count {
-                    self.rollups_1h.push_back(buffer_1h[i]);
+                for rollup in &buffer_1h[..count] {
+                    self.rollups_1h.push_back(*rollup);
                 }
 
                 Ok(())
@@ -146,8 +146,8 @@ where
         ) {
             Ok(count) => {
                 info!(" Loaded {} daily rollups from SD card", count);
-                for i in 0..count {
-                    self.rollups_daily.push_back(buffer_daily[i]);
+                for rollup in &buffer_daily[..count] {
+                    self.rollups_daily.push_back(*rollup);
                 }
 
                 Ok(())

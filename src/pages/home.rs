@@ -38,8 +38,7 @@ impl HomePage {
         let palette = ColorPalette::default();
 
         // Settings button
-        if self
-            .buttons
+        self.buttons
             .push(
                 Button::new(
                     Rectangle::new(
@@ -52,12 +51,10 @@ impl HomePage {
                 .with_palette(palette)
                 .with_variant(ButtonVariant::Primary),
             )
-            .is_ok()
-        {}
+            .ok();
 
         // Data button
-        if self
-            .buttons
+        self.buttons
             .push(
                 Button::new(
                     Rectangle::new(
@@ -70,8 +67,7 @@ impl HomePage {
                 .with_palette(palette)
                 .with_variant(ButtonVariant::Secondary),
             )
-            .is_ok()
-        {}
+            .ok();
 
         self.dirty = true;
     }

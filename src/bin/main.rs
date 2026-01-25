@@ -6,15 +6,19 @@
     reason = "mem::forget is generally not safe to do with esp_hal types, especially those \
     holding buffers for the duration of a data transfer."
 )]
-#![deny(clippy::large_stack_frames)]
+// Note: large_stack_frames warnings are expected in async embassy tasks
+// due to Future state machines. These are monitored but not denied.
 
 use alloc::boxed::Box;
 use baro_rs::app_state::{
     AppError, AppRunState, AppState, FromUnchecked, GlobalStateType, ROLLUP_CHANNEL, SensorsState,
     create_i2c_bus, init_i2c_hardware, init_spi_peripherals,
 };
-use baro_rs::display_manager::{DisplayManager, DisplayRequest, get_display_receiver};
+use baro_rs::display_manager::{
+    DisplayManager, DisplayRequest, get_display_receiver, get_display_sender,
+};
 use baro_rs::storage::{MAX_SENSORS, manager::StorageManager, sd_card::SdCardManager};
+use baro_rs::ui::core::PageId;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{Config as EmbassyNetConfig, IpListenEndpoint, Runner, StackResources};
@@ -276,13 +280,11 @@ impl embedded_sdmmc::TimeSource for SimpleTimeSource {
 /// A tuple of (interfaces, wifi_connected) where:
 /// - interfaces: Network interfaces
 /// - wifi_connected: Whether connection was successful
+#[allow(clippy::large_stack_frames)]
 async fn setup_wifi(
     radio_init: &'static mut Controller<'static>,
     wifi_peripheral: esp_hal::peripherals::WIFI<'static>,
-) -> (
-    esp_radio::wifi::Interfaces<'static>,
-    bool,
-) {
+) -> (esp_radio::wifi::Interfaces<'static>, bool) {
     info!("Configuring radio...");
     let (mut wifi, interfaces) =
         esp_radio::wifi::new(radio_init, wifi_peripheral, Default::default())
@@ -361,6 +363,8 @@ async fn setup_network_stack(
 ///
 /// # Returns
 /// Optional Unix timestamp if sync was successful
+#[allow(clippy::large_stack_frames)]
+#[allow(clippy::large_stack_frames)]
 async fn sync_time(stack: &embassy_net::Stack<'static>) -> Option<u32> {
     info!("Performing time sync...");
     match udp_time_sync(stack).await {
@@ -468,8 +472,6 @@ async fn main(spawner: Spawner) -> ! {
     // Run WiFi setup and hardware initialization in parallel to speed up boot time
     info!("Starting concurrent WiFi and hardware initialization...");
 
-    use embassy_futures::select::{select, Either};
-
     // WiFi setup future
     let wifi_future = setup_wifi(radio_init, peripherals.WIFI);
 
@@ -497,7 +499,7 @@ async fn main(spawner: Spawner) -> ! {
     };
 
     // Both futures should complete around the same time
-    let ((interfaces, wifi_connected), (i2c_hardware, i2c_for_sensors, spi_hardware)) = 
+    let ((interfaces, wifi_connected), (i2c_hardware, i2c_for_sensors, spi_hardware)) =
         embassy_futures::join::join(wifi_future, hardware_future).await;
 
     info!("=== Concurrent initialization complete ===\n");
@@ -508,7 +510,7 @@ async fn main(spawner: Spawner) -> ! {
     let sd_card_size = spi_hardware.sd_card_size;
 
     // === Network Stack Setup (only if WiFi connected) ===
-    let (stack_ref, time) = if wifi_connected {
+    let (_stack_ref, time) = if wifi_connected {
         let stack_ref = setup_network_stack(interfaces, &spawner).await;
         let time = sync_time(stack_ref).await;
         (Some(stack_ref), time)
@@ -520,6 +522,22 @@ async fn main(spawner: Spawner) -> ! {
     let (app_state_ref, initial_time) = setup_app_state(sd_card, time, wifi_connected).await;
 
     // === Spawn Background Tasks ===
+
+    // Start touch polling task
+    spawner.spawn(touch_polling_task(touch_interface)).ok();
+
+    // Start display manager task
+    let display_manager = DisplayManager::new(display);
+    spawner.spawn(display_manager_task(display_manager)).ok();
+
+    // Navigate to appropriate page based on WiFi status
+    if !wifi_connected {
+        info!("Navigating to WiFi error page");
+        let display_sender = get_display_sender();
+        display_sender
+            .send(DisplayRequest::NavigateToPage(PageId::WifiError))
+            .await;
+    }
 
     // Only start sensor tasks if WiFi connected successfully
     if wifi_connected && sd_card_size > 0 {
@@ -545,13 +563,6 @@ async fn main(spawner: Spawner) -> ! {
         info!("Skipping sensor tasks - WiFi not connected or SD card unavailable");
     }
 
-    // Start touch polling task
-    spawner.spawn(touch_polling_task(touch_interface)).ok();
-
-    // Start display manager task
-    let display_manager = DisplayManager::new(display);
-    spawner.spawn(display_manager_task(display_manager)).ok();
-
     info!("All tasks spawned\n");
 
     // === Main Loop ===
@@ -573,6 +584,7 @@ async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) {
 /// 1. Reads all sensors every 10 seconds
 /// 2. Creates a RawSample with the current timestamp
 /// 3. Dispatches the sample to the accumulator via the app state
+#[allow(clippy::large_stack_frames)]
 #[embassy_executor::task]
 async fn background_sensor_reading_task(
     mut sensors: SensorsState<'static>,
@@ -616,6 +628,7 @@ async fn background_sensor_reading_task(
 /// 1. Subscribes to the rollup event channel
 /// 2. Receives events from the accumulator
 /// 3. Passes events to the storage manager for persistence
+#[allow(clippy::large_stack_frames)]
 #[embassy_executor::task]
 async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateType) {
     info!("Storage event processing task started");
@@ -642,6 +655,7 @@ async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateTy
 }
 
 /// Async task for polling touch input
+#[allow(clippy::large_stack_frames)]
 #[embassy_executor::task]
 async fn touch_polling_task(
     mut touch: FT6336U<

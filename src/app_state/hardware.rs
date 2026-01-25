@@ -43,6 +43,7 @@ pub struct I2cHardware<'a> {
 /// Container for SPI-based hardware components
 ///
 /// Uses concrete types for ESP32-S3 SPI peripherals
+#[allow(clippy::type_complexity)]
 pub struct SpiHardware {
     pub display: mipidsi::Display<
         SpiInterface<
@@ -230,6 +231,7 @@ where
 ///
 /// # Returns
 /// A SpiHardware struct containing the initialized display and SD card
+#[allow(clippy::too_many_arguments)]
 pub fn init_spi_peripherals(
     spi2_peripheral: esp_hal::peripherals::SPI2<'static>,
     display_cs_pin: esp_hal::peripherals::GPIO3<'static>,

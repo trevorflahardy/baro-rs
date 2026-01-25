@@ -110,9 +110,7 @@ impl<'a> RollupAccumulator<'a> {
         }
 
         let count = rollup.len() as i32;
-        for i in 0..MAX_SENSORS {
-            avg[i] /= count;
-        }
+        avg.iter_mut().for_each(|a| *a /= count);
 
         Rollup::new(rollup[0].timestamp, &avg, &min, &max)
     }
@@ -135,9 +133,7 @@ impl<'a> RollupAccumulator<'a> {
         }
 
         let count = rollup.len() as i32;
-        for i in 0..MAX_SENSORS {
-            avg[i] /= count;
-        }
+        avg.iter_mut().for_each(|a| *a /= count);
 
         Rollup::new(rollup[0].start_ts, &avg, &min, &max)
     }

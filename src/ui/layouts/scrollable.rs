@@ -1,11 +1,11 @@
 // src/ui/layouts/scrollable.rs
 //! Scrollable container for content that exceeds visible bounds
 
-use crate::ui::core::{Drawable, DirtyRegion, TouchEvent, TouchPoint, TouchResult, Touchable};
+use crate::ui::core::{DirtyRegion, Drawable, TouchEvent, TouchPoint, TouchResult, Touchable};
 use crate::ui::styling::Style;
+use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle};
-use embedded_graphics::Drawable as EgDrawable;
 
 /// Direction that can be scrolled
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -81,8 +81,10 @@ impl ScrollableContainer {
 
     /// Constrain scroll to valid bounds
     fn constrain_scroll(&mut self) {
-        let max_scroll_x = (self.content_size.width as i32 - self.viewport.size.width as i32).max(0);
-        let max_scroll_y = (self.content_size.height as i32 - self.viewport.size.height as i32).max(0);
+        let max_scroll_x =
+            (self.content_size.width as i32 - self.viewport.size.width as i32).max(0);
+        let max_scroll_y =
+            (self.content_size.height as i32 - self.viewport.size.height as i32).max(0);
 
         match self.direction {
             ScrollDirection::Vertical => {
@@ -123,13 +125,17 @@ impl ScrollableContainer {
 
     /// Check if content can scroll in a direction
     pub fn can_scroll_vertical(&self) -> bool {
-        matches!(self.direction, ScrollDirection::Vertical | ScrollDirection::Both)
-            && self.content_size.height > self.viewport.size.height
+        matches!(
+            self.direction,
+            ScrollDirection::Vertical | ScrollDirection::Both
+        ) && self.content_size.height > self.viewport.size.height
     }
 
     pub fn can_scroll_horizontal(&self) -> bool {
-        matches!(self.direction, ScrollDirection::Horizontal | ScrollDirection::Both)
-            && self.content_size.width > self.viewport.size.width
+        matches!(
+            self.direction,
+            ScrollDirection::Horizontal | ScrollDirection::Both
+        ) && self.content_size.width > self.viewport.size.width
     }
 
     /// Draw scrollbar indicators
@@ -146,28 +152,35 @@ impl ScrollableContainer {
         if self.can_scroll_vertical() {
             let viewport_height = self.viewport.size.height;
             let content_height = self.content_size.height;
-            let scroll_ratio = self.scroll_offset.y as f32 / (content_height - viewport_height) as f32;
+            let scroll_ratio =
+                self.scroll_offset.y as f32 / (content_height - viewport_height) as f32;
             let bar_height = ((viewport_height * viewport_height) / content_height).max(20);
             let bar_y = self.viewport.top_left.y
                 + ((viewport_height - bar_height) as f32 * scroll_ratio) as i32;
 
             let bar = Rectangle::new(
                 Point::new(
-                    self.viewport.top_left.x + self.viewport.size.width as i32 - scrollbar_width as i32,
+                    self.viewport.top_left.x + self.viewport.size.width as i32
+                        - scrollbar_width as i32,
                     bar_y,
                 ),
                 Size::new(scrollbar_width, bar_height),
             );
 
-            bar.into_styled(PrimitiveStyleBuilder::new().fill_color(scrollbar_color).build())
-                .draw(display)?;
+            bar.into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(scrollbar_color)
+                    .build(),
+            )
+            .draw(display)?;
         }
 
         // Horizontal scrollbar
         if self.can_scroll_horizontal() {
             let viewport_width = self.viewport.size.width;
             let content_width = self.content_size.width;
-            let scroll_ratio = self.scroll_offset.x as f32 / (content_width - viewport_width) as f32;
+            let scroll_ratio =
+                self.scroll_offset.x as f32 / (content_width - viewport_width) as f32;
             let bar_width = ((viewport_width * viewport_width) / content_width).max(20);
             let bar_x = self.viewport.top_left.x
                 + ((viewport_width - bar_width) as f32 * scroll_ratio) as i32;
@@ -175,13 +188,18 @@ impl ScrollableContainer {
             let bar = Rectangle::new(
                 Point::new(
                     bar_x,
-                    self.viewport.top_left.y + self.viewport.size.height as i32 - scrollbar_width as i32,
+                    self.viewport.top_left.y + self.viewport.size.height as i32
+                        - scrollbar_width as i32,
                 ),
                 Size::new(bar_width, scrollbar_width),
             );
 
-            bar.into_styled(PrimitiveStyleBuilder::new().fill_color(scrollbar_color).build())
-                .draw(display)?;
+            bar.into_styled(
+                PrimitiveStyleBuilder::new()
+                    .fill_color(scrollbar_color)
+                    .build(),
+            )
+            .draw(display)?;
         }
 
         Ok(())

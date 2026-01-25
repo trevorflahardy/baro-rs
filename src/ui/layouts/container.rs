@@ -108,10 +108,14 @@ impl<const N: usize> Container<N> {
         self
     }
 
-    pub fn add_child(&mut self, size: Size, constraint: SizeConstraint) -> Result<usize, ()> {
+    pub fn add_child(
+        &mut self,
+        size: Size,
+        constraint: SizeConstraint,
+    ) -> Result<usize, &'static str> {
         let child_bounds = Rectangle::new(self.bounds.top_left, size);
         let child = ChildElement::new(child_bounds, constraint);
-        self.children.push(child).map_err(|_| ())?;
+        self.children.push(child).map_err(|_| "Container full")?;
         self.dirty = true;
         self.layout();
         Ok(self.children.len() - 1)
