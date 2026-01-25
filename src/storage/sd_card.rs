@@ -8,9 +8,9 @@ use thiserror_no_std::Error;
 type ConfigBuffer = [u8; core::mem::size_of::<Config>()];
 
 pub const CONFIG_FILE: &str = "config.bin";
-pub const ROLLUP_FILE_1H: &str = "rollup_1h.bin";
-pub const ROLLUP_FILE_5M: &str = "rollup_5m.bin";
-pub const ROLLUP_FILE_DAILY: &str = "rollup_daily.bin";
+pub const ROLLUP_FILE_1H: &str = "roll_1h.bin";
+pub const ROLLUP_FILE_5M: &str = "roll_5m.bin";
+pub const ROLLUP_FILE_DAILY: &str = "roll_day.bin";
 pub const ROLLUP_FILE_LIFETIME: &str = "lifetime.bin";
 
 #[derive(Debug, Error)]
