@@ -1,6 +1,9 @@
 // src/ui/core.rs
 //! Core UI traits and types for the Baro UI system
 
+extern crate alloc;
+use alloc::boxed::Box;
+
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 
@@ -62,6 +65,9 @@ pub enum PageId {
     Home,
     Settings,
     Graphs,
+    TrendPage,
+    TrendTemperature,
+    TrendHumidity,
     WifiError,
 }
 
@@ -167,6 +173,9 @@ pub enum PageEvent {
     SensorUpdate(SensorData),
     /// Storage event (rollup, sample, etc.)
     StorageEvent(StorageEvent),
+    /// Raw rollup event from accumulator (for trend pages)
+    /// Boxed to reduce enum size since RollupEvent is large (260 bytes)
+    RollupEvent(Box<crate::storage::accumulator::RollupEvent>),
     /// System event
     SystemEvent(SystemEvent),
 }

@@ -8,14 +8,14 @@ use heapless::Vec;
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Alignment, Button, ButtonVariant, ColorPalette, Container, Direction, Drawable,
-    PageId, SizeConstraint, TextComponent, TextSize, TouchEvent, TouchResult, Touchable,
+    Action, Alignment, Button, ButtonVariant, ColorPalette, Container, Direction, Drawable, PageId,
+    SizeConstraint, TextComponent, TextSize, TouchEvent, TouchResult, Touchable,
 };
 
 pub struct HomePage {
     bounds: Rectangle,
-    container: Container<4>,
-    buttons: Vec<Button, 4>,
+    container: Container<5>,
+    buttons: Vec<Button, 3>,
     title: TextComponent,
     dirty: bool,
 }
@@ -49,22 +49,64 @@ impl HomePage {
 
         // Add title with fixed height
         self.container
-            .add_child(Size::new(self.bounds.size.width, 30), SizeConstraint::Fixed(30))
+            .add_child(
+                Size::new(self.bounds.size.width, 30),
+                SizeConstraint::Fixed(30),
+            )
             .ok();
 
         // Add spacer
         self.container
-            .add_child(Size::new(self.bounds.size.width, 10), SizeConstraint::Fixed(10))
+            .add_child(
+                Size::new(self.bounds.size.width, 10),
+                SizeConstraint::Fixed(10),
+            )
             .ok();
 
         // Add buttons with expanding size - they will share remaining space equally
+        // Temperature Graph button
+        let temp_bounds = self
+            .container
+            .add_child(Size::new(0, 0), SizeConstraint::Expand)
+            .ok()
+            .and_then(|idx| self.container.child_bounds(idx))
+            .unwrap_or(Rectangle::new(Point::zero(), Size::zero()));
+
+        let temp_button = Button::new(
+            temp_bounds,
+            "Temperature Graph",
+            Action::NavigateToPage(PageId::TrendTemperature),
+        )
+        .with_palette(palette)
+        .with_variant(ButtonVariant::Primary);
+
+        self.buttons.push(temp_button).ok();
+
+        // Humidity Graph button
+        let humidity_bounds = self
+            .container
+            .add_child(Size::new(0, 0), SizeConstraint::Expand)
+            .ok()
+            .and_then(|idx| self.container.child_bounds(idx))
+            .unwrap_or(Rectangle::new(Point::zero(), Size::zero()));
+
+        let humidity_button = Button::new(
+            humidity_bounds,
+            "Humidity Graph",
+            Action::NavigateToPage(PageId::TrendHumidity),
+        )
+        .with_palette(palette)
+        .with_variant(ButtonVariant::Secondary);
+
+        self.buttons.push(humidity_button).ok();
+
         // Settings button
-        let settings_bounds =
-            self.container
-                .add_child(Size::new(0, 0), SizeConstraint::Expand)
-                .ok()
-                .and_then(|idx| self.container.child_bounds(idx))
-                .unwrap_or(Rectangle::new(Point::zero(), Size::zero()));
+        let settings_bounds = self
+            .container
+            .add_child(Size::new(0, 0), SizeConstraint::Expand)
+            .ok()
+            .and_then(|idx| self.container.child_bounds(idx))
+            .unwrap_or(Rectangle::new(Point::zero(), Size::zero()));
 
         let settings_button = Button::new(
             settings_bounds,
@@ -72,27 +114,9 @@ impl HomePage {
             Action::NavigateToPage(PageId::Settings),
         )
         .with_palette(palette)
-        .with_variant(ButtonVariant::Primary);
-
-        self.buttons.push(settings_button).ok();
-
-        // View Graphs button
-        let graphs_bounds =
-            self.container
-                .add_child(Size::new(0, 0), SizeConstraint::Expand)
-                .ok()
-                .and_then(|idx| self.container.child_bounds(idx))
-                .unwrap_or(Rectangle::new(Point::zero(), Size::zero()));
-
-        let data_button = Button::new(
-            graphs_bounds,
-            "View Graphs",
-            Action::NavigateToPage(PageId::Graphs),
-        )
-        .with_palette(palette)
         .with_variant(ButtonVariant::Secondary);
 
-        self.buttons.push(data_button).ok();
+        self.buttons.push(settings_button).ok();
 
         // Update title bounds from container
         if let Some(title_bounds) = self.container.child_bounds(0) {

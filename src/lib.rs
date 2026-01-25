@@ -7,6 +7,7 @@ pub mod async_i2c_bus;
 pub mod config;
 pub mod display_manager;
 pub mod dual_mode_pin;
+pub mod metrics;
 pub mod pages;
 pub mod sensors;
 pub mod storage;

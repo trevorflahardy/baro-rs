@@ -75,6 +75,7 @@ CI and/or contributors should treat **clippy warnings as errors**.
 - Prefer **explicitness over magic**.
 - Prefer **simple, readable code** over micro-optimizations.
 - This is firmware that may run for **years** — treat it accordingly.
+- Never put imports in functions unless absolutely necessary.
 
 ### Error Handling and Robustness
 

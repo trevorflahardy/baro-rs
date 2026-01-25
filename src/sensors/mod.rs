@@ -106,6 +106,50 @@ pub mod indices {
     pub const HUMIDITY: usize = 1;
 }
 
+/// Sensor type identifier for selecting which sensor data to display
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SensorType {
+    /// Temperature sensor (SHT40 index 0)
+    Temperature,
+    /// Humidity sensor (SHT40 index 1)
+    Humidity,
+    // Future sensors can be added here
+}
+
+impl SensorType {
+    /// Get the sensor array index for this sensor type
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Temperature => indices::TEMPERATURE,
+            Self::Humidity => indices::HUMIDITY,
+        }
+    }
+
+    /// Get the unit string for display
+    pub const fn unit(self) -> &'static str {
+        match self {
+            Self::Temperature => "°C",
+            Self::Humidity => "%",
+        }
+    }
+
+    /// Get the display name for this sensor
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Temperature => "Temperature",
+            Self::Humidity => "Humidity",
+        }
+    }
+
+    /// Get the short name for compact display
+    pub const fn short_name(self) -> &'static str {
+        match self {
+            Self::Temperature => "Temp",
+            Self::Humidity => "Humid",
+        }
+    }
+}
+
 // Re-export for convenience
 pub use indices::SHT40Indexed;
 

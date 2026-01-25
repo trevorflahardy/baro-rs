@@ -286,6 +286,10 @@ impl Page for SettingsPage {
                 // Handle system events if needed
                 false
             }
+            PageEvent::RollupEvent(_) => {
+                // Settings page doesn't need to handle rollup events directly
+                false
+            }
         }
     }
 

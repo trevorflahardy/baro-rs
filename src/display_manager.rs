@@ -16,6 +16,8 @@ use log::{debug, error, info};
 
 use crate::pages::page_manager::{Page, PageWrapper};
 use crate::pages::{home::HomePage, settings::SettingsPage};
+use crate::sensors::SensorType;
+use crate::storage::TimeWindow;
 use crate::storage::accumulator::RollupEvent;
 use crate::ui::{Action, PageEvent, PageId, SensorData, TouchEvent};
 
@@ -101,6 +103,26 @@ where
                 // TODO: Create graphs page when implemented
                 debug!(" Graphs page not yet implemented");
             }
+            PageId::TrendPage => {
+                // Generic trend page requires parameters
+                debug!(" TrendPage requires sensor/window parameters");
+            }
+            PageId::TrendTemperature => {
+                let page = crate::pages::TrendPage::new(
+                    self.bounds,
+                    SensorType::Temperature,
+                    TimeWindow::FiveMinutes,
+                );
+                self.current_page = PageWrapper::TrendPage(Box::new(page));
+            }
+            PageId::TrendHumidity => {
+                let page = crate::pages::TrendPage::new(
+                    self.bounds,
+                    SensorType::Humidity,
+                    TimeWindow::FiveMinutes,
+                );
+                self.current_page = PageWrapper::TrendPage(Box::new(page));
+            }
             PageId::WifiError => {
                 let page = crate::pages::WifiErrorPage::new();
                 self.current_page = PageWrapper::WifiError(Box::new(page));
@@ -131,6 +153,10 @@ where
     fn update_data(&mut self, event: Box<RollupEvent>) {
         debug!(" Received data update: {:?}", event);
 
+        // Dispatch raw RollupEvent to pages that need it (like TrendPage)
+        let rollup_page_event = PageEvent::RollupEvent(event.clone());
+        let needs_redraw_rollup = Page::on_event(&mut self.current_page, &rollup_page_event);
+
         // Convert RollupEvent to PageEvent and dispatch to current page
         match *event {
             RollupEvent::RawSample(sample) => {
@@ -153,7 +179,7 @@ where
                 let page_event = PageEvent::SensorUpdate(sensor_data);
                 let needs_redraw = Page::on_event(&mut self.current_page, &page_event);
 
-                if needs_redraw {
+                if needs_redraw || needs_redraw_rollup {
                     debug!(" Page marked for redraw after sensor update");
                     self.needs_redraw = true;
                 }
@@ -182,7 +208,7 @@ where
                 let page_event = PageEvent::SensorUpdate(sensor_data);
                 let needs_redraw = Page::on_event(&mut self.current_page, &page_event);
 
-                if needs_redraw {
+                if needs_redraw || needs_redraw_rollup {
                     debug!(" Page marked for redraw after rollup update");
                     self.needs_redraw = true;
                 }
