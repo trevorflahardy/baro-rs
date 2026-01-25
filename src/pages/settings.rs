@@ -3,8 +3,8 @@
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Button, ButtonVariant, ColorPalette, Drawable, MultiLineText, PageEvent, PageId,
-    StorageEvent, TextComponent, TextSize, TouchEvent, TouchResult, Touchable,
+    Action, Drawable, MultiLineText, PageEvent, PageId,
+    StorageEvent, TextComponent, TextSize, TouchEvent,
 };
 use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_10X20};
@@ -30,8 +30,6 @@ pub struct SettingsPage {
     // Live log feed
     log_entries: Vec<LogEntry, 20>,
     log_display: MultiLineText,
-    // Back button
-    back_button: Button,
     // Current sensor values
     last_temperature: Option<f32>,
     last_humidity: Option<f32>,
@@ -40,8 +38,6 @@ pub struct SettingsPage {
 
 impl SettingsPage {
     pub fn new(bounds: Rectangle) -> Self {
-        let palette = ColorPalette::default();
-
         // Create sensor value displays
         let temperature_text = TextComponent::new(
             Rectangle::new(Point::new(20, 60), Size::new(280, 20)),
@@ -62,25 +58,12 @@ impl SettingsPage {
             TextSize::Small,
         );
 
-        // Back button
-        let back_button = Button::new(
-            Rectangle::new(
-                Point::new(20, bounds.size.height as i32 - 60),
-                Size::new(120, 40),
-            ),
-            "Back",
-            Action::GoBack,
-        )
-        .with_palette(palette)
-        .with_variant(ButtonVariant::Outline);
-
         Self {
             bounds,
             temperature_text,
             humidity_text,
             log_entries: Vec::new(),
             log_display,
-            back_button,
             last_temperature: None,
             last_humidity: None,
             dirty: true,
@@ -157,12 +140,8 @@ impl Page for SettingsPage {
         self.dirty = true;
     }
 
-    fn handle_touch(&mut self, event: TouchEvent) -> Option<Action> {
-        match self.back_button.handle_touch(event) {
-            TouchResult::Action(action) => Some(action),
-            TouchResult::Handled => None,
-            TouchResult::NotHandled => None,
-        }
+    fn handle_touch(&mut self, _event: TouchEvent) -> Option<Action> {
+        None
     }
 
     fn update(&mut self) {
@@ -305,9 +284,6 @@ impl Drawable for SettingsPage {
 
         self.log_display.draw(display)?;
 
-        // Draw back button
-        self.back_button.draw(display)?;
-
         Ok(())
     }
 
@@ -320,7 +296,6 @@ impl Drawable for SettingsPage {
             || self.temperature_text.is_dirty()
             || self.humidity_text.is_dirty()
             || self.log_display.is_dirty()
-            || self.back_button.is_dirty()
     }
 
     fn mark_clean(&mut self) {
@@ -328,7 +303,6 @@ impl Drawable for SettingsPage {
         self.temperature_text.mark_clean();
         self.humidity_text.mark_clean();
         self.log_display.mark_clean();
-        self.back_button.mark_clean();
     }
 
     fn mark_dirty(&mut self) {

@@ -2,7 +2,7 @@
 use embedded_sdmmc::{Mode, SdCard, TimeSource, VolumeIdx, VolumeManager};
 
 use crate::{config::Config, storage::Rollup};
-use log::debug;
+use log::{debug, error};
 use thiserror_no_std::Error;
 
 type ConfigBuffer = [u8; core::mem::size_of::<Config>()];
@@ -93,8 +93,17 @@ where
             .map_err(SdCardManagerError::PostcardParseError)?;
 
         self.file_operation(CONFIG_FILE, Mode::ReadWriteCreateOrTruncate, move |file| {
+            debug!("Writing {} bytes of config data", serialized.len());
+
             file.write(serialized)
-                .map_err(SdCardManagerError::SdmmcError)
+                .map_err(SdCardManagerError::SdmmcError)?;
+
+            // Explicitly flush to ensure data is written to the SD card
+            file.flush().map_err(SdCardManagerError::SdmmcError)?;
+
+            debug!("Flushed config data");
+
+            Ok(())
         })
     }
 
@@ -146,12 +155,29 @@ where
 
         debug!("File operation on SD card completed: {}", file_name);
 
-        // Explicitly close resources
-        file.close()?;
-        root_dir.close()?;
-        volume0.close()?;
+        // Explicitly close resources in reverse order (file -> dir -> volume)
+        debug!("Closing file: {}", file_name);
+        file.close().map_err(|e| {
+            error!("Failed to close file {}: {:?}", file_name, e);
+            SdCardManagerError::SdmmcError(e)
+        })?;
 
-        debug!("File and volume closed on SD card: {}", file_name);
+        debug!("Closing root directory");
+        root_dir.close().map_err(|e| {
+            error!("Failed to close root directory: {:?}", e);
+            SdCardManagerError::SdmmcError(e)
+        })?;
+
+        debug!("Closing volume");
+        volume0.close().map_err(|e| {
+            error!("Failed to close volume: {:?}", e);
+            SdCardManagerError::SdmmcError(e)
+        })?;
+
+        debug!(
+            "File and volume closed successfully on SD card: {}",
+            file_name
+        );
 
         Ok(result)
     }
@@ -163,8 +189,24 @@ where
         data: &Rollup,
     ) -> Result<(), SdCardManagerError> {
         self.file_operation(file_name, Mode::ReadWriteCreateOrAppend, move |file| {
+            debug!(
+                "Writing {} bytes to {}",
+                core::mem::size_of::<Rollup>(),
+                file_name
+            );
+
+            // Write the data
             file.write(data.as_ref())
-                .map_err(SdCardManagerError::SdmmcError)
+                .map_err(SdCardManagerError::SdmmcError)?;
+
+            debug!("Successfully wrote data to {}", file_name);
+
+            // Explicitly flush to ensure data is written to the SD card
+            file.flush().map_err(SdCardManagerError::SdmmcError)?;
+
+            debug!("Flushed data to {}", file_name);
+
+            Ok(())
         })
     }
 
