@@ -217,28 +217,28 @@ where
 /// - SD card with embedded-sdmmc
 ///
 /// # Arguments
-/// - `spi2`: SPI2 peripheral
-/// - `gpio3`: Display CS pin
-/// - `gpio4`: SD card CS pin
-/// - `gpio15`: Display reset pin
-/// - `gpio35_pin`: Dual-mode pin for MISO/DC switching
-/// - `gpio36`: SPI SCK pin
-/// - `gpio37`: SPI MOSI pin
-/// - `gpio35`: SPI MISO pin
+/// - `spi2_peripheral`: SPI2 peripheral
+/// - `display_cs_pin`: Display CS pin (GPIO3)
+/// - `sd_card_cs_pin`: SD card CS pin (GPIO4)
+/// - `display_reset_pin`: Display reset pin (GPIO15)
+/// - `dual_mode_pin`: Dual-mode pin for MISO/DC switching (GPIO35)
+/// - `spi_sck_pin`: SPI SCK pin (GPIO36)
+/// - `spi_mosi_pin`: SPI MOSI pin (GPIO37)
+/// - `spi_miso_pin`: SPI MISO pin (GPIO35)
 /// - `display_width`: Display width in pixels
 /// - `display_height`: Display height in pixels
 ///
 /// # Returns
 /// A SpiHardware struct containing the initialized display and SD card
 pub fn init_spi_peripherals(
-    spi2: esp_hal::peripherals::SPI2<'static>,
-    gpio3: esp_hal::peripherals::GPIO3<'static>,
-    gpio4: esp_hal::peripherals::GPIO4<'static>,
-    gpio15: esp_hal::peripherals::GPIO15<'static>,
-    gpio35_pin: &'static DualModePin<35>,
-    gpio36: esp_hal::peripherals::GPIO36<'static>,
-    gpio37: esp_hal::peripherals::GPIO37<'static>,
-    gpio35: esp_hal::peripherals::GPIO35<'static>,
+    spi2_peripheral: esp_hal::peripherals::SPI2<'static>,
+    display_cs_pin: esp_hal::peripherals::GPIO3<'static>,
+    sd_card_cs_pin: esp_hal::peripherals::GPIO4<'static>,
+    display_reset_pin: esp_hal::peripherals::GPIO15<'static>,
+    dual_mode_pin: &'static DualModePin<35>,
+    spi_sck_pin: esp_hal::peripherals::GPIO36<'static>,
+    spi_mosi_pin: esp_hal::peripherals::GPIO37<'static>,
+    spi_miso_pin: esp_hal::peripherals::GPIO35<'static>,
     display_width: u16,
     display_height: u16,
 ) -> SpiHardware {
@@ -246,23 +246,23 @@ pub fn init_spi_peripherals(
 
     // Create SPI bus
     let spi_bus_inner = Spi::new(
-        spi2,
+        spi2_peripheral,
         SpiConfig::default()
             .with_frequency(Rate::from_mhz(40))
             .with_mode(esp_hal::spi::Mode::_0),
     )
     .unwrap()
-    .with_sck(gpio36)
-    .with_mosi(gpio37)
-    .with_miso(gpio35)
+    .with_sck(spi_sck_pin)
+    .with_mosi(spi_mosi_pin)
+    .with_miso(spi_miso_pin)
     .into_async();
 
     static SPI_BUS: StaticCell<CsMutex<RefCell<Spi<'static, esp_hal::Async>>>> = StaticCell::new();
     let spi_bus = SPI_BUS.init(CsMutex::new(RefCell::new(spi_bus_inner)));
 
     // Create CS pins
-    let cs_display = Output::new(gpio3, Level::High, OutputConfig::default());
-    let cs_sd_card = Output::new(gpio4, Level::High, OutputConfig::default());
+    let cs_display = Output::new(display_cs_pin, Level::High, OutputConfig::default());
+    let cs_sd_card = Output::new(sd_card_cs_pin, Level::High, OutputConfig::default());
 
     // Create SPI devices
     let display_spi_inner =
@@ -271,14 +271,14 @@ pub fn init_spi_peripherals(
         SpiCriticalSectionDevice::new(spi_bus, cs_sd_card, esp_hal::delay::Delay::new()).unwrap();
 
     // Wrap SPI devices with dual-mode pin wrappers
-    let display_spi = OutputModeSpiDevice::new(display_spi_inner, gpio35_pin);
-    let sd_card_spi = InputModeSpiDevice::new(sd_card_spi_inner, gpio35_pin);
+    let display_spi = OutputModeSpiDevice::new(display_spi_inner, dual_mode_pin);
+    let sd_card_spi = InputModeSpiDevice::new(sd_card_spi_inner, dual_mode_pin);
 
     // Initialize display
     static DISPLAY_SPI_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
     let display_spi_buffer = DISPLAY_SPI_BUFFER.init([0u8; 512]);
-    let display_dc = DualModePinAsOutput::new(gpio35_pin);
-    let display_reset = Output::new(gpio15, Level::High, OutputConfig::default());
+    let display_dc = DualModePinAsOutput::new(dual_mode_pin);
+    let display_reset = Output::new(display_reset_pin, Level::High, OutputConfig::default());
 
     let display_interface = SpiInterface::new(display_spi, display_dc, display_spi_buffer);
 

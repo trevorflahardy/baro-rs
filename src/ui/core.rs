@@ -62,6 +62,7 @@ pub enum PageId {
     Home,
     Settings,
     Graphs,
+    WifiError,
 }
 
 /// Dirty region tracking for efficient rendering

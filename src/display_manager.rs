@@ -100,6 +100,10 @@ where
                 // TODO: Create graphs page when implemented
                 debug!(" Graphs page not yet implemented");
             }
+            PageId::WifiError => {
+                let page = crate::pages::WifiErrorPage::new();
+                self.current_page = PageWrapper::WifiError(Box::new(page));
+            }
         }
         self.needs_redraw = true;
     }

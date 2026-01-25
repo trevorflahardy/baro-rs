@@ -265,7 +265,115 @@ impl embedded_sdmmc::TimeSource for SimpleTimeSource {
         }
     }
 }
+/// Initialize and connect WiFi
+///
+/// This function:
+/// - Initializes the radio and WiFi peripheral
+/// - Configures WiFi client with SSID and password
+/// - Attempts to connect to the network
+///
+/// # Returns
+/// A tuple of (interfaces, wifi_connected) where:
+/// - interfaces: Network interfaces
+/// - wifi_connected: Whether connection was successful
+async fn setup_wifi(
+    radio_init: &'static mut Controller<'static>,
+    wifi_peripheral: esp_hal::peripherals::WIFI<'static>,
+) -> (
+    esp_radio::wifi::Interfaces<'static>,
+    bool,
+) {
+    info!("Configuring radio...");
+    let (mut wifi, interfaces) =
+        esp_radio::wifi::new(radio_init, wifi_peripheral, Default::default())
+            .expect("WiFi init failed");
 
+    info!("Radio ready");
+    info!("Connecting to WiFi SSID: {}", wifi_secrets::WIFI_SSID);
+
+    let client_config = ClientConfig::default()
+        .with_ssid(wifi_secrets::WIFI_SSID.into())
+        .with_password(wifi_secrets::WIFI_PASSWORD.into());
+
+    wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config))
+        .unwrap();
+    wifi.start_async().await.unwrap();
+
+    let wifi_result = wifi.connect_async().await;
+    let wifi_connected = wifi_result.is_ok();
+
+    if wifi_connected {
+        info!("WiFi connected");
+    } else {
+        error!("WiFi connection failed: {:?}", wifi_result.err());
+    }
+
+    // Drop wifi to free resources - it's kept alive by the radio
+    core::mem::drop(wifi);
+
+    (interfaces, wifi_connected)
+}
+
+/// Setup network stack and wait for configuration
+///
+/// This function:
+/// - Initializes the embassy-net stack with DHCP
+/// - Spawns the network runner task
+/// - Waits for link up and DHCP configuration
+///
+/// # Returns
+/// Static reference to the network stack
+async fn setup_network_stack(
+    interfaces: esp_radio::wifi::Interfaces<'static>,
+    spawner: &Spawner,
+) -> &'static embassy_net::Stack<'static> {
+    let resources = NET_RESOURCES.init(StackResources::new());
+    let net_config = EmbassyNetConfig::dhcpv4(Default::default());
+    let (stack, runner) = embassy_net::new(interfaces.sta, net_config, resources, 1024);
+
+    static STACK: StaticCell<embassy_net::Stack<'static>> = StaticCell::new();
+    let stack_ref = STACK.init(stack);
+
+    // Spawn network runner task
+    spawner.spawn(task_wifi_runner(runner)).unwrap();
+
+    // Wait for link up
+    loop {
+        if stack_ref.is_link_up() {
+            break;
+        }
+        info!("Waiting for network link...");
+        Timer::after(Duration::from_secs(1)).await;
+    }
+
+    info!("Network link is up!");
+    info!("Waiting for network configuration (DHCP)...");
+    stack_ref.wait_config_up().await;
+
+    // Give the network stack a moment to stabilize
+    Timer::after(Duration::from_millis(500)).await;
+    info!("Network fully configured and ready");
+
+    stack_ref
+}
+
+/// Perform time synchronization via NTP
+///
+/// # Returns
+/// Optional Unix timestamp if sync was successful
+async fn sync_time(stack: &embassy_net::Stack<'static>) -> Option<u32> {
+    info!("Performing time sync...");
+    match udp_time_sync(stack).await {
+        Ok(timestamp) => {
+            info!("Time sync successful: {}", timestamp);
+            Some(timestamp)
+        }
+        Err(e) => {
+            error!("Time sync failed: {:?}", e);
+            None
+        }
+    }
+}
 /// Initialize application state with storage manager
 ///
 /// This function sets up the application state including:
@@ -353,104 +461,60 @@ async fn main(spawner: Spawner) -> ! {
     esp_rtos::start(timer_group.timer0);
     info!("Core system initialized");
 
-    // === Radio Init ===
-    info!("Configuring radio...");
+    // === Initialize Radio ===
     let radio_init = RADIO_INIT.init(esp_radio::init().expect("Radio init failed"));
-    let (mut wifi, interfaces) =
-        esp_radio::wifi::new(radio_init, peripherals.WIFI, Default::default())
-            .expect("WiFi init failed");
 
-    info!("Radio ready");
+    // === Concurrent Initialization: WiFi + Hardware ===
+    // Run WiFi setup and hardware initialization in parallel to speed up boot time
+    info!("Starting concurrent WiFi and hardware initialization...");
 
-    // ==== Loading Wifi Credentials ====
-    info!("Connecting to WiFi SSID: {}", wifi_secrets::WIFI_SSID);
+    use embassy_futures::select::{select, Either};
 
-    let client_config = ClientConfig::default()
-        .with_ssid(wifi_secrets::WIFI_SSID.into())
-        .with_password(wifi_secrets::WIFI_PASSWORD.into());
+    // WiFi setup future
+    let wifi_future = setup_wifi(radio_init, peripherals.WIFI);
 
-    wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config))
-        .unwrap();
-    wifi.start_async().await.unwrap();
+    // Hardware initialization future
+    let hardware_future = async {
+        // 1. I2C hardware (power management, GPIO expander, touch controller)
+        let i2c0 = create_i2c_bus(peripherals.I2C0, peripherals.GPIO12, peripherals.GPIO11);
+        let (i2c_hardware, i2c_for_sensors) = init_i2c_hardware(i2c0).await;
 
-    let wifi_result = wifi.connect_async().await;
-    let wifi_connected = wifi_result.is_ok();
+        // 2. SPI hardware (display and SD card)
+        let spi_hardware = init_spi_peripherals(
+            peripherals.SPI2,
+            peripherals.GPIO3,  // display_cs_pin
+            peripherals.GPIO4,  // sd_card_cs_pin
+            peripherals.GPIO15, // display_reset_pin
+            &GPIO35_PIN,        // dual_mode_pin
+            peripherals.GPIO36, // spi_sck_pin
+            peripherals.GPIO37, // spi_mosi_pin
+            peripherals.GPIO35, // spi_miso_pin
+            DISPLAY_WIDTH,
+            DISPLAY_HEIGHT,
+        );
 
-    if wifi_connected {
-        info!("WiFi connected");
-    } else {
-        error!("WiFi connection failed: {:?}", wifi_result.err());
-    }
+        (i2c_hardware, i2c_for_sensors, spi_hardware)
+    };
 
-    // === Network Stack Setup ===
-    let resources = NET_RESOURCES.init(StackResources::new());
-    let net_config = EmbassyNetConfig::dhcpv4(Default::default());
-    let (stack, runner) = embassy_net::new(interfaces.sta, net_config, resources, 1024);
+    // Both futures should complete around the same time
+    let ((interfaces, wifi_connected), (i2c_hardware, i2c_for_sensors, spi_hardware)) = 
+        embassy_futures::join::join(wifi_future, hardware_future).await;
 
-    static STACK: StaticCell<embassy_net::Stack<'static>> = StaticCell::new();
-    let stack_ref = STACK.init(stack);
+    info!("=== Concurrent initialization complete ===\n");
 
-    // This task will call runner.run() to drive the network stack
-    spawner.spawn(task_wifi_runner(runner)).unwrap();
-
-    loop {
-        if stack_ref.is_link_up() {
-            break;
-        }
-
-        info!("Waiting for network link...");
-        Timer::after(Duration::from_secs(1)).await;
-    }
-
-    info!("Network link is up!");
-    // Wait for DHCP to complete and network to be fully configured
-    info!("Waiting for network configuration (DHCP)...");
-    stack_ref.wait_config_up().await;
-
-    // Give the network stack a moment to stabilize
-    Timer::after(Duration::from_millis(500)).await;
-    info!("Network fully configured and ready");
-
-    // === Time Synchronization ===
-    let mut time: Option<u32> = None;
-    if wifi_connected {
-        info!("Performing time sync...");
-        match udp_time_sync(stack_ref).await {
-            Ok(timestamp) => {
-                info!("Time sync successful: {}", timestamp);
-                time = Some(timestamp);
-            }
-            Err(e) => {
-                error!("Time sync failed: {:?}", e);
-            }
-        }
-    }
-
-    // === Hardware Initialization (in correct order) ===
-
-    // 1. I2C hardware (power management, GPIO expander, touch controller)
-    let i2c0 = create_i2c_bus(peripherals.I2C0, peripherals.GPIO12, peripherals.GPIO11);
-    let (i2c_hardware, i2c_for_sensors) = init_i2c_hardware(i2c0).await;
     let touch_interface = i2c_hardware.touch_interface;
-
-    // 2. SPI hardware (display and SD card)
-    let spi_hardware = init_spi_peripherals(
-        peripherals.SPI2,
-        peripherals.GPIO3,
-        peripherals.GPIO4,
-        peripherals.GPIO15,
-        &GPIO35_PIN,
-        peripherals.GPIO36,
-        peripherals.GPIO37,
-        peripherals.GPIO35,
-        DISPLAY_WIDTH,
-        DISPLAY_HEIGHT,
-    );
     let display = spi_hardware.display;
     let sd_card = spi_hardware.sd_card;
     let sd_card_size = spi_hardware.sd_card_size;
 
-    info!("=== Hardware initialization complete ===\n");
+    // === Network Stack Setup (only if WiFi connected) ===
+    let (stack_ref, time) = if wifi_connected {
+        let stack_ref = setup_network_stack(interfaces, &spawner).await;
+        let time = sync_time(stack_ref).await;
+        (Some(stack_ref), time)
+    } else {
+        (None, None)
+    };
 
     // === Application State Setup ===
     let (app_state_ref, initial_time) = setup_app_state(sd_card, time, wifi_connected).await;

@@ -1,7 +1,7 @@
 // src/pages/page_manager.rs
 //! Page manager with navigation and event dispatching
 
-use crate::ui::core::{Action, DirtyRegion, Drawable, PageEvent, PageId, TouchEvent};
+use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 use heapless::Vec;
@@ -123,6 +123,7 @@ impl<T: Page> Page for Box<T> {
 pub enum PageWrapper {
     Home(Box<crate::pages::home::HomePage>),
     Settings(Box<crate::pages::settings::SettingsPage>),
+    WifiError(Box<crate::pages::wifi_error::WifiErrorPage>),
 }
 
 impl Page for PageWrapper {
@@ -130,6 +131,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => page.id(),
             PageWrapper::Settings(page) => page.id(),
+            PageWrapper::WifiError(page) => page.id(),
         }
     }
 
@@ -137,6 +139,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => page.title(),
             PageWrapper::Settings(page) => page.title(),
+            PageWrapper::WifiError(page) => page.title(),
         }
     }
 
@@ -144,6 +147,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => page.on_activate(),
             PageWrapper::Settings(page) => page.on_activate(),
+            PageWrapper::WifiError(page) => page.on_activate(),
         }
     }
 
@@ -151,6 +155,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => page.on_deactivate(),
             PageWrapper::Settings(page) => page.on_deactivate(),
+            PageWrapper::WifiError(page) => page.on_deactivate(),
         }
     }
 
@@ -158,6 +163,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => page.handle_touch(event),
             PageWrapper::Settings(page) => page.handle_touch(event),
+            PageWrapper::WifiError(page) => page.handle_touch(event),
         }
     }
 
@@ -165,6 +171,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => page.update(),
             PageWrapper::Settings(page) => page.update(),
+            PageWrapper::WifiError(page) => page.update(),
         }
     }
 
@@ -172,6 +179,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => page.on_event(event),
             PageWrapper::Settings(page) => page.on_event(event),
+            PageWrapper::WifiError(page) => page.on_event(event),
         }
     }
 
@@ -180,8 +188,9 @@ impl Page for PageWrapper {
         display: &mut D,
     ) -> Result<(), D::Error> {
         match self {
-            PageWrapper::Home(page) => page.draw(display),
-            PageWrapper::Settings(page) => page.draw(display),
+            PageWrapper::Home(page) => page.draw_page(display),
+            PageWrapper::Settings(page) => page.draw_page(display),
+            PageWrapper::WifiError(page) => page.draw_page(display),
         }
     }
 
@@ -189,6 +198,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => Page::bounds(page),
             PageWrapper::Settings(page) => Page::bounds(page),
+            PageWrapper::WifiError(page) => Page::bounds(page),
         }
     }
 
@@ -196,6 +206,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => Page::is_dirty(page),
             PageWrapper::Settings(page) => Page::is_dirty(page),
+            PageWrapper::WifiError(page) => Page::is_dirty(page),
         }
     }
 
@@ -203,6 +214,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => Page::mark_clean(page),
             PageWrapper::Settings(page) => Page::mark_clean(page),
+            PageWrapper::WifiError(page) => Page::mark_clean(page),
         }
     }
 
@@ -210,6 +222,7 @@ impl Page for PageWrapper {
         match self {
             PageWrapper::Home(page) => Page::mark_dirty(page),
             PageWrapper::Settings(page) => Page::mark_dirty(page),
+            PageWrapper::WifiError(page) => Page::mark_dirty(page),
         }
     }
 }
