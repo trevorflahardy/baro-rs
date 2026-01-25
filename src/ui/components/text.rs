@@ -53,6 +53,7 @@ impl TextSize {
 /// )
 /// .with_alignment(Alignment::Center);
 /// ```
+#[derive(Clone)]
 pub struct TextComponent {
     bounds: Rectangle,
     text: heapless::String<128>,
@@ -115,19 +116,23 @@ impl TextComponent {
     }
 
     fn text_position(&self) -> Point {
+        // Text baseline needs to account for font height
+        let font_height = self.size.font().character_size.height;
+        let baseline_y = self.bounds.top_left.y + self.style.padding.top as i32 + font_height as i32;
+        
         match self.alignment {
             Alignment::Left => Point::new(
                 self.bounds.top_left.x + self.style.padding.left as i32,
-                self.bounds.top_left.y + self.style.padding.top as i32,
+                baseline_y,
             ),
             Alignment::Center => Point::new(
                 self.bounds.center().x,
-                self.bounds.top_left.y + self.style.padding.top as i32,
+                baseline_y,
             ),
             Alignment::Right => Point::new(
                 self.bounds.top_left.x + self.bounds.size.width as i32
                     - self.style.padding.right as i32,
-                self.bounds.top_left.y + self.style.padding.top as i32,
+                baseline_y,
             ),
         }
     }

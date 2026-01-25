@@ -3,13 +3,15 @@
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Alignment, Container, Direction, Drawable, MultiLineText, PageEvent, PageId,
-    SizeConstraint, StorageEvent, TextComponent, TextSize, TouchEvent,
+    Action, Alignment, Container, Direction, Drawable, PageEvent, PageId, SizeConstraint,
+    StorageEvent, TextComponent, TextSize, TouchEvent,
 };
 use embedded_graphics::Drawable as EgDrawable;
+use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle};
+use embedded_graphics::text::Text;
 use heapless::{String as HeaplessString, Vec};
 use log::debug;
 
@@ -31,8 +33,8 @@ pub struct SettingsPage {
     humidity_text: TextComponent,
     // Log section
     log_header: TextComponent,
-    log_display: MultiLineText,
-    // Log entries
+    log_area_bounds: Rectangle,
+    // Log entries data (max 20)
     log_entries: Vec<LogEntry, 20>,
     // Current sensor values
     last_temperature: Option<f32>,
@@ -63,9 +65,6 @@ impl SettingsPage {
 
         let log_header = TextComponent::new(Rectangle::zero(), "Live Data Feed:", TextSize::Medium);
 
-        let log_display =
-            MultiLineText::new(Rectangle::zero(), "Waiting for data...", TextSize::Small);
-
         Self {
             bounds,
             container,
@@ -74,7 +73,7 @@ impl SettingsPage {
             temperature_text,
             humidity_text,
             log_header,
-            log_display,
+            log_area_bounds: Rectangle::zero(),
             log_entries: Vec::new(),
             last_temperature: None,
             last_humidity: None,
@@ -153,7 +152,7 @@ impl SettingsPage {
             self.log_header.set_bounds(bounds);
         }
         if let Some(bounds) = self.container.child_bounds(5) {
-            self.log_display.set_bounds(bounds);
+            self.log_area_bounds = bounds;
         }
 
         self.dirty = true;
@@ -197,21 +196,8 @@ impl SettingsPage {
     }
 
     fn update_log_display(&mut self) {
-        // Build the display text from recent log entries
-        let mut display_text = HeaplessString::<512>::new();
-
-        for (i, entry) in self.log_entries.iter().enumerate().rev().take(10) {
-            if i > 0 {
-                display_text.push('\n').ok();
-            }
-            display_text.push_str(&entry.message).ok();
-        }
-
-        if display_text.is_empty() {
-            display_text.push_str("No data yet...").ok();
-        }
-
-        self.log_display.set_text(&display_text);
+        // Just mark as dirty - rendering will handle showing the log entries
+        self.dirty = true;
     }
 }
 
@@ -339,8 +325,8 @@ impl Drawable for SettingsPage {
         self.log_header.draw(display)?;
 
         // Draw log box background
-        if let Some(log_bounds) = self.container.child_bounds(5) {
-            log_bounds
+        if self.log_area_bounds != Rectangle::zero() {
+            self.log_area_bounds
                 .into_styled(
                     PrimitiveStyleBuilder::new()
                         .fill_color(Rgb565::new(0x08, 0x08, 0x10))
@@ -349,9 +335,35 @@ impl Drawable for SettingsPage {
                         .build(),
                 )
                 .draw(display)?;
-        }
 
-        self.log_display.draw(display)?;
+            // Draw log entries (most recent first, up to what fits)
+            let font = embedded_graphics::mono_font::ascii::FONT_5X8;
+            let line_height = font.character_size.height + 2;
+            let text_style = MonoTextStyle::new(&font, Rgb565::WHITE);
+
+            let content_x = self.log_area_bounds.top_left.x + 4;
+            let mut y = self.log_area_bounds.top_left.y + line_height as i32;
+
+            let max_lines = (self.log_area_bounds.size.height / line_height).min(20) as usize;
+
+            if self.log_entries.is_empty() {
+                // Show placeholder
+                Text::new("Waiting for data...", Point::new(content_x, y), text_style)
+                    .draw(display)?;
+            } else {
+                // Show most recent entries (reversed)
+                for entry in self.log_entries.iter().rev().take(max_lines) {
+                    if y + line_height as i32
+                        > self.log_area_bounds.top_left.y + self.log_area_bounds.size.height as i32
+                    {
+                        break;
+                    }
+                    Text::new(entry.message.as_str(), Point::new(content_x, y), text_style)
+                        .draw(display)?;
+                    y += line_height as i32;
+                }
+            }
+        }
 
         Ok(())
     }
@@ -367,7 +379,6 @@ impl Drawable for SettingsPage {
             || self.temperature_text.is_dirty()
             || self.humidity_text.is_dirty()
             || self.log_header.is_dirty()
-            || self.log_display.is_dirty()
     }
 
     fn mark_clean(&mut self) {
@@ -377,7 +388,6 @@ impl Drawable for SettingsPage {
         self.temperature_text.mark_clean();
         self.humidity_text.mark_clean();
         self.log_header.mark_clean();
-        self.log_display.mark_clean();
     }
 
     fn mark_dirty(&mut self) {
