@@ -28,7 +28,7 @@ use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_time::{Duration, Timer};
 use esp_hal::{clock::CpuClock, gpio::Output, spi::master::Spi, timer::timg::TimerGroup};
 use esp_radio::Controller;
-use esp_radio::wifi::{ClientConfig, WifiDevice};
+use esp_radio::wifi::{ClientConfig, WifiController, WifiDevice};
 use heapless::String;
 use static_cell::StaticCell;
 
@@ -85,6 +85,7 @@ type DisplayInterface<'a> = SpiInterface<'a, DisplaySpiDevice, DualModePinAsOutp
 type DisplayType = mipidsi::Display<DisplayInterface<'static>, ILI9342CRgb565, Output<'static>>;
 
 static NET_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
+static WIFI_CONTROLLER: StaticCell<WifiController<'static>> = StaticCell::new();
 static RADIO_INIT: StaticCell<Controller<'static>> = StaticCell::new();
 
 const DISPLAY_WIDTH: u16 = 320;
@@ -286,9 +287,9 @@ async fn setup_wifi(
     wifi_peripheral: esp_hal::peripherals::WIFI<'static>,
 ) -> (esp_radio::wifi::Interfaces<'static>, bool) {
     info!("Configuring radio...");
-    let (mut wifi, interfaces) =
-        esp_radio::wifi::new(radio_init, wifi_peripheral, Default::default())
-            .expect("WiFi init failed");
+    let (wifi, interfaces) = esp_radio::wifi::new(radio_init, wifi_peripheral, Default::default())
+        .expect("WiFi init failed");
+    let wifi = WIFI_CONTROLLER.init(wifi);
 
     info!("Radio ready");
     info!("Connecting to WiFi SSID: {}", wifi_secrets::WIFI_SSID);
@@ -309,9 +310,6 @@ async fn setup_wifi(
     } else {
         error!("WiFi connection failed: {:?}", wifi_result.err());
     }
-
-    // Drop wifi to free resources - it's kept alive by the radio
-    core::mem::drop(wifi);
 
     (interfaces, wifi_connected)
 }

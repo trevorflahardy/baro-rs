@@ -10,41 +10,25 @@ use heapless::Vec;
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Alignment, Button, ButtonVariant, ColorPalette, Container, Direction, Drawable, PageId,
-    SizeConstraint, TouchEvent, TouchResult, Touchable,
+    Action, Button, ButtonVariant, ColorPalette, Drawable, PageId, TouchEvent, TouchResult,
+    Touchable,
 };
 
 const BUTTON_HEIGHT: u32 = 50;
 const BUTTON_SPACING: u32 = 10;
-const TOP_MARGIN: u32 = 50;
-const SIDE_MARGIN: u32 = 20;
+const TOP_MARGIN: i32 = 50;
+const SIDE_MARGIN: i32 = 20;
 
 pub struct HomePage {
     bounds: Rectangle,
-    container: Container<4>,
     buttons: Vec<Button, 4>,
     dirty: bool,
 }
 
 impl HomePage {
     pub fn new(bounds: Rectangle) -> Self {
-        // Create container for button layout
-        // Positioned below title with margins
-        let container_bounds = Rectangle::new(
-            Point::new(SIDE_MARGIN as i32, TOP_MARGIN as i32),
-            Size::new(
-                bounds.size.width.saturating_sub(SIDE_MARGIN * 2),
-                bounds.size.height.saturating_sub(TOP_MARGIN),
-            ),
-        );
-
-        let container = Container::<4>::new(container_bounds, Direction::Vertical)
-            .with_alignment(Alignment::Start)
-            .with_spacing(BUTTON_SPACING);
-
         Self {
             bounds,
-            container,
             buttons: Vec::new(),
             dirty: true,
         }
@@ -52,49 +36,41 @@ impl HomePage {
 
     pub fn init(&mut self) {
         let palette = ColorPalette::default();
-        let button_width = self.bounds.size.width.saturating_sub(SIDE_MARGIN * 2);
+        let button_width = (self.bounds.size.width as i32 - SIDE_MARGIN * 2) as u32;
+
+        // Calculate button positions manually
+        let mut y_pos = TOP_MARGIN;
 
         // Settings button
         let settings_button = Button::new(
-            Rectangle::new(Point::zero(), Size::new(button_width, BUTTON_HEIGHT)),
+            Rectangle::new(
+                Point::new(SIDE_MARGIN, y_pos),
+                Size::new(button_width, BUTTON_HEIGHT),
+            ),
             "Settings",
             Action::NavigateToPage(PageId::Settings),
         )
         .with_palette(palette)
         .with_variant(ButtonVariant::Primary);
 
+        self.buttons.push(settings_button).ok();
+
+        // Move to next button position
+        y_pos += BUTTON_HEIGHT as i32 + BUTTON_SPACING as i32;
+
         // Data button
         let data_button = Button::new(
-            Rectangle::new(Point::zero(), Size::new(button_width, BUTTON_HEIGHT)),
+            Rectangle::new(
+                Point::new(SIDE_MARGIN, y_pos),
+                Size::new(button_width, BUTTON_HEIGHT),
+            ),
             "View Graphs",
             Action::NavigateToPage(PageId::Graphs),
         )
         .with_palette(palette)
         .with_variant(ButtonVariant::Secondary);
 
-        // Add buttons to container with fixed height constraint
-        self.container
-            .add_child(
-                Size::new(button_width, BUTTON_HEIGHT),
-                SizeConstraint::Fixed(BUTTON_HEIGHT),
-            )
-            .ok();
-
-        self.container
-            .add_child(
-                Size::new(button_width, BUTTON_HEIGHT),
-                SizeConstraint::Fixed(BUTTON_HEIGHT),
-            )
-            .ok();
-
-        // Store buttons with their positions from container
-        if let Some(bounds) = self.container.child_bounds(0) {
-            self.buttons.push(settings_button.with_bounds(bounds)).ok();
-        }
-
-        if let Some(bounds) = self.container.child_bounds(1) {
-            self.buttons.push(data_button.with_bounds(bounds)).ok();
-        }
+        self.buttons.push(data_button).ok();
 
         self.dirty = true;
     }
