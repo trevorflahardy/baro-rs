@@ -57,7 +57,7 @@ where
         }
     }
 
-    pub fn init(&mut self) {
+    pub async fn init(&mut self, time: u32) {
         // Load lifetime stats and propagate to ring buffers.
     }
 

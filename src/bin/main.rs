@@ -334,13 +334,13 @@ async fn main(spawner: Spawner) -> ! {
     info!("Network fully configured and ready");
 
     // === Time Synchronization ===
-    let mut time_known = false;
+    let mut time: Option<u32> = None;
     if wifi_connected {
         info!("Performing time sync...");
         match udp_time_sync(stack_ref).await {
             Ok(timestamp) => {
                 info!("Time sync successful: {}", timestamp);
-                time_known = true;
+                time = Some(timestamp);
             }
             Err(e) => {
                 error!("Time sync failed: {:?}", e);
@@ -439,12 +439,15 @@ async fn main(spawner: Spawner) -> ! {
     // === Application State Setup ===
     let time_source = SimpleTimeSource::new();
     let sd_card_manager = SdCardManager::new(sd_card, time_source);
-    let storage_manager = StorageManager::new(sd_card_manager);
+    let mut storage_manager = StorageManager::new(sd_card_manager);
+    if let Some(t) = time {
+        storage_manager.init(t).await;
+    }
 
     static APP_STATE: StaticCell<ConcreteGlobalStateType> = StaticCell::new();
     let mut app_state = AppState::new();
     app_state.wifi_connected = wifi_connected;
-    app_state.time_known = time_known;
+    app_state.time_known = time.is_some();
     app_state.run_state = if wifi_connected {
         AppRunState::WifiConnected
     } else {

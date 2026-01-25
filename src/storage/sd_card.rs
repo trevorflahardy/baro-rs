@@ -2,6 +2,7 @@
 use embedded_sdmmc::{Mode, SdCard, TimeSource, VolumeIdx, VolumeManager};
 
 use crate::{config::Config, storage::Rollup};
+use log::debug;
 use thiserror_no_std::Error;
 
 type ConfigBuffer = [u8; core::mem::size_of::<Config>()];
@@ -106,6 +107,7 @@ where
             &mut embedded_sdmmc::File<'_, SdCard<S, D>, T, 4, 4, 1>,
         ) -> Result<OpRes, SdCardManagerError>,
     ) -> Result<OpRes, SdCardManagerError> {
+        debug!("Performing file operation on SD card: {}", file_name);
         // Open volume
         let volume0 = self
             .volume_mgr
@@ -142,10 +144,14 @@ where
         // Perform operation
         let result = operation(&mut file)?;
 
+        debug!("File operation on SD card completed: {}", file_name);
+
         // Explicitly close resources
         file.close()?;
         root_dir.close()?;
         volume0.close()?;
+
+        debug!("File and volume closed on SD card: {}", file_name);
 
         Ok(result)
     }
