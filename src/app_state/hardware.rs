@@ -24,11 +24,15 @@ use mipidsi::{
     options::{ColorInversion, ColorOrder},
 };
 use static_cell::StaticCell;
+use tca9548a_embedded::r#async::Tca9548aAsync;
 
 use crate::async_i2c_bus::AsyncI2cDevice;
 use crate::dual_mode_pin::{
     DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
 };
+
+pub type Tca9548SpiMultiplexer<'a> =
+    Tca9548aAsync<AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>>;
 
 /// Container for I2C-based hardware components
 pub struct I2cHardware<'a> {
@@ -89,11 +93,16 @@ pub struct SpiHardware {
 /// A tuple of (I2cHardware, AsyncI2cDevice for sensors)
 pub async fn init_i2c_hardware(
     i2c0: esp_hal::i2c::master::I2c<'static, esp_hal::Async>,
-) -> (
-    I2cHardware<'static>,
-    AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-) {
-    // Create shared I2C bus
+) -> (I2cHardware<'static>, Tca9548SpiMultiplexer<'static>) {
+    // The I2C bus is shared between the various sensors and devices using a Tca9548a
+    // I2c multiplexer. Thus, each device is initialized using the same underlying I2C bus.
+    // NOTE: This ONLY applies to devices on the I2C bus that externally connect to the ESP32.
+    // NOTE: This does not apply to the internal I2C bus used by:
+    //      - the display controller,
+    //      - the GPIO expander, or
+    //      - the touch controller
+    info!("Configuring I2C devices...");
+
     static I2C0_BUS: StaticCell<
         AsyncMutex<CriticalSectionRawMutex, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
     > = StaticCell::new();
@@ -103,7 +112,10 @@ pub async fn init_i2c_hardware(
     let i2c_for_axp = AsyncI2cDevice::new(i2c0_bus);
     let i2c_for_aw = AsyncI2cDevice::new(i2c0_bus);
     let i2c_for_touch = AsyncI2cDevice::new(i2c0_bus);
-    let i2c_for_sensors = AsyncI2cDevice::new(i2c0_bus);
+    let i2c_inner_for_sensors = AsyncI2cDevice::new(i2c0_bus);
+
+    let i2c_for_sensors =
+        Tca9548aAsync::new(i2c_inner_for_sensors, tca9548a_embedded::SlaveAddr::Default);
 
     // Initialize power management
     info!("Configuring power management");

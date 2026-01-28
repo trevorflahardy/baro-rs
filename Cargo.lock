@@ -80,6 +80,7 @@ dependencies = [
  "sht4x",
  "smoltcp",
  "static_cell",
+ "tca9548a-embedded",
  "thiserror-no-std",
 ]
 
@@ -1709,6 +1710,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tca9548a-embedded"
+version = "0.1.0"
+source = "git+https://github.com/trevorflahardy/tca9548a-embedded#20bfd76b3acc9c4988d1b7d8fb8629d1758a412f"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
 ]
 
 [[package]]

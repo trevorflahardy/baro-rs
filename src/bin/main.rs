@@ -14,6 +14,7 @@ use baro_rs::app_state::{
     AppError, AppRunState, AppState, FromUnchecked, GlobalStateType, ROLLUP_CHANNEL, SensorsState,
     create_i2c_bus, init_i2c_hardware, init_spi_peripherals,
 };
+use baro_rs::async_i2c_bus::AsyncI2cDevice;
 use baro_rs::display_manager::{
     DisplayManager, DisplayRequest, get_display_receiver, get_display_sender,
 };
@@ -541,7 +542,7 @@ async fn main(spawner: Spawner) -> ! {
     if wifi_connected && sd_card_size > 0 {
         info!("Starting sensor and storage tasks...");
 
-        // Create sensors state
+        // Create sensors state with the I2C mux
         let sensors = SensorsState::new(i2c_for_sensors);
         spawner
             .spawn(background_sensor_reading_task(
@@ -585,7 +586,11 @@ async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) {
 #[allow(clippy::large_stack_frames)]
 #[embassy_executor::task]
 async fn background_sensor_reading_task(
-    mut sensors: SensorsState<'static>,
+    mut sensors: SensorsState<
+        'static,
+        AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
+        esp_hal::i2c::master::Error,
+    >,
     app_state: &'static ConcreteGlobalStateType,
     initial_unix_time: u32,
 ) {

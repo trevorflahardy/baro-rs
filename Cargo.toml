@@ -86,6 +86,7 @@ embedded-charts = { version = "0.3.0", default-features = false, features = [
   "smooth-curves",
   "floating-point",
 ] }
+tca9548a-embedded = { git = "https://github.com/trevorflahardy/tca9548a-embedded", version = "0.1.0", features = ["async"] }
 
 [profile.dev]
 # Rust debug is too slow.
