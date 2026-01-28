@@ -4,6 +4,13 @@ use crate::async_i2c_bus::AsyncI2cDevice;
 use crate::sensors::{SHT40Indexed, SHT40Sensor};
 
 use log::error;
+use tca9548a_embedded::r#async::{I2cChannelAsync, Tca9548aAsync};
+
+type AsyncI2cDeviceType<'a> = AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>;
+type I2CChannelAsyncDeviceType<'a> =
+    I2cChannelAsync<'a, AsyncI2cDeviceType<'a>, esp_hal::i2c::master::Error>;
+
+type SHT40IndexedAsyncI2CDeviceType<'a> = SHT40Indexed<I2CChannelAsyncDeviceType<'a>>;
 
 /// Container for all sensor instances
 ///
@@ -12,15 +19,18 @@ use log::error;
 /// an `IndexedSensor` to provide compile-time guarantees about
 /// where its data is stored in the values array.
 pub struct SensorsState<'a> {
-    pub sht40: SHT40Indexed<AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>>,
+    mux: Tca9548aAsync<AsyncI2cDeviceType<'a>>,
+    pub sht40: SHT40IndexedAsyncI2CDeviceType<'a>,
 }
 
 impl<'a> SensorsState<'a> {
     /// Create a new sensors state container
-    pub fn new(
-        sht40_i2c: AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>,
-    ) -> Self {
+    pub fn new(mut mux: Tca9548aAsync<AsyncI2cDeviceType<'a>>) -> Self {
+        // SHT40 lives on channel 0 of the mux
+        let sht40_i2c: I2CChannelAsyncDeviceType<'a> = mux.channel(0).unwrap();
+
         Self {
+            mux,
             sht40: SHT40Indexed::from(SHT40Sensor::new(sht40_i2c)),
         }
     }
