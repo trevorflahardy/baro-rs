@@ -33,7 +33,14 @@ pub trait Sensor<const COUNT: usize> {
 // Type-level index markers
 pub struct Idx<const N: usize>;
 
-pub struct IndexedSensor<S, const START: usize, const COUNT: usize>
+/// Indexed sensor with compile-time guarantees about storage indices and mux channel.
+///
+/// Generic parameters:
+/// - S: The sensor type implementing Sensor<COUNT>
+/// - START: Starting index in the values array where this sensor's data begins
+/// - COUNT: Number of values this sensor produces
+/// - MUX_CHANNEL: I2C mux channel number (0-7) where this sensor is connected
+pub struct IndexedSensor<S, const START: usize, const COUNT: usize, const MUX_CHANNEL: u8>
 where
     S: Sensor<COUNT>,
 {
@@ -41,7 +48,8 @@ where
     _marker: PhantomData<Idx<START>>,
 }
 
-impl<S, const START: usize, const COUNT: usize> From<S> for IndexedSensor<S, START, COUNT>
+impl<S, const START: usize, const COUNT: usize, const MUX_CHANNEL: u8> From<S>
+    for IndexedSensor<S, START, COUNT, MUX_CHANNEL>
 where
     S: Sensor<COUNT>,
 {
@@ -50,7 +58,8 @@ where
     }
 }
 
-impl<S, const START: usize, const COUNT: usize> IndexedSensor<S, START, COUNT>
+impl<S, const START: usize, const COUNT: usize, const MUX_CHANNEL: u8>
+    IndexedSensor<S, START, COUNT, MUX_CHANNEL>
 where
     S: Sensor<COUNT>,
 {
@@ -85,6 +94,12 @@ where
     pub const fn reading_index(offset: usize) -> usize {
         START + offset
     }
+
+    /// Get the I2C mux channel number where this sensor is connected.
+    /// This provides compile-time knowledge of sensor location on the mux.
+    pub const fn mux_channel() -> u8 {
+        MUX_CHANNEL
+    }
 }
 
 pub mod indices {
@@ -100,7 +115,11 @@ pub mod indices {
     // this as much as possible, but nevertheless, there is no way to stop from
     // shooting yourself.
 
-    pub type SHT40Indexed<I> = IndexedSensor<SHT40Sensor<I>, 0, 2>;
+    /// SHT40 sensor configuration:
+    /// - Starts at index 0 (temperature)
+    /// - Produces 2 values (temperature, humidity)
+    /// - Connected to I2C mux channel 0
+    pub type SHT40Indexed<I> = IndexedSensor<SHT40Sensor<I>, 0, 2, 0>;
 
     pub const TEMPERATURE: usize = 0;
     pub const HUMIDITY: usize = 1;
