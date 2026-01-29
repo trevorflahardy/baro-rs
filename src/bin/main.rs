@@ -14,7 +14,6 @@ use baro_rs::app_state::{
     AppError, AppRunState, AppState, FromUnchecked, GlobalStateType, ROLLUP_CHANNEL, SensorsState,
     create_i2c_bus, init_i2c_hardware, init_spi_peripherals,
 };
-use baro_rs::async_i2c_bus::AsyncI2cDevice;
 use baro_rs::display_manager::{
     DisplayManager, DisplayRequest, get_display_receiver, get_display_sender,
 };
@@ -586,11 +585,7 @@ async fn task_wifi_runner(mut runner: Runner<'static, WifiDevice<'static>>) {
 #[allow(clippy::large_stack_frames)]
 #[embassy_executor::task]
 async fn background_sensor_reading_task(
-    mut sensors: SensorsState<
-        'static,
-        AsyncI2cDevice<'static, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-        esp_hal::i2c::master::Error,
-    >,
+    mut sensors: SensorsState<'static>,
     app_state: &'static ConcreteGlobalStateType,
     initial_unix_time: u32,
 ) {
@@ -602,10 +597,16 @@ async fn background_sensor_reading_task(
     let mut timestamp: u32 = initial_unix_time;
 
     loop {
-        let mut values = [0i32; MAX_SENSORS];
-
         // Read all sensors
-        sensors.read_all(&mut values).await;
+        let values = match sensors.read_all().await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Sensor read error: {:?}", e);
+                Timer::after(Duration::from_secs(10)).await;
+                continue;
+            }
+        };
+
         debug!(
             "Sensor readings at {} (unix time): {:?}",
             timestamp,
