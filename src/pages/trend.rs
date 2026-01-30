@@ -284,7 +284,7 @@ impl TrendPage {
             .add_child(text.size(), crate::ui::SizeConstraint::Fit)
             .unwrap();
 
-        if let Some(bounds) = container.child_bounds(0) {}
+        // TODO: Add text to container
 
         container.draw(display)?;
 
