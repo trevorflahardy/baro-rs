@@ -17,9 +17,7 @@ use crate::sensors::SensorType;
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RawSample, Rollup, RollupTier, TimeWindow};
 use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
-use crate::ui::{
-    ButtonVariant, ColorPalette, Container, Direction, Drawable, SizeConstraint, Style,
-};
+use crate::ui::{ButtonVariant, ColorPalette, Container, Direction, Drawable};
 
 extern crate alloc;
 use alloc::string::String;

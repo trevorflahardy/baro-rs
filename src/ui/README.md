@@ -9,9 +9,12 @@ The Baro UI System provides a comprehensive set of tools for building responsive
 - **Dirty Region Tracking** - Only redraw what changed to minimize flickering and improve performance
 - **Event System** - Pages can subscribe to sensor updates, storage events, and system events
 - **Flexible Layouts** - Containers with horizontal/vertical alignment and flexible sizing
+- **Rounded Corners** - All containers support rounded corners for modern UI designs
 - **Scrollable Content** - Handle content that exceeds viewport bounds
 - **Styled Components** - Easy-to-use styling system with themes and variants
 - **Touch Handling** - Full touch event support for interactive elements
+
+**For practical examples and cookbook-style patterns, see [EXAMPLES.md](EXAMPLES.md).**
 
 ## Architecture
 
@@ -217,20 +220,24 @@ text.set_text("New multi-line content...");
 Arrange children in horizontal or vertical layouts with flexible sizing:
 
 ```rust
-use crate::ui::{Container, Direction, Alignment, SizeConstraint};
+use crate::ui::{Container, Direction, Alignment, SizeConstraint, Padding, Style};
+use crate::ui::styling::COLOR_FOREGROUND;
 
+// Create a rounded card container
 let mut container = Container::<4>::new(
-    Rectangle::new(Point::zero(), Size::new(320, 240)),
+    Rectangle::new(Point::new(20, 20), Size::new(280, 200)),
     Direction::Vertical,
 )
 .with_alignment(Alignment::Start)
 .with_spacing(8)
-.with_style(Style::new().with_background(Rgb565::BLACK));
+.with_padding(Padding::all(12))
+.with_corner_radius(12)  // Rounded corners
+.with_style(Style::new().with_background(COLOR_FOREGROUND));
 
-// Add children
-container.add_child(Size::new(300, 50), SizeConstraint::Fit)?;
-container.add_child(Size::new(300, 0), SizeConstraint::Expand)?;
-container.add_child(Size::new(300, 40), SizeConstraint::Fixed(40))?;
+// Add children with different size constraints
+container.add_child(Size::new(256, 50), SizeConstraint::Fixed(50))?;  // Header
+container.add_child(Size::new(256, 0), SizeConstraint::Expand)?;     // Body expands
+container.add_child(Size::new(256, 40), SizeConstraint::Fixed(40))?; // Footer
 
 // Get bounds for each child to render them
 if let Some(bounds) = container.child_bounds(0) {
@@ -252,6 +259,12 @@ if let Some(bounds) = container.child_bounds(0) {
 - `Fit` - Use child's natural size
 - `Expand` - Fill available space (distributes evenly among all Expand children)
 - `Fixed(u32)` - Use specific size in pixels
+
+**Rounded Corners:**
+Containers now support rounded corners via `with_corner_radius(radius)`. A radius of 0 (default) produces square corners.
+
+**Padding:**
+Use `with_padding(Padding)` to add space between the container's borders and its children. This is a convenience method that sets the style's padding.
 
 ### Scrollable Container
 

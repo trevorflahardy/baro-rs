@@ -5,7 +5,7 @@ use crate::ui::core::{DirtyRegion, Drawable, TouchEvent, TouchResult, Touchable}
 use crate::ui::styling::Style;
 use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::Rectangle;
+use embedded_graphics::primitives::{Rectangle, RoundedRectangle};
 use heapless::Vec;
 
 /// Alignment options for container children
@@ -110,6 +110,7 @@ pub struct Container<const N: usize> {
     alignment: Alignment,
     spacing: u32,
     style: Style,
+    corner_radius: u32,
     children: Vec<ChildElement, N>,
     dirty: bool,
 }
@@ -126,6 +127,7 @@ impl<const N: usize> Container<N> {
             alignment: Alignment::Start,
             spacing: 0,
             style: Style::default(),
+            corner_radius: 0,
             children: Vec::new(),
             dirty: true,
         }
@@ -153,6 +155,44 @@ impl<const N: usize> Container<N> {
     /// Style controls background color, border, and padding.
     pub fn with_style(mut self, style: Style) -> Self {
         self.style = style;
+        self
+    }
+
+    /// Set the padding for the container.
+    ///
+    /// This is a convenience method equivalent to modifying the style's padding.
+    /// Padding creates space between the container's borders and its children.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // All sides equal padding
+    /// container.with_padding(Padding::all(8));
+    ///
+    /// // Different horizontal and vertical padding
+    /// container.with_padding(Padding::symmetric(12, 16));
+    /// ```
+    pub fn with_padding(mut self, padding: crate::ui::styling::Padding) -> Self {
+        self.style.padding = padding;
+        self.dirty = true;
+        self
+    }
+
+    /// Set the corner radius for rounded corners.
+    ///
+    /// A radius of 0 (default) produces square corners.
+    /// Higher values produce more rounded corners.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Subtle rounding
+    /// container.with_corner_radius(4);
+    ///
+    /// // More prominent rounding
+    /// container.with_corner_radius(12);
+    /// ```
+    pub fn with_corner_radius(mut self, radius: u32) -> Self {
+        self.corner_radius = radius;
+        self.dirty = true;
         self
     }
 
@@ -339,7 +379,9 @@ impl<const N: usize> Drawable for Container<N> {
     ) -> Result<(), D::Error> {
         // Draw container background if specified
         if self.style.background_color.is_some() || self.style.border_color.is_some() {
-            self.bounds
+            // Always use RoundedRectangle, even with radius 0 for consistency
+            let corner_size = Size::new(self.corner_radius, self.corner_radius);
+            RoundedRectangle::with_equal_corners(self.bounds, corner_size)
                 .into_styled(self.style.to_primitive_style())
                 .draw(display)?;
         }
