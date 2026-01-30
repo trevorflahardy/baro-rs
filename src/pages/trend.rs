@@ -17,7 +17,9 @@ use crate::sensors::SensorType;
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RawSample, Rollup, RollupTier, TimeWindow};
 use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
-use crate::ui::{ButtonVariant, ColorPalette, Container, Direction, SizeConstraint, Style};
+use crate::ui::{
+    ButtonVariant, ColorPalette, Container, Direction, Drawable, SizeConstraint, Style,
+};
 
 extern crate alloc;
 use alloc::string::String;
@@ -277,6 +279,8 @@ impl TrendPage {
         container
             .add_child(text.size(), crate::ui::SizeConstraint::Fit)
             .unwrap();
+
+        container.draw(display)?;
 
         Ok(())
     }
