@@ -5,7 +5,9 @@
 
 use crate::sensors::SensorType;
 use crate::ui::styling::{
-    COLOR_BAD_FOREGROUND, COLOR_EXCELLENT_FOREGROUND, COLOR_GOOD_FOREGROUND, COLOR_POOR_BACKGROUND,
+    COLOR_BAD_BACKGROUND, COLOR_BAD_FOREGROUND, COLOR_EXCELLENT_BACKGROUND,
+    COLOR_EXCELLENT_FOREGROUND, COLOR_GOOD_BACKGROUND, COLOR_GOOD_FOREGROUND,
+    COLOR_POOR_BACKGROUND, COLOR_POOR_FOREGROUND,
 };
 use embedded_graphics::pixelcolor::Rgb565;
 
@@ -67,13 +69,23 @@ impl QualityLevel {
         }
     }
 
-    /// Get the display color for this quality level
-    pub const fn color(self) -> Rgb565 {
+    /// Get the foreground (border/accent) color for this quality level
+    pub const fn foreground_color(self) -> Rgb565 {
         match self {
-            Self::Excellent => COLOR_EXCELLENT_FOREGROUND, // #5FB98D
+            Self::Excellent => COLOR_EXCELLENT_FOREGROUND,
             Self::Good => COLOR_GOOD_FOREGROUND,
-            Self::Poor => COLOR_POOR_BACKGROUND,
+            Self::Poor => COLOR_POOR_FOREGROUND,
             Self::Bad => COLOR_BAD_FOREGROUND,
+        }
+    }
+
+    /// Get the background color for this quality level
+    pub const fn background_color(self) -> Rgb565 {
+        match self {
+            Self::Excellent => COLOR_EXCELLENT_BACKGROUND,
+            Self::Good => COLOR_GOOD_BACKGROUND,
+            Self::Poor => COLOR_POOR_BACKGROUND,
+            Self::Bad => COLOR_BAD_BACKGROUND,
         }
     }
 

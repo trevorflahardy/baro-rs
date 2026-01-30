@@ -3,6 +3,7 @@
 //! This page provides a generic interface for visualizing any sensor's data
 //! over configurable time windows, with quality assessment and statistics.
 
+use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X10};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
@@ -17,7 +18,7 @@ use crate::sensors::SensorType;
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RawSample, Rollup, RollupTier, TimeWindow};
 use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
-use crate::ui::{ButtonVariant, ColorPalette, Container, Direction, Drawable};
+use crate::ui::{Container, Direction, Drawable, Padding, Style, WHITE};
 
 extern crate alloc;
 use alloc::string::String;
@@ -28,7 +29,6 @@ use alloc::string::String;
 const COLOR_BACKGROUND: Rgb565 = Rgb565::new(18 >> 3, 23 >> 2, 24 >> 3);
 const COLOR_FOREGROUND: Rgb565 = Rgb565::new(26 >> 3, 32 >> 2, 33 >> 3);
 const _COLOR_STROKE: Rgb565 = Rgb565::new(43 >> 3, 55 >> 2, 57 >> 3);
-const WHITE: Rgb565 = Rgb565::new(31, 63, 31); // Max brightness
 const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
 
 /// Maximum data points for the largest time window (1 day = 288 hourly points)
@@ -257,7 +257,7 @@ impl TrendPage {
         .draw(display)?;
 
         // Draw quality indicator on the right
-        let quality_style = MonoTextStyle::new(&FONT_6X10, self.current_quality.color());
+        let quality_style = MonoTextStyle::new(&FONT_10X20, WHITE);
 
         let text = Text::with_alignment(
             self.current_quality.label(),
@@ -270,9 +270,15 @@ impl TrendPage {
         );
         // .draw(display)?;
 
-        let mut container = Container::<1>::new(text.bounds(), Direction::Horizontal).with_style(
-            ButtonVariant::Pill(self.current_quality.color()).to_style(&ColorPalette::default()),
-        );
+        let quality_style = Style::new()
+            .with_background(self.current_quality.background_color())
+            .with_foreground(WHITE)
+            .with_border(self.current_quality.foreground_color(), 2);
+
+        let mut container = Container::<1>::new(text.bounds(), Direction::Horizontal)
+            .with_style(quality_style)
+            .with_corner_radius(5)
+            .with_padding(Padding::symmetric(3, 5));
 
         container
             .add_child(text.size(), crate::ui::SizeConstraint::Fit)
@@ -354,7 +360,7 @@ impl TrendPage {
         let segments_per_interval = 4; // Number of interpolated points between data points
 
         let mut prev_point: Option<Point> = None;
-        let line_color = self.current_quality.color();
+        let line_color = self.current_quality.foreground_color();
 
         for i in 0..data.len() {
             let curr_idx = i;

@@ -23,4 +23,6 @@ pub use core::{
 pub use layouts::{
     Alignment, Container, Direction, ScrollDirection, ScrollableContainer, SizeConstraint,
 };
-pub use styling::{BorderRadius, ButtonVariant, ColorPalette, Padding, Spacing, Style, Theme};
+pub use styling::{
+    BorderRadius, ButtonVariant, ColorPalette, Padding, Spacing, Style, Theme, WHITE,
+};
