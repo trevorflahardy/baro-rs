@@ -4,17 +4,34 @@
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder};
 
-// Define common colors
-const DODGER_BLUE: Rgb565 = Rgb565::new(30 >> 3, 144 >> 2, 255 >> 3);
-const STEEL_BLUE: Rgb565 = Rgb565::new(70 >> 3, 130 >> 2, 180 >> 3);
-const BLACK: Rgb565 = Rgb565::new(0, 0, 0);
-const WHITE: Rgb565 = Rgb565::new(31, 63, 31);
-const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
-const GRAY: Rgb565 = Rgb565::new(16, 32, 16);
-const DARK_GRAY: Rgb565 = Rgb565::new(10, 20, 10);
-const CRIMSON: Rgb565 = Rgb565::new(220 >> 3, 20 >> 2, 60 >> 3);
-const SURFACE_DARK: Rgb565 = Rgb565::new(0x08 >> 3, 0x10 >> 2, 0x18 >> 3);
-const SURFACE_LIGHT: Rgb565 = Rgb565::new(0xF0 >> 3, 0xF0 >> 2, 0xF0 >> 3);
+// Core color palette
+// RGB565 format: R(5 bits), G(6 bits), B(5 bits)
+// Convert from 8-bit RGB: R>>3, G>>2, B>>3
+pub const COLOR_BACKGROUND: Rgb565 = Rgb565::new(18 >> 3, 23 >> 2, 24 >> 3);
+pub const COLOR_FOREGROUND: Rgb565 = Rgb565::new(26 >> 3, 32 >> 2, 33 >> 3);
+pub const _COLOR_STROKE: Rgb565 = Rgb565::new(43 >> 3, 55 >> 2, 57 >> 3);
+
+/// Colors for status levels - Excellent
+pub const COLOR_EXCELLENT_FOREGROUND: Rgb565 = Rgb565::new(95 >> 3, 185 >> 2, 141 >> 3);
+pub const _COLOR_EXCELLENT_BACKGROUND: Rgb565 = Rgb565::new(29 >> 3, 47 >> 2, 43 >> 3);
+
+/// Colors for status levels - Good
+pub const COLOR_GOOD_FOREGROUND: Rgb565 = Rgb565::new(76 >> 3, 154 >> 2, 113 >> 3);
+pub const _COLOR_GOOD_BACKGROUND: Rgb565 = Rgb565::new(24 >> 3, 40 >> 2, 36 >> 3);
+
+/// Colors for status levels - Poor
+pub const _COLOR_POOR_FOREGROUND: Rgb565 = Rgb565::new(200 >> 3, 145 >> 2, 85 >> 3);
+pub const COLOR_POOR_BACKGROUND: Rgb565 = Rgb565::new(45 >> 3, 37 >> 2, 28 >> 3);
+
+/// Colors for status levels - Bad
+pub const COLOR_BAD_FOREGROUND: Rgb565 = Rgb565::new(190 >> 3, 95 >> 2, 95 >> 3);
+pub const _COLOR_BAD_BACKGROUND: Rgb565 = Rgb565::new(43 >> 3, 29 >> 2, 29 >> 3);
+
+// Text colors
+pub const WHITE: Rgb565 = Rgb565::new(31, 63, 31); // Max brightness in RGB565
+pub const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
+pub const _GRAY: Rgb565 = Rgb565::new(16, 32, 16);
+pub const DARK_GRAY: Rgb565 = Rgb565::new(10, 20, 10);
 
 /// Color palette for the UI
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,14 +49,14 @@ pub struct ColorPalette {
 impl Default for ColorPalette {
     fn default() -> Self {
         Self {
-            primary: DODGER_BLUE,
-            secondary: STEEL_BLUE,
-            background: BLACK,
-            surface: SURFACE_DARK,
-            error: CRIMSON,
+            primary: COLOR_EXCELLENT_FOREGROUND,
+            secondary: COLOR_GOOD_FOREGROUND,
+            background: COLOR_BACKGROUND,
+            surface: COLOR_FOREGROUND,
+            error: COLOR_BAD_FOREGROUND,
             text_primary: WHITE,
             text_secondary: LIGHT_GRAY,
-            border: GRAY,
+            border: _COLOR_STROKE,
         }
     }
 }
@@ -53,14 +70,14 @@ impl ColorPalette {
     /// Light theme palette
     pub fn light() -> Self {
         Self {
-            primary: DODGER_BLUE,
-            secondary: STEEL_BLUE,
+            primary: COLOR_EXCELLENT_FOREGROUND,
+            secondary: COLOR_GOOD_FOREGROUND,
             background: WHITE,
-            surface: SURFACE_LIGHT,
-            error: CRIMSON,
-            text_primary: BLACK,
+            surface: COLOR_FOREGROUND,
+            error: COLOR_BAD_FOREGROUND,
+            text_primary: COLOR_BACKGROUND,
             text_secondary: DARK_GRAY,
-            border: GRAY,
+            border: _COLOR_STROKE,
         }
     }
 }
@@ -157,6 +174,11 @@ impl Style {
         self
     }
 
+    pub fn with_corners(mut self, _radius: u32) -> Self {
+        // Corner radius handling can be implemented as needed
+        self
+    }
+
     /// Convert this style to a PrimitiveStyle for drawing
     pub fn to_primitive_style(&self) -> PrimitiveStyle<Rgb565> {
         let mut builder = PrimitiveStyleBuilder::new();
@@ -228,6 +250,7 @@ pub enum ButtonVariant {
     Secondary,
     Outline,
     Text,
+    Pill(Rgb565),
 }
 
 impl ButtonVariant {
@@ -249,6 +272,7 @@ impl ButtonVariant {
             ButtonVariant::Text => Style::new()
                 .with_foreground(palette.primary)
                 .with_padding(Padding::symmetric(4, 8)),
+            ButtonVariant::Pill(fg_color) => Style::new().with_background(*fg_color),
         }
     }
 }

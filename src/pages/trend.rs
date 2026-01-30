@@ -8,6 +8,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
 use embedded_graphics::{Drawable as EgDrawable, pixelcolor::Rgb565};
+use embedded_layout::View;
 use heapless::{Deque, Vec};
 
 use crate::metrics::QualityLevel;
@@ -16,9 +17,19 @@ use crate::sensors::SensorType;
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RawSample, Rollup, RollupTier, TimeWindow};
 use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
+use crate::ui::{ButtonVariant, ColorPalette, Container, Direction, SizeConstraint, Style};
 
 extern crate alloc;
 use alloc::string::String;
+
+// Color constants from styling
+// RGB565 format: R(5 bits), G(6 bits), B(5 bits)
+// Convert from 8-bit RGB: R>>3, G>>2, B>>3
+const COLOR_BACKGROUND: Rgb565 = Rgb565::new(18 >> 3, 23 >> 2, 24 >> 3);
+const COLOR_FOREGROUND: Rgb565 = Rgb565::new(26 >> 3, 32 >> 2, 33 >> 3);
+const _COLOR_STROKE: Rgb565 = Rgb565::new(43 >> 3, 55 >> 2, 57 >> 3);
+const WHITE: Rgb565 = Rgb565::new(31, 63, 31); // Max brightness
+const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
 
 /// Maximum data points for the largest time window (1 day = 288 hourly points)
 const MAX_DATA_POINTS: usize = 288;
@@ -167,7 +178,8 @@ impl TrendPage {
     /// Create a new trend page for a specific sensor and time window
     pub fn new(bounds: Rectangle, sensor: SensorType, window: TimeWindow) -> Self {
         const HEADER_HEIGHT: u32 = 40;
-        const STATS_HEIGHT: u32 = 50;
+        const STATS_HEIGHT: u32 = 55;
+
         let graph_height = bounds
             .size
             .height
@@ -221,12 +233,12 @@ impl TrendPage {
     where
         D: DrawTarget<Color = Rgb565>,
     {
-        // Clear header area
+        // Clear header area with foreground color
         self.header_bounds
-            .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
+            .into_styled(PrimitiveStyle::with_fill(COLOR_FOREGROUND))
             .draw(display)?;
 
-        let text_style = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
+        let text_style = MonoTextStyle::new(&FONT_6X10, WHITE);
 
         // Draw sensor name and time window
         let mut title = String::new();
@@ -246,7 +258,8 @@ impl TrendPage {
 
         // Draw quality indicator on the right
         let quality_style = MonoTextStyle::new(&FONT_6X10, self.current_quality.color());
-        Text::with_alignment(
+
+        let text = Text::with_alignment(
             self.current_quality.label(),
             Point::new(
                 self.header_bounds.top_left.x + self.header_bounds.size.width as i32 - 5,
@@ -254,25 +267,33 @@ impl TrendPage {
             ),
             quality_style,
             Alignment::Right,
-        )
-        .draw(display)?;
+        );
+        // .draw(display)?;
+
+        let mut container = Container::<1>::new(text.bounds(), Direction::Horizontal).with_style(
+            ButtonVariant::Pill(self.current_quality.color()).to_style(&ColorPalette::default()),
+        );
+
+        container
+            .add_child(text.size(), crate::ui::SizeConstraint::Fit)
+            .unwrap();
 
         Ok(())
     }
 
-    /// Draw the graph using embedded_charts
+    /// Draw the graph using embedded_charts with interpolation
     fn draw_graph<D>(&self, display: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Rgb565>,
     {
-        // Clear graph area
+        // Clear graph area with background color
         self.graph_bounds
-            .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
+            .into_styled(PrimitiveStyle::with_fill(COLOR_BACKGROUND))
             .draw(display)?;
 
         // Check if we have data
         if self.data_buffer.is_empty() {
-            let text_style = MonoTextStyle::new(&FONT_6X10, Rgb565::CSS_GRAY);
+            let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
             Text::with_alignment(
                 "No data available",
                 self.graph_bounds.center(),
@@ -289,7 +310,7 @@ impl TrendPage {
             .get_window_data(self.window, self.current_timestamp);
 
         if data.is_empty() {
-            let text_style = MonoTextStyle::new(&FONT_6X10, Rgb565::CSS_GRAY);
+            let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
             Text::with_alignment(
                 "No data in window",
                 self.graph_bounds.center(),
@@ -300,7 +321,7 @@ impl TrendPage {
             return Ok(());
         }
 
-        // Draw a simple line graph manually using embedded-graphics
+        // Draw a simple line graph manually using embedded-graphics with interpolation
         // Find min/max values for scaling
         let mut min_val = i32::MAX;
         let mut max_val = i32::MIN;
@@ -326,30 +347,77 @@ impl TrendPage {
         let x_offset = self.graph_bounds.top_left.x + 5;
         let y_offset = self.graph_bounds.top_left.y + 5;
 
-        // Draw the data points as connected lines
+        // Use Catmull-Rom spline interpolation for smooth curves
+        // We'll draw segments between points with interpolated intermediate points
+        let segments_per_interval = 4; // Number of interpolated points between data points
+
         let mut prev_point: Option<Point> = None;
-        for (i, (_, val)) in data.iter().enumerate() {
-            // Map x position
-            let x = x_offset + (i as i32 * graph_width) / (data.len() as i32 - 1).max(1);
+        let line_color = self.current_quality.color();
 
-            // Map y position (invert because screen y grows downward)
-            let normalized = ((val - min_val) * graph_height) / (max_val - min_val).max(1);
-            let y = y_offset + graph_height - normalized;
+        for i in 0..data.len() {
+            let curr_idx = i;
 
-            let current_point = Point::new(x, y);
+            // Get surrounding points for interpolation (p0, p1, p2, p3)
+            let p0_idx = if i > 0 { i - 1 } else { i };
+            let p1_idx = i;
+            let p2_idx = if i + 1 < data.len() { i + 1 } else { i };
+            let p3_idx = if i + 2 < data.len() { i + 2 } else { p2_idx };
 
-            // Draw line from previous point to current point
-            if let Some(prev) = prev_point {
-                Line::new(prev, current_point)
-                    .into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_CYAN, 2))
-                    .draw(display)?;
+            let (_t0, v0) = data[p0_idx];
+            let (_t1, v1) = data[p1_idx];
+            let (_t2, v2) = data[p2_idx];
+            let (_t3, v3) = data[p3_idx];
+
+            // Draw interpolated segments between p1 and p2
+            for seg in 0..=segments_per_interval {
+                let t = seg as f32 / segments_per_interval as f32;
+
+                // Catmull-Rom spline interpolation
+                // Formula: 0.5 * (2*p1 + (-p0 + p2)*t + (2*p0 - 5*p1 + 4*p2 - p3)*t^2 + (-p0 + 3*p1 - 3*p2 + p3)*t^3)
+                let t2 = t * t;
+                let t3 = t2 * t;
+
+                let v0_f = v0 as f32;
+                let v1_f = v1 as f32;
+                let v2_f = v2 as f32;
+                let v3_f = v3 as f32;
+
+                let interpolated_val = (0.5
+                    * (2.0 * v1_f
+                        + (-v0_f + v2_f) * t
+                        + (2.0 * v0_f - 5.0 * v1_f + 4.0 * v2_f - v3_f) * t2
+                        + (-v0_f + 3.0 * v1_f - 3.0 * v2_f + v3_f) * t3))
+                    as i32;
+
+                // Map x position (blend between p1 and p2)
+                let base_x = (curr_idx as i32 * graph_width) / (data.len() as i32 - 1).max(1);
+                let next_x = if curr_idx + 1 < data.len() {
+                    ((curr_idx + 1) as i32 * graph_width) / (data.len() as i32 - 1).max(1)
+                } else {
+                    base_x
+                };
+                let x = x_offset + base_x + ((next_x - base_x) as f32 * t) as i32;
+
+                // Map y position (invert because screen y grows downward)
+                let normalized =
+                    ((interpolated_val - min_val) * graph_height) / (max_val - min_val).max(1);
+                let y = y_offset + graph_height - normalized;
+
+                let current_point = Point::new(x, y);
+
+                // Draw line from previous point to current point
+                if let Some(prev) = prev_point {
+                    Line::new(prev, current_point)
+                        .into_styled(PrimitiveStyle::with_stroke(line_color, 2))
+                        .draw(display)?;
+                }
+
+                prev_point = Some(current_point);
             }
-
-            prev_point = Some(current_point);
         }
 
         // Draw y-axis labels (min, max)
-        let label_style = MonoTextStyle::new(&FONT_6X10, Rgb565::CSS_GRAY);
+        let label_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
 
         let mut max_str = String::new();
         let mut min_str = String::new();
@@ -386,16 +454,16 @@ impl TrendPage {
     where
         D: DrawTarget<Color = Rgb565>,
     {
-        // Clear stats area
+        // Clear stats area with foreground color
         self.stats_bounds
-            .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
+            .into_styled(PrimitiveStyle::with_fill(COLOR_FOREGROUND))
             .draw(display)?;
 
         if self.stats.count == 0 {
             return Ok(());
         }
 
-        let text_style = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
+        let text_style = MonoTextStyle::new(&FONT_6X10, WHITE);
         let section_width = self.stats_bounds.size.width / 3;
 
         // Format stats with sensor unit
@@ -516,7 +584,7 @@ impl Page for TrendPage {
     fn draw_page<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
         // Clear background
         self.bounds
-            .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
+            .into_styled(PrimitiveStyle::with_fill(COLOR_BACKGROUND))
             .draw(display)?;
 
         // Draw all sections

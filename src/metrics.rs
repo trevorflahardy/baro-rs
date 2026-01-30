@@ -4,8 +4,10 @@
 //! determining environmental quality based on sensor readings.
 
 use crate::sensors::SensorType;
+use crate::ui::styling::{
+    COLOR_BAD_FOREGROUND, COLOR_EXCELLENT_FOREGROUND, COLOR_GOOD_FOREGROUND, COLOR_POOR_BACKGROUND,
+};
 use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::prelude::WebColors;
 
 /// Quality level assessment for sensor readings
 ///
@@ -68,10 +70,10 @@ impl QualityLevel {
     /// Get the display color for this quality level
     pub const fn color(self) -> Rgb565 {
         match self {
-            Self::Excellent => Rgb565::CSS_GREEN,
-            Self::Good => Rgb565::CSS_LIGHT_GREEN,
-            Self::Poor => Rgb565::CSS_ORANGE,
-            Self::Bad => Rgb565::CSS_RED,
+            Self::Excellent => COLOR_EXCELLENT_FOREGROUND, // #5FB98D
+            Self::Good => COLOR_GOOD_FOREGROUND,
+            Self::Poor => COLOR_POOR_BACKGROUND,
+            Self::Bad => COLOR_BAD_FOREGROUND,
         }
     }
 
