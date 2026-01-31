@@ -14,11 +14,14 @@ use crate::ui::core::{DirtyRegion, Drawable, TouchEvent, TouchPoint, TouchResult
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 
+extern crate alloc;
+use alloc::boxed::Box;
+
 /// A concrete, layout-friendly UI element.
 pub enum Element {
-    Text(TextComponent),
-    MultiLineText(MultiLineText),
-    Button(Button),
+    Text(Box<TextComponent>),
+    MultiLineText(Box<MultiLineText>),
+    Button(Box<Button>),
     /// A layout-only element that draws nothing.
     Spacer {
         bounds: Rectangle,
@@ -50,17 +53,17 @@ impl Element {
 
     /// Convenience constructor: text element.
     pub fn text(bounds: Rectangle, text: &str, size: TextSize) -> Self {
-        Self::Text(TextComponent::new(bounds, text, size))
+        Self::Text(Box::new(TextComponent::new(bounds, text, size)))
     }
 
     /// Convenience constructor: multiline text element.
     pub fn multiline(bounds: Rectangle, text: &str, size: TextSize) -> Self {
-        Self::MultiLineText(MultiLineText::new(bounds, text, size))
+        Self::MultiLineText(Box::new(MultiLineText::new(bounds, text, size)))
     }
 
     /// Convenience constructor: button element.
     pub fn button(bounds: Rectangle, label: &str, action: crate::ui::core::Action) -> Self {
-        Self::Button(Button::new(bounds, label, action))
+        Self::Button(Box::new(Button::new(bounds, label, action)))
     }
 
     /// Convenience constructor: spacer.
