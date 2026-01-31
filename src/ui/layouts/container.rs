@@ -1,114 +1,160 @@
 // src/ui/layouts/container.rs
-//! Container layout component with flexible sizing and alignment
+//! Flex-like layout container.
+//!
+//! `Container` is the primary layout primitive in `baro-rs`'s UI system.
+//! It is intentionally small and predictable (embedded constraints), but it
+//! aims to feel familiar if you have ever used CSS flexbox.
+//!
+//! ## Mental model
+//! - The container has **bounds** (a `Rectangle`).
+//! - It arranges **children** either **horizontally** or **vertically**.
+//! - Each child gets a **main-axis size constraint** (`SizeConstraint`) and a
+//!   **cross-axis alignment** (controlled by the container).
+//! - Layout is computed eagerly when you add children or change bounds.
+//!
+//! ## What this fixes vs the old design
+//! The previous `Container` only tracked child rectangles; it did **not** own
+//! any child widgets, so it could draw a background but could not draw its
+//! contents (leading to "TODO: Add text to container" style call-sites).
+//!
+//! This version stores real widgets and will:
+//! - compute each child's bounds
+//! - **set the child's bounds**
+//! - draw the container background + all children
+//! - forward touch events to children
+//!
+//! ## Common patterns
+//!
+//! ### Horizontal row, 3 children evenly spaced
+//! ```ignore
+//! use crate::ui::{Container, Direction, MainAxisAlignment, Alignment, SizeConstraint};
+//! use crate::ui::elements::Element;
+//! use embedded_graphics::primitives::Rectangle;
+//! use embedded_graphics::prelude::*;
+//!
+//! let bounds = Rectangle::new(Point::new(0, 0), Size::new(320, 40));
+//! let mut row = Container::<3>::new(bounds, Direction::Horizontal)
+//!     .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+//!     .with_alignment(Alignment::Center);
+//!
+//! row.add_child(Element::text(bounds, "A", crate::ui::TextSize::Medium), SizeConstraint::Fit).ok();
+//! row.add_child(Element::text(bounds, "B", crate::ui::TextSize::Medium), SizeConstraint::Fit).ok();
+//! row.add_child(Element::text(bounds, "C", crate::ui::TextSize::Medium), SizeConstraint::Fit).ok();
+//! ```
+//!
+//! ### Flex-grow style sizing
+//! ```ignore
+//! // Two children: left fits its content, right grows to fill remaining space.
+//! row.add_child(left, SizeConstraint::Fit).ok();
+//! row.add_child(right, SizeConstraint::Grow(1)).ok();
+//! ```
 
-use crate::ui::core::{DirtyRegion, Drawable, TouchEvent, TouchResult, Touchable};
+use crate::ui::core::{
+    Action, DirtyRegion, Drawable, TouchEvent, TouchPoint, TouchResult, Touchable,
+};
+use crate::ui::elements::Element;
 use crate::ui::styling::Style;
 use embedded_graphics::Drawable as EgDrawable;
+use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Rectangle, RoundedRectangle};
 use heapless::Vec;
 
-/// Alignment options for container children
-///
-/// Determines how children are positioned along the cross-axis
-/// (perpendicular to the layout direction).
+/// Alignment options for container children along the cross-axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Alignment {
-    /// Align to start (left for horizontal, top for vertical)
     Start,
-    /// Center alignment
     Center,
-    /// Align to end (right for horizontal, bottom for vertical)
     End,
-    /// Stretch to fill available space
     Stretch,
 }
 
-/// Direction for container layout
-///
-/// Determines how children are arranged within the container.
-/// Children are laid out sequentially along the main axis.
+/// Direction for container layout.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Direction {
-    /// Horizontal layout (left to right)
     Horizontal,
-    /// Vertical layout (top to bottom)
     Vertical,
 }
 
-/// Size constraint for container children
-///
-/// Controls how a child element's size is calculated during layout.
-/// - `Fit`: Child uses its natural content size
-/// - `Expand`: Child expands to fill available space (shared equally among all Expand children)
-/// - `Fixed(n)`: Child has a fixed size of n pixels
+/// How children are distributed along the main axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SizeConstraint {
-    /// Fit to content size
-    Fit,
-    /// Expand to fill parent container
-    Expand,
-    /// Fixed size in pixels
-    Fixed(u32),
+pub enum MainAxisAlignment {
+    /// Pack at the start; use `gap` between children.
+    Start,
+    /// Center as a group; use `gap` between children.
+    Center,
+    /// Pack at the end; use `gap` between children.
+    End,
+    /// Space only between items (no leading/trailing space).
+    SpaceBetween,
+    /// Equal space around items (half-size on edges).
+    SpaceAround,
+    /// Equal space between items and edges.
+    SpaceEvenly,
 }
 
-/// Child element with its size constraint
-pub struct ChildElement {
+/// Size constraint for a child along the main axis.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SizeConstraint {
+    /// Use the child's preferred size (typically its current bounds size).
+    Fit,
+    /// Fixed main-axis size in pixels.
+    Fixed(u32),
+    /// Flex-grow style sizing.
+    ///
+    /// Remaining space is distributed proportional to weights.
+    Grow(u16),
+}
+
+impl SizeConstraint {
+    fn grow_weight(&self) -> u16 {
+        match *self {
+            SizeConstraint::Grow(w) => w.max(1),
+            _ => 0,
+        }
+    }
+}
+
+struct ChildElement {
+    element: Element,
     bounds: Rectangle,
     size_constraint: SizeConstraint,
     dirty: bool,
 }
 
 impl ChildElement {
-    pub fn new(bounds: Rectangle, size_constraint: SizeConstraint) -> Self {
+    fn new(mut element: Element, bounds: Rectangle, size_constraint: SizeConstraint) -> Self {
+        element.set_bounds(bounds);
         Self {
+            element,
             bounds,
             size_constraint,
             dirty: true,
         }
     }
 
-    pub fn bounds(&self) -> Rectangle {
-        self.bounds
-    }
-
-    pub fn set_bounds(&mut self, bounds: Rectangle) {
+    fn set_bounds(&mut self, bounds: Rectangle) {
         if self.bounds != bounds {
             self.bounds = bounds;
+            self.element.set_bounds(bounds);
             self.dirty = true;
         }
     }
+
+    fn preferred_size(&self) -> Size {
+        self.element.preferred_size()
+    }
 }
 
-/// Container that arranges children in a direction with alignment
+/// A flex-like container that owns and lays out child elements.
 ///
-/// A flexible layout container that arranges child elements either horizontally
-/// or vertically with configurable spacing and alignment. Children can have
-/// different size constraints (Fit, Expand, or Fixed) that control how they
-/// are sized within the available space.
-///
-/// # Type Parameters
-/// - `N`: Maximum number of child elements (compile-time constant)
-///
-/// # Examples
-/// ```ignore
-/// // Create a vertical container with 4 children, centered alignment
-/// let mut container = Container::<4>::new(
-///     Rectangle::new(Point::new(10, 10), Size::new(300, 200)),
-///     Direction::Vertical
-/// )
-/// .with_alignment(Alignment::Center)
-/// .with_spacing(10);
-///
-/// // Add children with different size constraints
-/// container.add_child(Size::new(280, 50), SizeConstraint::Fixed(50)).ok();
-/// container.add_child(Size::new(280, 0), SizeConstraint::Expand).ok();
-/// ```
+/// `N` is the maximum number of children stored inline (heapless).
 pub struct Container<const N: usize> {
     bounds: Rectangle,
     direction: Direction,
     alignment: Alignment,
-    spacing: u32,
+    main_axis_alignment: MainAxisAlignment,
+    gap: u32,
     style: Style,
     corner_radius: u32,
     children: Vec<ChildElement, N>,
@@ -116,16 +162,13 @@ pub struct Container<const N: usize> {
 }
 
 impl<const N: usize> Container<N> {
-    /// Create a new container with the specified bounds and layout direction.
-    ///
-    /// By default, spacing is 0 and alignment is Start. Use builder methods
-    /// to configure spacing and alignment.
     pub fn new(bounds: Rectangle, direction: Direction) -> Self {
         Self {
             bounds,
             direction,
             alignment: Alignment::Start,
-            spacing: 0,
+            main_axis_alignment: MainAxisAlignment::Start,
+            gap: 0,
             style: Style::default(),
             corner_radius: 0,
             children: Vec::new(),
@@ -133,106 +176,83 @@ impl<const N: usize> Container<N> {
         }
     }
 
-    /// Set the cross-axis alignment for children.
-    ///
-    /// Alignment controls how children are positioned perpendicular to the
-    /// layout direction (e.g., for vertical layout, alignment controls horizontal positioning).
     pub fn with_alignment(mut self, alignment: Alignment) -> Self {
         self.alignment = alignment;
         self
     }
 
-    /// Set the spacing between children in pixels.
-    ///
-    /// Spacing is applied between each child element along the layout direction.
-    pub fn with_spacing(mut self, spacing: u32) -> Self {
-        self.spacing = spacing;
+    pub fn with_main_axis_alignment(mut self, alignment: MainAxisAlignment) -> Self {
+        self.main_axis_alignment = alignment;
         self
     }
 
-    /// Set the container's visual style.
-    ///
-    /// Style controls background color, border, and padding.
+    /// Set the base gap between children (in pixels).
+    pub fn with_gap(mut self, gap: u32) -> Self {
+        self.gap = gap;
+        self
+    }
+
+    /// Back-compat builder (historical name).
+    pub fn with_spacing(self, spacing: u32) -> Self {
+        self.with_gap(spacing)
+    }
+
     pub fn with_style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
 
-    /// Set the padding for the container.
-    ///
-    /// This is a convenience method equivalent to modifying the style's padding.
-    /// Padding creates space between the container's borders and its children.
-    ///
-    /// # Examples
-    /// ```ignore
-    /// // All sides equal padding
-    /// container.with_padding(Padding::all(8));
-    ///
-    /// // Different horizontal and vertical padding
-    /// container.with_padding(Padding::symmetric(12, 16));
-    /// ```
     pub fn with_padding(mut self, padding: crate::ui::styling::Padding) -> Self {
         self.style.padding = padding;
         self.dirty = true;
         self
     }
 
-    /// Set the corner radius for rounded corners.
-    ///
-    /// A radius of 0 (default) produces square corners.
-    /// Higher values produce more rounded corners.
-    ///
-    /// # Examples
-    /// ```ignore
-    /// // Subtle rounding
-    /// container.with_corner_radius(4);
-    ///
-    /// // More prominent rounding
-    /// container.with_corner_radius(12);
-    /// ```
     pub fn with_corner_radius(mut self, radius: u32) -> Self {
         self.corner_radius = radius;
         self.dirty = true;
         self
     }
 
-    /// Add a child element to the container.
+    /// Add a child widget to this container.
     ///
-    /// # Parameters
-    /// - `size`: Initial size hint for the child (may be overridden by constraint and layout)
-    /// - `constraint`: How the child's size should be determined during layout
-    ///
-    /// # Returns
-    /// - `Ok(index)`: Index of the added child
-    /// - `Err`: Container is full (reached capacity N)
-    ///
-    /// After adding a child, the container automatically recalculates its layout.
+    /// The element's bounds will be overridden by layout.
     pub fn add_child(
         &mut self,
-        size: Size,
+        element: Element,
         constraint: SizeConstraint,
     ) -> Result<usize, &'static str> {
-        let child_bounds = Rectangle::new(self.bounds.top_left, size);
-        let child = ChildElement::new(child_bounds, constraint);
+        let child_bounds = Rectangle::new(self.bounds.top_left, element.preferred_size());
+        let child = ChildElement::new(element, child_bounds, constraint);
         self.children.push(child).map_err(|_| "Container full")?;
         self.dirty = true;
         self.layout();
         Ok(self.children.len() - 1)
     }
 
-    /// Get the computed bounds for a child at the given index.
-    ///
-    /// Returns `None` if the index is out of bounds.
-    /// Get the computed bounds for a child at the given index.
-    ///
-    /// Returns `None` if the index is out of bounds.
-    /// The bounds are calculated by the layout system based on
-    /// the child's size constraint and the container's layout direction.
     pub fn child_bounds(&self, index: usize) -> Option<Rectangle> {
         self.children.get(index).map(|c| c.bounds)
     }
 
-    /// Recalculate layout for all children
+    pub fn child(&self, index: usize) -> Option<&Element> {
+        self.children.get(index).map(|c| &c.element)
+    }
+
+    pub fn child_mut(&mut self, index: usize) -> Option<&mut Element> {
+        self.children.get_mut(index).map(|c| {
+            c.dirty = true;
+            &mut c.element
+        })
+    }
+
+    pub fn set_bounds(&mut self, bounds: Rectangle) {
+        if self.bounds != bounds {
+            self.bounds = bounds;
+            self.dirty = true;
+            self.layout();
+        }
+    }
+
     fn layout(&mut self) {
         if self.children.is_empty() {
             return;
@@ -249,141 +269,212 @@ impl<const N: usize> Container<N> {
 
         match self.direction {
             Direction::Horizontal => {
-                self.layout_horizontal(content_start, available_width, available_height);
+                self.layout_main_axis(
+                    content_start,
+                    available_width,
+                    available_height,
+                    Axis::Horizontal,
+                );
             }
             Direction::Vertical => {
-                self.layout_vertical(content_start, available_width, available_height);
+                self.layout_main_axis(
+                    content_start,
+                    available_height,
+                    available_width,
+                    Axis::Vertical,
+                );
             }
         }
     }
 
-    fn layout_horizontal(&mut self, start: Point, available_width: u32, available_height: u32) {
-        let total_spacing = self.spacing * (self.children.len().saturating_sub(1)) as u32;
-        let mut fixed_width = 0u32;
-        let mut expand_count = 0usize;
+    fn layout_main_axis(
+        &mut self,
+        start: Point,
+        available_main: u32,
+        available_cross: u32,
+        axis: Axis,
+    ) {
+        let count = self.children.len();
+        if count == 0 {
+            return;
+        }
 
-        // Calculate fixed widths and count expand elements
+        // 1) Measure fixed + fit, and sum grow weights.
+        let mut fixed_main: u32 = 0;
+        let mut total_grow: u32 = 0;
+
         for child in &self.children {
             match child.size_constraint {
-                SizeConstraint::Fixed(w) => fixed_width += w,
-                SizeConstraint::Fit => fixed_width += child.bounds.size.width,
-                SizeConstraint::Expand => expand_count += 1,
+                SizeConstraint::Fixed(px) => fixed_main = fixed_main.saturating_add(px),
+                SizeConstraint::Fit => {
+                    let pref = child.preferred_size();
+                    let main = axis.main(pref);
+                    fixed_main = fixed_main.saturating_add(main);
+                }
+                SizeConstraint::Grow(_) => {
+                    total_grow =
+                        total_grow.saturating_add(child.size_constraint.grow_weight() as u32)
+                }
             }
         }
 
-        let remaining_width = available_width
-            .saturating_sub(fixed_width)
-            .saturating_sub(total_spacing);
-        let expand_width = if expand_count > 0 {
-            remaining_width / expand_count as u32
-        } else {
-            0
-        };
+        // 2) Allocate main sizes.
+        let base_gap_total = self.gap.saturating_mul(count.saturating_sub(1) as u32);
+        let mut remaining = available_main
+            .saturating_sub(fixed_main)
+            .saturating_sub(base_gap_total);
 
-        let mut current_x = start.x;
-
-        for child in &mut self.children {
-            let child_width = match child.size_constraint {
-                SizeConstraint::Fixed(w) => w,
-                SizeConstraint::Fit => child.bounds.size.width,
-                SizeConstraint::Expand => expand_width,
-            };
-
-            let child_height = match self.alignment {
-                Alignment::Stretch => available_height,
-                _ => child.bounds.size.height.min(available_height),
-            };
-
-            let child_y = match self.alignment {
-                Alignment::Start => start.y,
-                Alignment::Center => start.y + ((available_height - child_height) / 2) as i32,
-                Alignment::End => start.y + (available_height - child_height) as i32,
-                Alignment::Stretch => start.y,
-            };
-
-            child.set_bounds(Rectangle::new(
-                Point::new(current_x, child_y),
-                Size::new(child_width, child_height),
-            ));
-
-            current_x += child_width as i32 + self.spacing as i32;
-        }
-    }
-
-    fn layout_vertical(&mut self, start: Point, available_width: u32, available_height: u32) {
-        let total_spacing = self.spacing * (self.children.len().saturating_sub(1)) as u32;
-        let mut fixed_height = 0u32;
-        let mut expand_count = 0usize;
-
-        // Calculate fixed heights and count expand elements
+        // First pass sizes.
+        let mut main_sizes: heapless::Vec<u32, N> = heapless::Vec::new();
         for child in &self.children {
-            match child.size_constraint {
-                SizeConstraint::Fixed(h) => fixed_height += h,
-                SizeConstraint::Fit => fixed_height += child.bounds.size.height,
-                SizeConstraint::Expand => expand_count += 1,
-            }
+            let s = match child.size_constraint {
+                SizeConstraint::Fixed(px) => px,
+                SizeConstraint::Fit => axis.main(child.preferred_size()),
+                SizeConstraint::Grow(_) => {
+                    if total_grow == 0 {
+                        0
+                    } else {
+                        // proportional allocation
+                        let w = child.size_constraint.grow_weight() as u64;
+                        let share = (remaining as u64 * w) / (total_grow as u64);
+                        share as u32
+                    }
+                }
+            };
+            main_sizes.push(s).ok();
         }
 
-        let remaining_height = available_height
-            .saturating_sub(fixed_height)
-            .saturating_sub(total_spacing);
-        let expand_height = if expand_count > 0 {
-            remaining_height / expand_count as u32
-        } else {
-            0
+        // If we allocated grow sizes proportionally, there may be rounding leftover.
+        let used_main: u32 = main_sizes.iter().copied().sum();
+        remaining = available_main
+            .saturating_sub(used_main)
+            .saturating_sub(base_gap_total);
+
+        // 3) Determine final gaps + leading offset based on main-axis alignment.
+        let (leading, extra_gap) = match self.main_axis_alignment {
+            MainAxisAlignment::Start => (0, 0),
+            MainAxisAlignment::Center => (remaining / 2, 0),
+            MainAxisAlignment::End => (remaining, 0),
+            MainAxisAlignment::SpaceBetween => {
+                if count <= 1 {
+                    (0, 0)
+                } else {
+                    (0, remaining / (count as u32 - 1))
+                }
+            }
+            MainAxisAlignment::SpaceAround => {
+                if count == 0 {
+                    (0, 0)
+                } else {
+                    let gap = remaining / (count as u32);
+                    (gap / 2, gap)
+                }
+            }
+            MainAxisAlignment::SpaceEvenly => {
+                let gap = remaining / (count as u32 + 1);
+                (gap, gap)
+            }
         };
 
-        let mut current_y = start.y;
+        // 4) Place children.
+        let mut cursor: i32 = axis.main_point(start) + leading as i32;
 
-        for child in &mut self.children {
-            let child_height = match child.size_constraint {
-                SizeConstraint::Fixed(h) => h,
-                SizeConstraint::Fit => child.bounds.size.height,
-                SizeConstraint::Expand => expand_height,
+        for (idx, child) in self.children.iter_mut().enumerate() {
+            let child_main = main_sizes.get(idx).copied().unwrap_or(0);
+
+            // Compute cross size.
+            let pref_cross = axis.cross(child.preferred_size());
+            let child_cross = match self.alignment {
+                Alignment::Stretch => available_cross,
+                _ => pref_cross.min(available_cross),
             };
 
-            let child_width = match self.alignment {
-                Alignment::Stretch => available_width,
-                _ => child.bounds.size.width.min(available_width),
+            // Compute cross position.
+            let cross_pos = match self.alignment {
+                Alignment::Start | Alignment::Stretch => axis.cross_point(start),
+                Alignment::Center => {
+                    axis.cross_point(start) + ((available_cross - child_cross) / 2) as i32
+                }
+                Alignment::End => axis.cross_point(start) + (available_cross - child_cross) as i32,
             };
 
-            let child_x = match self.alignment {
-                Alignment::Start => start.x,
-                Alignment::Center => start.x + ((available_width - child_width) / 2) as i32,
-                Alignment::End => start.x + (available_width - child_width) as i32,
-                Alignment::Stretch => start.x,
-            };
+            let top_left = axis.compose_point(cursor, cross_pos);
+            let size = axis.compose_size(child_main, child_cross);
+            child.set_bounds(Rectangle::new(top_left, size));
 
-            child.set_bounds(Rectangle::new(
-                Point::new(child_x, current_y),
-                Size::new(child_width, child_height),
-            ));
+            cursor += child_main as i32;
 
-            current_y += child_height as i32 + self.spacing as i32;
+            // gap after, except last
+            if idx + 1 < count {
+                cursor += (self.gap + extra_gap) as i32;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Axis {
+    Horizontal,
+    Vertical,
+}
+
+impl Axis {
+    fn main(&self, size: Size) -> u32 {
+        match self {
+            Axis::Horizontal => size.width,
+            Axis::Vertical => size.height,
         }
     }
 
-    pub fn set_bounds(&mut self, bounds: Rectangle) {
-        if self.bounds != bounds {
-            self.bounds = bounds;
-            self.dirty = true;
-            self.layout();
+    fn cross(&self, size: Size) -> u32 {
+        match self {
+            Axis::Horizontal => size.height,
+            Axis::Vertical => size.width,
+        }
+    }
+
+    fn main_point(&self, p: Point) -> i32 {
+        match self {
+            Axis::Horizontal => p.x,
+            Axis::Vertical => p.y,
+        }
+    }
+
+    fn cross_point(&self, p: Point) -> i32 {
+        match self {
+            Axis::Horizontal => p.y,
+            Axis::Vertical => p.x,
+        }
+    }
+
+    fn compose_point(&self, main: i32, cross: i32) -> Point {
+        match self {
+            Axis::Horizontal => Point::new(main, cross),
+            Axis::Vertical => Point::new(cross, main),
+        }
+    }
+
+    fn compose_size(&self, main: u32, cross: u32) -> Size {
+        match self {
+            Axis::Horizontal => Size::new(main, cross),
+            Axis::Vertical => Size::new(cross, main),
         }
     }
 }
 
 impl<const N: usize> Drawable for Container<N> {
-    fn draw<D: DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>>(
-        &self,
-        display: &mut D,
-    ) -> Result<(), D::Error> {
-        // Draw container background if specified
+    fn draw<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
+        // Background/border.
         if self.style.background_color.is_some() || self.style.border_color.is_some() {
-            // Always use RoundedRectangle, even with radius 0 for consistency
             let corner_size = Size::new(self.corner_radius, self.corner_radius);
             RoundedRectangle::with_equal_corners(self.bounds, corner_size)
                 .into_styled(self.style.to_primitive_style())
                 .draw(display)?;
+        }
+
+        // Children.
+        for child in &self.children {
+            child.element.draw(display)?;
         }
 
         Ok(())
@@ -394,13 +485,18 @@ impl<const N: usize> Drawable for Container<N> {
     }
 
     fn is_dirty(&self) -> bool {
-        self.dirty || self.children.iter().any(|c| c.dirty)
+        self.dirty
+            || self
+                .children
+                .iter()
+                .any(|c| c.dirty || c.element.is_dirty())
     }
 
     fn mark_clean(&mut self) {
         self.dirty = false;
         for child in &mut self.children {
             child.dirty = false;
+            child.element.mark_clean();
         }
     }
 
@@ -413,10 +509,9 @@ impl<const N: usize> Drawable for Container<N> {
             return Some(DirtyRegion::new(self.bounds));
         }
 
-        // Check for any dirty children
         let mut region: Option<DirtyRegion> = None;
         for child in &self.children {
-            if child.dirty {
+            if child.dirty || child.element.is_dirty() {
                 if let Some(ref mut r) = region {
                     r.expand_to_include(child.bounds);
                 } else {
@@ -430,14 +525,37 @@ impl<const N: usize> Drawable for Container<N> {
 }
 
 impl<const N: usize> Touchable for Container<N> {
-    fn contains_point(&self, point: crate::ui::core::TouchPoint) -> bool {
-        let p = point.to_point();
-        self.bounds.contains(p)
+    fn contains_point(&self, point: TouchPoint) -> bool {
+        self.bounds.contains(point.to_point())
     }
 
-    fn handle_touch(&mut self, _event: TouchEvent) -> TouchResult {
-        // Containers don't handle touch by default
-        // Child elements should handle their own touch events
+    fn handle_touch(&mut self, event: TouchEvent) -> TouchResult {
+        // Forward to children (top-most last wins).
+        let point = match event {
+            TouchEvent::Press(p) | TouchEvent::Drag(p) => p,
+        };
+
+        for child in self.children.iter_mut().rev() {
+            if child.bounds.contains(point.to_point()) {
+                let result = child.element.handle_touch(event);
+                match result {
+                    TouchResult::NotHandled => continue,
+                    TouchResult::Handled | TouchResult::Action(_) => {
+                        child.dirty = true;
+                        return result;
+                    }
+                }
+            }
+        }
+
         TouchResult::NotHandled
+    }
+}
+
+// Convenience helpers (small, but reduces boilerplate at call-sites).
+impl Element {
+    /// A shorthand for a no-op element action (useful for static UI).
+    pub fn noop_action() -> Action {
+        Action::Custom(0)
     }
 }

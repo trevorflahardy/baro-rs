@@ -9,7 +9,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
 use embedded_graphics::{Drawable as EgDrawable, pixelcolor::Rgb565};
-use embedded_layout::View;
+// use embedded_layout::View; // unused
 use heapless::{Deque, Vec};
 
 use crate::metrics::QualityLevel;
@@ -257,34 +257,43 @@ impl TrendPage {
         .draw(display)?;
 
         // Draw quality indicator on the right
-        let quality_style = MonoTextStyle::new(&FONT_10X20, WHITE);
+        let _quality_style = MonoTextStyle::new(&FONT_10X20, WHITE);
 
-        let text = Text::with_alignment(
-            self.current_quality.label(),
+        // Render quality indicator as a styled container that *owns* its text.
+        let quality_bounds = Rectangle::new(
             Point::new(
-                self.header_bounds.top_left.x + self.header_bounds.size.width as i32 - 5,
-                self.header_bounds.top_left.y + 15,
+                self.header_bounds.top_left.x + self.header_bounds.size.width as i32 - 120,
+                self.header_bounds.top_left.y + 2,
             ),
-            quality_style,
-            Alignment::Right,
+            Size::new(118, 28),
         );
-        // .draw(display)?;
 
         let quality_style = Style::new()
             .with_background(self.current_quality.background_color())
             .with_foreground(WHITE)
             .with_border(self.current_quality.foreground_color(), 2);
 
-        let mut container = Container::<1>::new(text.bounds(), Direction::Horizontal)
+        let mut container = Container::<1>::new(quality_bounds, Direction::Horizontal)
             .with_style(quality_style)
             .with_corner_radius(5)
-            .with_padding(Padding::symmetric(3, 5));
+            .with_padding(Padding::symmetric(3, 5))
+            .with_alignment(crate::ui::Alignment::Center);
+
+        let text_bounds = Rectangle::new(Point::zero(), Size::new(quality_bounds.size.width, 20));
+        let text = crate::ui::components::TextComponent::new(
+            text_bounds,
+            self.current_quality.label(),
+            crate::ui::TextSize::Medium,
+        )
+        .with_alignment(embedded_graphics::text::Alignment::Right)
+        .with_style(Style::new().with_foreground(WHITE));
 
         container
-            .add_child(text.size(), crate::ui::SizeConstraint::Fit)
-            .unwrap();
-
-        // TODO: Add text to container
+            .add_child(
+                crate::ui::Element::Text(text),
+                crate::ui::SizeConstraint::Grow(1),
+            )
+            .ok();
 
         container.draw(display)?;
 
