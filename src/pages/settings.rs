@@ -1,10 +1,10 @@
 // src/pages/settings.rs
-//! Settings page with live sensor data and log feed
+//! Settings page with live sensor data and log feed.
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Alignment, Container, Direction, Drawable, PageEvent, PageId, SizeConstraint,
-    StorageEvent, TextComponent, TextSize, TouchEvent,
+    Action, Alignment, Container, Direction, Drawable, Element, PageEvent, PageId, SizeConstraint,
+    StorageEvent, TextSize, TouchEvent,
 };
 use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -15,7 +15,7 @@ use embedded_graphics::text::Text;
 use heapless::{String as HeaplessString, Vec};
 use log::debug;
 
-/// Log entry for the live feed
+/// Log entry for the live feed.
 #[derive(Clone)]
 struct LogEntry {
     message: HeaplessString<64>,
@@ -24,56 +24,41 @@ struct LogEntry {
 pub struct SettingsPage {
     bounds: Rectangle,
     container: Container<6>,
-    // Title
-    title: TextComponent,
-    // Section header
-    sensor_header: TextComponent,
-    // Sensor data displays
-    temperature_text: TextComponent,
-    humidity_text: TextComponent,
-    // Log section
-    log_header: TextComponent,
-    log_area_bounds: Rectangle,
-    // Log entries data (max 20)
+
+    // Child indices (stable after init).
+    title_idx: usize,
+    sensor_header_idx: usize,
+    temperature_idx: usize,
+    humidity_idx: usize,
+    log_header_idx: usize,
+    log_area_idx: usize,
+
+    // Log entries data (max 20).
     log_entries: Vec<LogEntry, 20>,
-    // Current sensor values
+
+    // Current sensor values.
     last_temperature: Option<f32>,
     last_humidity: Option<f32>,
+
     dirty: bool,
 }
 
 impl SettingsPage {
     pub fn new(bounds: Rectangle) -> Self {
-        // Create vertical container with stretch alignment
         let container = Container::new(bounds, Direction::Vertical)
             .with_alignment(Alignment::Stretch)
-            .with_spacing(5);
+            .with_gap(5);
 
-        // Create all text components with zero bounds (will be set during init)
-        let title = TextComponent::new(Rectangle::zero(), "Settings & Monitor", TextSize::Large);
-
-        let sensor_header = TextComponent::new(
-            Rectangle::zero(),
-            "Current Sensor Values:",
-            TextSize::Medium,
-        );
-
-        let temperature_text =
-            TextComponent::new(Rectangle::zero(), "Temperature: --", TextSize::Medium);
-
-        let humidity_text = TextComponent::new(Rectangle::zero(), "Humidity: --", TextSize::Medium);
-
-        let log_header = TextComponent::new(Rectangle::zero(), "Live Data Feed:", TextSize::Medium);
-
+        // Temporary indices (replaced in init).
         Self {
             bounds,
             container,
-            title,
-            sensor_header,
-            temperature_text,
-            humidity_text,
-            log_header,
-            log_area_bounds: Rectangle::zero(),
+            title_idx: 0,
+            sensor_header_idx: 0,
+            temperature_idx: 0,
+            humidity_idx: 0,
+            log_header_idx: 0,
+            log_area_idx: 0,
             log_entries: Vec::new(),
             last_temperature: None,
             last_humidity: None,
@@ -82,97 +67,84 @@ impl SettingsPage {
     }
 
     pub fn init(&mut self) {
-        // Build the layout dynamically:
+        // Layout:
         // - Title: 30px
         // - Sensor header: 20px
         // - Temperature: 20px
         // - Humidity: 20px
         // - Log header: 20px
-        // - Log display: Expands to fill remaining space
+        // - Log display: grows
+        let hint = Rectangle::new(Point::zero(), Size::new(self.bounds.size.width, 1));
 
-        // Add title
-        self.container
+        self.title_idx = self
+            .container
             .add_child(
-                Size::new(self.bounds.size.width, 30),
+                Element::text(hint, "Settings & Monitor", TextSize::Large),
                 SizeConstraint::Fixed(30),
             )
-            .ok();
+            .unwrap_or(0);
 
-        // Add sensor header
-        self.container
+        self.sensor_header_idx = self
+            .container
             .add_child(
-                Size::new(self.bounds.size.width, 20),
+                Element::text(hint, "Current Sensor Values:", TextSize::Medium),
                 SizeConstraint::Fixed(20),
             )
-            .ok();
+            .unwrap_or(1);
 
-        // Add temperature
-        self.container
+        self.temperature_idx = self
+            .container
             .add_child(
-                Size::new(self.bounds.size.width, 20),
+                Element::text(hint, "Temperature: --", TextSize::Medium),
                 SizeConstraint::Fixed(20),
             )
-            .ok();
+            .unwrap_or(2);
 
-        // Add humidity
-        self.container
+        self.humidity_idx = self
+            .container
             .add_child(
-                Size::new(self.bounds.size.width, 20),
+                Element::text(hint, "Humidity: --", TextSize::Medium),
                 SizeConstraint::Fixed(20),
             )
-            .ok();
+            .unwrap_or(3);
 
-        // Add log header
-        self.container
+        self.log_header_idx = self
+            .container
             .add_child(
-                Size::new(self.bounds.size.width, 20),
+                Element::text(hint, "Live Data Feed:", TextSize::Medium),
                 SizeConstraint::Fixed(20),
             )
-            .ok();
+            .unwrap_or(4);
 
-        // Add log display that expands
-        self.container
-            .add_child(Size::new(self.bounds.size.width, 0), SizeConstraint::Expand)
-            .ok();
-
-        // Update all component bounds from container
-        if let Some(bounds) = self.container.child_bounds(0) {
-            self.title.set_bounds(bounds);
-        }
-        if let Some(bounds) = self.container.child_bounds(1) {
-            self.sensor_header.set_bounds(bounds);
-        }
-        if let Some(bounds) = self.container.child_bounds(2) {
-            self.temperature_text.set_bounds(bounds);
-        }
-        if let Some(bounds) = self.container.child_bounds(3) {
-            self.humidity_text.set_bounds(bounds);
-        }
-        if let Some(bounds) = self.container.child_bounds(4) {
-            self.log_header.set_bounds(bounds);
-        }
-        if let Some(bounds) = self.container.child_bounds(5) {
-            self.log_area_bounds = bounds;
-        }
+        self.log_area_idx = self
+            .container
+            .add_child(Element::spacer(hint), SizeConstraint::Grow(1))
+            .unwrap_or(5);
 
         self.dirty = true;
     }
 
     fn update_sensor_displays(&mut self) {
-        // Update temperature display
+        // Temperature.
         if let Some(temp) = self.last_temperature {
             let mut text = HeaplessString::<64>::new();
             use core::fmt::Write;
             write!(&mut text, "Temperature: {:.1}°C", temp).ok();
-            self.temperature_text.set_text(&text);
+
+            if let Some(Element::Text(t)) = self.container.child_mut(self.temperature_idx) {
+                t.set_text(&text);
+            }
         }
 
-        // Update humidity display
+        // Humidity.
         if let Some(hum) = self.last_humidity {
             let mut text = HeaplessString::<64>::new();
             use core::fmt::Write;
             write!(&mut text, "Humidity: {:.1}%", hum).ok();
-            self.humidity_text.set_text(&text);
+
+            if let Some(Element::Text(t)) = self.container.child_mut(self.humidity_idx) {
+                t.set_text(&text);
+            }
         }
     }
 
@@ -180,24 +152,30 @@ impl SettingsPage {
         let mut entry_text = HeaplessString::<64>::new();
         entry_text.push_str(message).ok();
 
-        let entry = LogEntry {
-            message: entry_text,
-        };
-
-        // Keep only the last 20 entries
         if self.log_entries.len() >= 20 {
-            self.log_entries.remove(0);
+            // Shift left.
+            for i in 0..19 {
+                let next = self.log_entries.get(i + 1).cloned();
+                if let (Some(dst), Some(next)) = (self.log_entries.get_mut(i), next) {
+                    *dst = next;
+                }
+            }
+            if let Some(last) = self.log_entries.get_mut(19) {
+                last.message = entry_text;
+            }
+        } else {
+            self.log_entries
+                .push(LogEntry {
+                    message: entry_text,
+                })
+                .ok();
         }
-
-        self.log_entries.push(entry).ok();
-
-        // Update log display
-        self.update_log_display();
     }
 
-    fn update_log_display(&mut self) {
-        // Just mark as dirty - rendering will handle showing the log entries
-        self.dirty = true;
+    fn log_area_bounds(&self) -> Rectangle {
+        self.container
+            .child_bounds(self.log_area_idx)
+            .unwrap_or(Rectangle::zero())
     }
 }
 
@@ -218,9 +196,7 @@ impl Page for SettingsPage {
         None
     }
 
-    fn update(&mut self) {
-        // Update page state if needed
-    }
+    fn update(&mut self) {}
 
     fn on_event(&mut self, event: &PageEvent) -> bool {
         debug!(" Received event: {:?}", event);
@@ -230,7 +206,7 @@ impl Page for SettingsPage {
                     " Processing sensor update - temp: {:?}, humidity: {:?}",
                     data.temperature, data.humidity
                 );
-                // Update sensor values
+
                 if let Some(temp) = data.temperature {
                     self.last_temperature = Some(temp);
                 }
@@ -241,7 +217,7 @@ impl Page for SettingsPage {
                 self.update_sensor_displays();
                 debug!(" Sensor displays updated");
 
-                // Add log entry
+                // Log entry.
                 let mut log_msg = HeaplessString::<64>::new();
                 use core::fmt::Write;
                 if let Some(temp) = data.temperature {
@@ -275,21 +251,14 @@ impl Page for SettingsPage {
                     } => {
                         let mut log_msg = HeaplessString::<64>::new();
                         use core::fmt::Write;
-                        write!(&mut log_msg, "[Rollup] {}: {} samples", interval, count).ok();
+                        write!(&mut log_msg, "[Rollup] {}: {}", interval, count).ok();
                         self.add_log_entry(&log_msg, *timestamp);
                     }
                 }
                 self.dirty = true;
                 true
             }
-            PageEvent::SystemEvent(_) => {
-                // Handle system events if needed
-                false
-            }
-            PageEvent::RollupEvent(_) => {
-                // Settings page doesn't need to handle rollup events directly
-                false
-            }
+            _ => false,
         }
     }
 
@@ -316,57 +285,43 @@ impl Page for SettingsPage {
 
 impl Drawable for SettingsPage {
     fn draw<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
-        // Clear background
+        // Clear background.
         self.bounds
             .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
             .draw(display)?;
 
-        // Draw all components
-        self.title.draw(display)?;
-        self.sensor_header.draw(display)?;
-        self.temperature_text.draw(display)?;
-        self.humidity_text.draw(display)?;
-        self.log_header.draw(display)?;
+        // Layout-driven content.
+        self.container.draw(display)?;
 
-        // Draw log box background
-        if self.log_area_bounds != Rectangle::zero() {
-            self.log_area_bounds
-                .into_styled(
-                    PrimitiveStyleBuilder::new()
-                        .fill_color(Rgb565::new(0x08, 0x08, 0x10))
-                        .stroke_color(Rgb565::CSS_DARK_BLUE)
-                        .stroke_width(1)
-                        .build(),
-                )
-                .draw(display)?;
+        // Log feed (drawn inside reserved log area bounds).
+        let log_area = self.log_area_bounds();
+        let style = PrimitiveStyleBuilder::new()
+            .fill_color(Rgb565::BLACK)
+            .stroke_color(Rgb565::WHITE)
+            .stroke_width(1)
+            .build();
 
-            // Draw log entries (most recent first, up to what fits)
-            let font = embedded_graphics::mono_font::ascii::FONT_5X8;
-            let line_height = font.character_size.height + 2;
-            let text_style = MonoTextStyle::new(&font, Rgb565::WHITE);
+        log_area.into_styled(style).draw(display)?;
 
-            let content_x = self.log_area_bounds.top_left.x + 4;
-            let mut y = self.log_area_bounds.top_left.y + line_height as i32;
+        let text_style = MonoTextStyle::new(
+            &embedded_graphics::mono_font::ascii::FONT_6X10,
+            Rgb565::WHITE,
+        );
 
-            let max_lines = (self.log_area_bounds.size.height / line_height).min(20) as usize;
+        let mut y = log_area.top_left.y + 12;
+        let max_y = log_area.top_left.y + log_area.size.height as i32 - 2;
 
-            if self.log_entries.is_empty() {
-                // Show placeholder
-                Text::new("Waiting for data...", Point::new(content_x, y), text_style)
-                    .draw(display)?;
-            } else {
-                // Show most recent entries (reversed)
-                for entry in self.log_entries.iter().rev().take(max_lines) {
-                    if y + line_height as i32
-                        > self.log_area_bounds.top_left.y + self.log_area_bounds.size.height as i32
-                    {
-                        break;
-                    }
-                    Text::new(entry.message.as_str(), Point::new(content_x, y), text_style)
-                        .draw(display)?;
-                    y += line_height as i32;
-                }
+        for entry in self.log_entries.iter().rev() {
+            if y > max_y {
+                break;
             }
+            Text::new(
+                entry.message.as_str(),
+                Point::new(log_area.top_left.x + 4, y),
+                text_style,
+            )
+            .draw(display)?;
+            y += 12;
         }
 
         Ok(())
@@ -377,24 +332,16 @@ impl Drawable for SettingsPage {
     }
 
     fn is_dirty(&self) -> bool {
-        self.dirty
-            || self.title.is_dirty()
-            || self.sensor_header.is_dirty()
-            || self.temperature_text.is_dirty()
-            || self.humidity_text.is_dirty()
-            || self.log_header.is_dirty()
+        self.dirty || self.container.is_dirty()
     }
 
     fn mark_clean(&mut self) {
         self.dirty = false;
-        self.title.mark_clean();
-        self.sensor_header.mark_clean();
-        self.temperature_text.mark_clean();
-        self.humidity_text.mark_clean();
-        self.log_header.mark_clean();
+        self.container.mark_clean();
     }
 
     fn mark_dirty(&mut self) {
         self.dirty = true;
+        self.container.mark_dirty();
     }
 }
