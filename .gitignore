@@ -26,4 +26,4 @@ target/
 **/.DS_Store
 
 # Custom temp ignore
-src/wifi_secrets.rs
+.env

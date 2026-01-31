@@ -1,4 +1,17 @@
 fn main() {
+    // Bake WiFi secrets into the binary at compile time
+    if let Ok(ssid) = std::env::var("WIFI_SSID") {
+        println!("cargo:rustc-env=WIFI_SSID={}", ssid);
+    } else {
+        println!("cargo:rustc-env=WIFI_SSID=");
+    }
+
+    if let Ok(password) = std::env::var("WIFI_PASSWORD") {
+        println!("cargo:rustc-env=WIFI_PASSWORD={}", password);
+    } else {
+        println!("cargo:rustc-env=WIFI_PASSWORD=");
+    }
+
     linker_be_nice();
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
     println!("cargo:rustc-link-arg=-Tlinkall.x");
