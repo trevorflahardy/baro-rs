@@ -1,7 +1,7 @@
 //! Sensor management and state
 
 use crate::async_i2c_bus::AsyncI2cDevice;
-use crate::sensors::{SHT40Indexed, SHT40Sensor, SensorError};
+use crate::sensors::{SCD41Indexed, SCD41Sensor, SHT40Indexed, SHT40Sensor, SensorError};
 
 use log::error;
 use tca9548a_embedded::r#async::{I2cChannelAsync, Tca9548aAsync};
@@ -12,6 +12,8 @@ type I2CChannelAsyncDeviceType<'a> =
     I2cChannelAsync<'a, AsyncI2cDeviceType<'a>, esp_hal::i2c::master::Error>;
 
 type SHT40IndexedAsyncI2CDeviceType<'a> = SHT40Indexed<I2CChannelAsyncDeviceType<'a>>;
+
+type SCD41IndexedAsyncI2CDeviceType<'a> = SCD41Indexed<I2CChannelAsyncDeviceType<'a>>;
 
 /// Container for all sensor instances
 ///
@@ -44,6 +46,17 @@ impl<'a> SensorsState<'a> {
         sht40.read_into(into).await
     }
 
+    async fn read_scd41(
+        &mut self,
+        into: &mut [i32; crate::storage::MAX_SENSORS],
+    ) -> Result<(), SensorError> {
+        let channel = SCD41IndexedAsyncI2CDeviceType::mux_channel();
+        let scd41_i2c = self.mux.channel(channel).unwrap();
+        let mut scd41 = SCD41Indexed::from(SCD41Sensor::new(scd41_i2c));
+
+        scd41.read_into(into).await
+    }
+
     /// Read all sensors into the provided values array
     ///
     /// This method reads each sensor in sequence and stores the results
@@ -60,6 +73,16 @@ impl<'a> SensorsState<'a> {
             Ok(_) => {}
             Err(e) => {
                 error!("SHT40 read error: {:?}", e);
+                return Err(e);
+            }
+        }
+
+        // Read SCD41 using compile-time channel info
+        // The sensor type itself knows it's on channel 1
+        match self.read_scd41(&mut values).await {
+            Ok(_) => {}
+            Err(e) => {
+                error!("SCD41 read error: {:?}", e);
                 return Err(e);
             }
         }

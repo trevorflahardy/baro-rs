@@ -76,6 +76,7 @@ dependencies = [
  "mipidsi",
  "postcard",
  "rtt-target",
+ "scd41-embedded",
  "serde",
  "sht4x",
  "smoltcp",
@@ -1541,6 +1542,15 @@ name = "ryu"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a50f4cf475b65d88e057964e0e9bb1f0aa9bbb2036dc65c64596b42932536984"
+
+[[package]]
+name = "scd41-embedded"
+version = "0.1.0"
+source = "git+https://github.com/trevorflahardy/scd41-embedded#9e663005637b163c46f38d374061a32cbe385445"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+]
 
 [[package]]
 name = "sensirion-i2c"

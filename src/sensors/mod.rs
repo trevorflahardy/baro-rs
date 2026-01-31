@@ -1,5 +1,7 @@
+mod scd41;
 mod sht40;
 
+pub use scd41::*;
 pub use sht40::*;
 
 use super::storage::MAX_SENSORS;
@@ -104,6 +106,7 @@ where
 
 pub mod indices {
     use crate::sensors::IndexedSensor;
+    use crate::sensors::scd41::SCD41Sensor;
     use crate::sensors::sht40::SHT40Sensor;
 
     // Listen here, mother fucker. You better god damn well use these indices correctly.
@@ -121,8 +124,15 @@ pub mod indices {
     /// - Connected to I2C mux channel 0
     pub type SHT40Indexed<I> = IndexedSensor<SHT40Sensor<I>, 0, 2, 0>;
 
+    /// SCD41 sensor configuration:
+    /// - Starts at index 2 (CO2)
+    /// - Produces 1 value (CO2 ppm)
+    /// - Connected to I2C mux channel 1
+    pub type SCD41Indexed<I> = IndexedSensor<SCD41Sensor<I>, 2, 1, 1>;
+
     pub const TEMPERATURE: usize = 0;
     pub const HUMIDITY: usize = 1;
+    pub const CO2: usize = 2;
 }
 
 /// Sensor type identifier for selecting which sensor data to display
@@ -132,7 +142,8 @@ pub enum SensorType {
     Temperature,
     /// Humidity sensor (SHT40 index 1)
     Humidity,
-    // Future sensors can be added here
+    /// CO2 sensor (SCD41 index 2)
+    Co2,
 }
 
 impl SensorType {
@@ -141,6 +152,7 @@ impl SensorType {
         match self {
             Self::Temperature => indices::TEMPERATURE,
             Self::Humidity => indices::HUMIDITY,
+            Self::Co2 => indices::CO2,
         }
     }
 
@@ -149,6 +161,7 @@ impl SensorType {
         match self {
             Self::Temperature => "°C",
             Self::Humidity => "%",
+            Self::Co2 => "ppm",
         }
     }
 
@@ -157,6 +170,7 @@ impl SensorType {
         match self {
             Self::Temperature => "Temperature",
             Self::Humidity => "Humidity",
+            Self::Co2 => "CO2",
         }
     }
 
@@ -165,12 +179,15 @@ impl SensorType {
         match self {
             Self::Temperature => "Temp",
             Self::Humidity => "Humid",
+            Self::Co2 => "CO2",
         }
     }
 }
 
 // Re-export for convenience
+pub use indices::SCD41Indexed;
 pub use indices::SHT40Indexed;
 
 pub use indices::*;
+pub use scd41::SCD41Sensor;
 pub use sht40::SHT40Sensor;

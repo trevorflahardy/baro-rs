@@ -66,6 +66,22 @@ impl QualityLevel {
                     Self::Bad
                 }
             }
+            SensorType::Co2 => {
+                // CO2 quality thresholds (ppm)
+                // Excellent: 400-800 ppm (outdoor to good indoor air)
+                // Good: 800-1000 ppm (acceptable indoor air)
+                // Poor: 1000-1500 ppm (stuffy air, reduced concentration)
+                // Bad: >1500 ppm (poor ventilation, health concerns)
+                if value <= 800.0 {
+                    Self::Excellent
+                } else if value <= 1000.0 {
+                    Self::Good
+                } else if value <= 1500.0 {
+                    Self::Poor
+                } else {
+                    Self::Bad
+                }
+            }
         }
     }
 
