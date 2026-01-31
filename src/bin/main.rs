@@ -505,6 +505,8 @@ async fn main(spawner: Spawner) -> ! {
         return (i2c_hardware, spi_hardware);
     };
 
+    info!("Spawning concurrent initialization tasks...");
+
     // Both futures should complete around the same time
     #[cfg(feature = "sensor-i2c")]
     let ((interfaces, wifi_connected), (i2c_hardware, i2c_for_sensors_opt, spi_hardware)) =

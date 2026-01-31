@@ -1,4 +1,7 @@
 fn main() {
+    // Load .env file if present (for WiFi secrets)
+    let _ = dotenvy::dotenv();
+
     load_wifi_secrets();
 
     linker_be_nice();
@@ -8,17 +11,13 @@ fn main() {
 
 fn load_wifi_secrets() {
     // Bake WiFi secrets into the binary at compile time
-    if let Ok(ssid) = std::env::var("WIFI_SSID") {
-        println!("cargo:rustc-env=WIFI_SSID={}", ssid);
-    } else {
-        println!("cargo:rustc-env=WIFI_SSID=");
-    }
+    let ssid = std::env::var("WIFI_SSID")
+        .expect("WIFI_SSID environment variable must be set at build time");
+    let password = std::env::var("WIFI_PASSWORD")
+        .expect("WIFI_PASSWORD environment variable must be set at build time");
 
-    if let Ok(password) = std::env::var("WIFI_PASSWORD") {
-        println!("cargo:rustc-env=WIFI_PASSWORD={}", password);
-    } else {
-        println!("cargo:rustc-env=WIFI_PASSWORD=");
-    }
+    println!("cargo:rustc-env=WIFI_SSID={}", ssid);
+    println!("cargo:rustc-env=WIFI_PASSWORD={}", password);
 }
 
 fn linker_be_nice() {

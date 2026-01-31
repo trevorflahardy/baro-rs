@@ -111,6 +111,9 @@ sensor-scd41 = ["sensor-i2c", "dep:scd41-embedded"]
 opt-level = "s"
 
 
+[build-dependencies]
+dotenvy = "0.15"
+
 [profile.release]
 codegen-units = 1        # LLVM can perform better optimizations using a single thread
 debug = 2
