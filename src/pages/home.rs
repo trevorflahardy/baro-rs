@@ -11,6 +11,9 @@ use crate::ui::{
     PageId, SizeConstraint, TextSize, TouchEvent, TouchResult, Touchable,
 };
 
+extern crate alloc;
+use alloc::boxed::Box;
+
 pub struct HomePage {
     bounds: Rectangle,
     container: Container<5>,
@@ -42,7 +45,7 @@ impl HomePage {
             crate::ui::components::TextComponent::new(hint, "Baro Dashboard", TextSize::Large)
                 .with_alignment(embedded_graphics::text::Alignment::Center);
         self.container
-            .add_child(Element::Text(title), SizeConstraint::Fixed(30))
+            .add_child(Element::Text(Box::new(title)), SizeConstraint::Fixed(30))
             .ok();
 
         // Spacer.
@@ -76,13 +79,19 @@ impl HomePage {
         .with_variant(ButtonVariant::Secondary);
 
         self.container
-            .add_child(Element::Button(temp_btn), SizeConstraint::Grow(1))
+            .add_child(Element::Button(Box::new(temp_btn)), SizeConstraint::Grow(1))
             .ok();
         self.container
-            .add_child(Element::Button(humidity_btn), SizeConstraint::Grow(1))
+            .add_child(
+                Element::Button(Box::new(humidity_btn)),
+                SizeConstraint::Grow(1),
+            )
             .ok();
         self.container
-            .add_child(Element::Button(settings_btn), SizeConstraint::Grow(1))
+            .add_child(
+                Element::Button(Box::new(settings_btn)),
+                SizeConstraint::Grow(1),
+            )
             .ok();
 
         self.dirty = true;

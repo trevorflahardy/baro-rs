@@ -21,7 +21,7 @@ use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
 use crate::ui::{Container, Direction, Drawable, Padding, Style, WHITE};
 
 extern crate alloc;
-use alloc::string::String;
+use alloc::{boxed::Box, string::String};
 
 // Color constants from styling
 // RGB565 format: R(5 bits), G(6 bits), B(5 bits)
@@ -290,7 +290,7 @@ impl TrendPage {
 
         container
             .add_child(
-                crate::ui::Element::Text(text),
+                crate::ui::Element::Text(Box::new(text)),
                 crate::ui::SizeConstraint::Grow(1),
             )
             .ok();
