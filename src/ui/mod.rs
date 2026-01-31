@@ -35,7 +35,7 @@
 //!     .with_alignment(Alignment::Center)
 //!     .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly);
 //!
-//! let hint = Rectangle::new(Point::zero(), Size::new(1, 1));
+//! let hint = Rectangle::new(Point::zero(), Size::new(320, 1));
 //! row.add_child(Element::text(hint, "A", TextSize::Medium), SizeConstraint::Fit).ok();
 //! row.add_child(Element::text(hint, "B", TextSize::Medium), SizeConstraint::Fit).ok();
 //! row.add_child(Element::text(hint, "C", TextSize::Medium), SizeConstraint::Fit).ok();
