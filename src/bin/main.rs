@@ -494,7 +494,7 @@ async fn main(spawner: Spawner) -> ! {
             DISPLAY_HEIGHT,
         );
 
-        return (i2c_hardware, i2c_for_sensors, spi_hardware);
+        (i2c_hardware, i2c_for_sensors, spi_hardware)
     };
 
     info!("Spawning concurrent initialization tasks...");

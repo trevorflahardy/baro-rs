@@ -36,8 +36,9 @@ impl<I: I2c> SCD41Sensor<I> {
     /// This should be called once during initialization.
     async fn initialize(&mut self) -> Result<(), SensorError> {
         // Stop any ongoing measurement first
-        if let Err(_e) = self.sensor.stop_periodic_measurement().await {
-            // Ignore error if measurement wasn't running
+        if let Err(e) = self.sensor.stop_periodic_measurement().await {
+            // Ignore error if measurement wasn't running, but log it
+            log::debug!("SCD41 stop measurement (expected on first init): {:?}", e);
         }
 
         // Enable automatic self-calibration (ASC)
@@ -45,7 +46,13 @@ impl<I: I2c> SCD41Sensor<I> {
         self.sensor
             .set_automatic_self_calibration(true)
             .await
-            .map_err(|_| SensorError::ReadError)?;
+            .map_err(|e| {
+                error!("SCD41 set_automatic_self_calibration failed: {:?}", e);
+                SensorError::InitializationFailed {
+                    sensor: "SCD41",
+                    details: "Failed to enable automatic self-calibration",
+                }
+            })?;
 
         info!("SCD41: Automatic self-calibration enabled");
 
@@ -53,7 +60,13 @@ impl<I: I2c> SCD41Sensor<I> {
         self.sensor
             .start_periodic_measurement()
             .await
-            .map_err(|_| SensorError::ReadError)?;
+            .map_err(|e| {
+                error!("SCD41 start_periodic_measurement failed: {:?}", e);
+                SensorError::InitializationFailed {
+                    sensor: "SCD41",
+                    details: "Failed to start periodic measurement",
+                }
+            })?;
 
         self.calibrated = true;
         info!("SCD41: Periodic measurement started");
@@ -79,23 +92,33 @@ impl<I: I2c> Sensor<1> for SCD41Sensor<I> {
         }
 
         // Check if data is ready
-        let ready = self
-            .sensor
-            .data_ready()
-            .await
-            .map_err(|_| SensorError::ReadError)?;
+        let ready = self.sensor.data_ready().await.map_err(|e| {
+            error!("SCD41 data_ready check failed: {:?}", e);
+            SensorError::ReadFailed {
+                sensor: "SCD41",
+                operation: "check data ready status",
+                details: "I2C communication error",
+            }
+        })?;
 
         if !ready {
-            // Data not ready yet, this is expected during startup
-            return Err(SensorError::ReadError);
+            // Data not ready yet, this is expected during startup or between measurements
+            log::debug!("SCD41 data not ready (waiting for next measurement cycle)");
+            return Err(SensorError::DataNotReady {
+                sensor: "SCD41",
+                operation: "CO2 measurement",
+            });
         }
 
         // Read measurement
-        let measurement = self
-            .sensor
-            .measurement()
-            .await
-            .map_err(|_| SensorError::ReadError)?;
+        let measurement = self.sensor.measurement().await.map_err(|e| {
+            error!("SCD41 measurement read failed: {:?}", e);
+            SensorError::ReadFailed {
+                sensor: "SCD41",
+                operation: "read CO2 measurement",
+                details: "I2C communication error or invalid data",
+            }
+        })?;
 
         let co2_ppm = measurement.co2_ppm as i32;
 

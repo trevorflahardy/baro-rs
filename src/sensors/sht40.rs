@@ -38,7 +38,14 @@ impl<I: I2c> Sensor<2> for SHT40Sensor<I> {
             .sensor
             .measure(sht4x::Precision::High, &mut embassy_time::Delay)
             .await
-            .map_err(|_| SensorError::ReadError)?;
+            .map_err(|e| {
+                log::error!("SHT40 measurement failed: {:?}", e);
+                SensorError::ReadFailed {
+                    sensor: "SHT40",
+                    operation: "measure temperature/humidity",
+                    details: "I2C communication error or sensor not responding",
+                }
+            })?;
 
         let temperature_milli_celsius =
             (measurement.temperature_celsius().to_num::<f32>() * 1000.0) as i32;

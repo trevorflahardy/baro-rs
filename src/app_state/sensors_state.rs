@@ -53,7 +53,10 @@ impl<'a> SensorsState<'a> {
         let sht40_i2c = self.mux.channel(channel).unwrap();
         let mut sht40 = SHT40Indexed::from(SHT40Sensor::new(sht40_i2c));
 
-        sht40.read_into(into).await
+        sht40.read_into(into).await.map_err(|e| {
+            error!("Failed to read SHT40 on I2C mux channel {}: {}", channel, e);
+            e
+        })
     }
 
     #[cfg(feature = "sensor-scd41")]
@@ -65,7 +68,10 @@ impl<'a> SensorsState<'a> {
         let scd41_i2c = self.mux.channel(channel).unwrap();
         let mut scd41 = SCD41Indexed::from(SCD41Sensor::new(scd41_i2c));
 
-        scd41.read_into(into).await
+        scd41.read_into(into).await.map_err(|e| {
+            error!("Failed to read SCD41 on I2C mux channel {}: {}", channel, e);
+            e
+        })
     }
 
     /// Read all sensors into the provided values array
@@ -83,24 +89,12 @@ impl<'a> SensorsState<'a> {
         // Read SHT40 using compile-time channel info
         // The sensor type itself knows it's on channel 0
         #[cfg(feature = "sensor-sht40")]
-        match self.read_sht40(&mut values).await {
-            Ok(_) => {}
-            Err(e) => {
-                error!("SHT40 read error: {:?}", e);
-                return Err(e);
-            }
-        }
+        self.read_sht40(&mut values).await?;
 
         // Read SCD41 using compile-time channel info
         // The sensor type itself knows it's on channel 1
         #[cfg(feature = "sensor-scd41")]
-        match self.read_scd41(&mut values).await {
-            Ok(_) => {}
-            Err(e) => {
-                error!("SCD41 read error: {:?}", e);
-                return Err(e);
-            }
-        }
+        self.read_scd41(&mut values).await?;
 
         Ok(values)
     }

@@ -9,15 +9,46 @@ pub use scd41::*;
 pub use sht40::*;
 
 use super::storage::MAX_SENSORS;
-use core::{future::Future, marker::PhantomData};
+use core::{fmt, future::Future, marker::PhantomData};
 use thiserror_no_std::Error;
 
+/// Detailed sensor error with context for debugging
 #[derive(Error, Debug)]
 pub enum SensorError {
-    #[error("Unknown sensor error")]
-    UnknownError,
-    #[error("Sensor read error")]
-    ReadError,
+    #[error("Sensor '{sensor}' initialization failed: {details}")]
+    InitializationFailed {
+        sensor: &'static str,
+        details: &'static str,
+    },
+    #[error("Sensor '{sensor}' read failed during {operation}: {details}")]
+    ReadFailed {
+        sensor: &'static str,
+        operation: &'static str,
+        details: &'static str,
+    },
+    #[error("Sensor '{sensor}' I2C communication error on channel {channel}: {details}")]
+    I2cError {
+        sensor: &'static str,
+        channel: u8,
+        details: &'static str,
+    },
+    #[error("Sensor '{sensor}' data not ready (operation: {operation})")]
+    DataNotReady {
+        sensor: &'static str,
+        operation: &'static str,
+    },
+    #[error("Sensor '{sensor}' timeout during {operation}")]
+    Timeout {
+        sensor: &'static str,
+        operation: &'static str,
+    },
+}
+
+/// Helper to format I2C errors from esp-hal
+pub fn format_i2c_error(_err: &dyn fmt::Debug) -> &'static str {
+    // For now, we'll return a generic message.
+    // In the future, we could match on specific error types if needed.
+    "I2C communication failed (see logs for details)"
 }
 
 /// Trait for sensor reading data structures.
