@@ -371,8 +371,12 @@ impl<const N: usize> Container<N> {
                 }
             }
             MainAxisAlignment::SpaceEvenly => {
-                let gap = remaining / (count as u32 + 1);
-                (gap, gap)
+                if count == 0 {
+                    (0, 0)
+                } else {
+                    let gap = remaining / (count as u32 + 1);
+                    (gap, gap)
+                }
             }
         };
 
