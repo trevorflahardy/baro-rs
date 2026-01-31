@@ -477,7 +477,12 @@ async fn main(spawner: Spawner) -> ! {
     let hardware_future = async {
         // 1. I2C hardware (power management, GPIO expander, touch controller)
         let i2c0 = create_i2c_bus(peripherals.I2C0, peripherals.GPIO12, peripherals.GPIO11);
+
+        #[cfg(feature = "sensor-i2c")]
         let (i2c_hardware, i2c_for_sensors) = init_i2c_hardware(i2c0).await;
+
+        #[cfg(not(feature = "sensor-i2c"))]
+        let i2c_hardware = init_i2c_hardware(i2c0).await;
 
         // 2. SPI hardware (display and SD card)
         let spi_hardware = init_spi_peripherals(
@@ -493,11 +498,20 @@ async fn main(spawner: Spawner) -> ! {
             DISPLAY_HEIGHT,
         );
 
-        (i2c_hardware, i2c_for_sensors, spi_hardware)
+        #[cfg(feature = "sensor-i2c")]
+        return (i2c_hardware, Some(i2c_for_sensors), spi_hardware);
+
+        #[cfg(not(feature = "sensor-i2c"))]
+        return (i2c_hardware, spi_hardware);
     };
 
     // Both futures should complete around the same time
-    let ((interfaces, wifi_connected), (i2c_hardware, i2c_for_sensors, spi_hardware)) =
+    #[cfg(feature = "sensor-i2c")]
+    let ((interfaces, wifi_connected), (i2c_hardware, i2c_for_sensors_opt, spi_hardware)) =
+        embassy_futures::join::join(wifi_future, hardware_future).await;
+
+    #[cfg(not(feature = "sensor-i2c"))]
+    let ((interfaces, wifi_connected), (i2c_hardware, spi_hardware)) =
         embassy_futures::join::join(wifi_future, hardware_future).await;
 
     info!("=== Concurrent initialization complete ===\n");
@@ -505,7 +519,10 @@ async fn main(spawner: Spawner) -> ! {
     let touch_interface = i2c_hardware.touch_interface;
     let display = spi_hardware.display;
     let sd_card = spi_hardware.sd_card;
+    #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
     let sd_card_size = spi_hardware.sd_card_size;
+    #[cfg(not(any(feature = "sensor-sht40", feature = "sensor-scd41")))]
+    let _sd_card_size = spi_hardware.sd_card_size;
 
     // === Network Stack Setup (only if WiFi connected) ===
     let (_stack_ref, time) = if wifi_connected {
@@ -517,7 +534,11 @@ async fn main(spawner: Spawner) -> ! {
     };
 
     // === Application State Setup ===
+    #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
     let (app_state_ref, initial_time) = setup_app_state(sd_card, time, wifi_connected).await;
+
+    #[cfg(not(any(feature = "sensor-sht40", feature = "sensor-scd41")))]
+    let (_app_state_ref, _initial_time) = setup_app_state(sd_card, time, wifi_connected).await;
 
     // === Spawn Background Tasks ===
 
@@ -537,12 +558,21 @@ async fn main(spawner: Spawner) -> ! {
             .await;
     }
 
-    // Only start sensor tasks if WiFi connected successfully
+    // Only start sensor tasks if WiFi connected successfully and sensors are enabled
+    #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
     if wifi_connected && sd_card_size > 0 {
         info!("Starting sensor and storage tasks...");
 
-        // Create sensors state with the I2C mux
-        let sensors = SensorsState::new(i2c_for_sensors);
+        // Create sensors state
+        #[cfg(feature = "sensor-i2c")]
+        let sensors = {
+            let i2c_mux = i2c_for_sensors_opt.unwrap();
+            SensorsState::new(i2c_mux)
+        };
+
+        #[cfg(not(feature = "sensor-i2c"))]
+        let sensors = SensorsState::new();
+
         spawner
             .spawn(background_sensor_reading_task(
                 sensors,
@@ -560,6 +590,9 @@ async fn main(spawner: Spawner) -> ! {
     } else {
         info!("Skipping sensor tasks - WiFi not connected or SD card unavailable");
     }
+
+    #[cfg(not(any(feature = "sensor-sht40", feature = "sensor-scd41")))]
+    info!("No sensors enabled - sensor tasks will not start");
 
     info!("All tasks spawned\n");
 

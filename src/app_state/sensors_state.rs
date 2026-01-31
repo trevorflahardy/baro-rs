@@ -1,18 +1,31 @@
 //! Sensor management and state
 
+#[cfg(feature = "sensor-i2c")]
 use crate::async_i2c_bus::AsyncI2cDevice;
-use crate::sensors::{SCD41Indexed, SCD41Sensor, SHT40Indexed, SHT40Sensor, SensorError};
 
+#[cfg(feature = "sensor-scd41")]
+use crate::sensors::{SCD41Indexed, SCD41Sensor};
+#[cfg(feature = "sensor-sht40")]
+use crate::sensors::{SHT40Indexed, SHT40Sensor};
+
+use crate::sensors::SensorError;
+#[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
 use log::error;
+
+#[cfg(feature = "sensor-i2c")]
 use tca9548a_embedded::r#async::{I2cChannelAsync, Tca9548aAsync};
 
+#[cfg(feature = "sensor-i2c")]
 type AsyncI2cDeviceType<'a> = AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>;
 
+#[cfg(feature = "sensor-i2c")]
 type I2CChannelAsyncDeviceType<'a> =
     I2cChannelAsync<'a, AsyncI2cDeviceType<'a>, esp_hal::i2c::master::Error>;
 
+#[cfg(feature = "sensor-sht40")]
 type SHT40IndexedAsyncI2CDeviceType<'a> = SHT40Indexed<I2CChannelAsyncDeviceType<'a>>;
 
+#[cfg(feature = "sensor-scd41")]
 type SCD41IndexedAsyncI2CDeviceType<'a> = SCD41Indexed<I2CChannelAsyncDeviceType<'a>>;
 
 /// Container for all sensor instances
@@ -23,7 +36,10 @@ type SCD41IndexedAsyncI2CDeviceType<'a> = SCD41Indexed<I2CChannelAsyncDeviceType
 /// where its data is stored in the values array and which I2C mux
 /// channel they reside on.
 pub struct SensorsState<'a> {
+    #[cfg(feature = "sensor-i2c")]
     mux: Tca9548aAsync<AsyncI2cDeviceType<'a>>,
+    #[cfg(not(feature = "sensor-i2c"))]
+    _phantom: core::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> SensorsState<'a> {
@@ -31,10 +47,19 @@ impl<'a> SensorsState<'a> {
     ///
     /// The I2C mux is stored and sensors are created on-demand during reads.
     /// Each sensor type knows its own mux channel via compile-time const generics.
+    #[cfg(feature = "sensor-i2c")]
     pub fn new(mux: Tca9548aAsync<AsyncI2cDeviceType<'a>>) -> Self {
         Self { mux }
     }
 
+    #[cfg(not(feature = "sensor-i2c"))]
+    pub fn new() -> Self {
+        Self {
+            _phantom: core::marker::PhantomData,
+        }
+    }
+
+    #[cfg(feature = "sensor-sht40")]
     async fn read_sht40(
         &mut self,
         into: &mut [i32; crate::storage::MAX_SENSORS],
@@ -46,6 +71,7 @@ impl<'a> SensorsState<'a> {
         sht40.read_into(into).await
     }
 
+    #[cfg(feature = "sensor-scd41")]
     async fn read_scd41(
         &mut self,
         into: &mut [i32; crate::storage::MAX_SENSORS],
@@ -64,11 +90,14 @@ impl<'a> SensorsState<'a> {
     ///
     /// Each sensor knows its own mux channel and array indices at compile time,
     /// ensuring type-safe sensor management as the system expands.
+    ///
+    /// Sensors that are disabled via feature flags will have their values remain as 0.
     pub async fn read_all(&mut self) -> Result<[i32; crate::storage::MAX_SENSORS], SensorError> {
         let mut values = [0_i32; crate::storage::MAX_SENSORS];
 
         // Read SHT40 using compile-time channel info
         // The sensor type itself knows it's on channel 0
+        #[cfg(feature = "sensor-sht40")]
         match self.read_sht40(&mut values).await {
             Ok(_) => {}
             Err(e) => {
@@ -79,6 +108,7 @@ impl<'a> SensorsState<'a> {
 
         // Read SCD41 using compile-time channel info
         // The sensor type itself knows it's on channel 1
+        #[cfg(feature = "sensor-scd41")]
         match self.read_scd41(&mut values).await {
             Ok(_) => {}
             Err(e) => {

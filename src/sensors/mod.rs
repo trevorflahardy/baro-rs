@@ -1,7 +1,11 @@
+#[cfg(feature = "sensor-scd41")]
 mod scd41;
+#[cfg(feature = "sensor-sht40")]
 mod sht40;
 
+#[cfg(feature = "sensor-scd41")]
 pub use scd41::*;
+#[cfg(feature = "sensor-sht40")]
 pub use sht40::*;
 
 use super::storage::MAX_SENSORS;
@@ -105,8 +109,11 @@ where
 }
 
 pub mod indices {
+    #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
     use crate::sensors::IndexedSensor;
+    #[cfg(feature = "sensor-scd41")]
     use crate::sensors::scd41::SCD41Sensor;
+    #[cfg(feature = "sensor-sht40")]
     use crate::sensors::sht40::SHT40Sensor;
 
     // Listen here, mother fucker. You better god damn well use these indices correctly.
@@ -122,12 +129,14 @@ pub mod indices {
     /// - Starts at index 0 (temperature)
     /// - Produces 2 values (temperature, humidity)
     /// - Connected to I2C mux channel 0
+    #[cfg(feature = "sensor-sht40")]
     pub type SHT40Indexed<I> = IndexedSensor<SHT40Sensor<I>, 0, 2, 0>;
 
     /// SCD41 sensor configuration:
     /// - Starts at index 2 (CO2)
     /// - Produces 1 value (CO2 ppm)
     /// - Connected to I2C mux channel 1
+    #[cfg(feature = "sensor-scd41")]
     pub type SCD41Indexed<I> = IndexedSensor<SCD41Sensor<I>, 2, 1, 1>;
 
     pub const TEMPERATURE: usize = 0;
@@ -185,9 +194,13 @@ impl SensorType {
 }
 
 // Re-export for convenience
+#[cfg(feature = "sensor-scd41")]
 pub use indices::SCD41Indexed;
+#[cfg(feature = "sensor-sht40")]
 pub use indices::SHT40Indexed;
 
 pub use indices::*;
+#[cfg(feature = "sensor-scd41")]
 pub use scd41::SCD41Sensor;
+#[cfg(feature = "sensor-sht40")]
 pub use sht40::SHT40Sensor;
