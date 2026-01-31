@@ -32,7 +32,21 @@ pub enum Element {
 impl Element {
     /// Preferred size used by layout when `SizeConstraint::Fit` is selected.
     ///
-    /// Today this is derived from the element's current bounds size.
+    /// Note: this is **not** an intrinsic measurement; it is currently defined
+    /// as the size of the element's current bounds. In practice this means:
+    ///
+    /// - When an element is first created, its `preferred_size` will equal the
+    ///   size of the initial `bounds` passed to its constructor (e.g. via
+    ///   [`Element::text`], [`Element::multiline`], [`Element::button`], or
+    ///   [`Element::spacer`]).
+    /// - Layout containers that use `SizeConstraint::Fit` will treat that
+    ///   initial bounds size as the element's preferred size.
+    ///
+    /// If you construct elements with placeholder or zero-sized bounds and then
+    /// use `SizeConstraint::Fit`, the resulting layout will reflect those
+    /// placeholder sizes. Callers are therefore responsible for providing
+    /// meaningful initial bounds (or updating bounds before layout) whenever
+    /// `preferred_size` is consulted.
     pub fn preferred_size(&self) -> Size {
         self.bounds().size
     }
