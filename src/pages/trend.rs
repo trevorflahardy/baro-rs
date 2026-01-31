@@ -9,7 +9,6 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
 use embedded_graphics::{Drawable as EgDrawable, pixelcolor::Rgb565};
-// use embedded_layout::View; // unused
 use heapless::{Deque, Vec};
 
 use crate::metrics::QualityLevel;
