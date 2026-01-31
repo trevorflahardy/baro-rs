@@ -83,7 +83,7 @@ scd41-embedded = { git = "https://github.com/trevorflahardy/scd41-embedded", fea
 ], optional = true }
 tca9548a-embedded = { git = "https://github.com/trevorflahardy/tca9548a-embedded", version = "0.1.0", features = [
   "async",
-], optional = true }
+] }
 thiserror-no-std = "2.0.2"
 postcard = { version = "1.1.3", default-features = false, features = ["alloc"] }
 serde = { version = "1.0.188", default-features = false, features = ["derive"] }
@@ -96,14 +96,13 @@ embedded-charts = { version = "0.3.0", default-features = false, features = [
 ] }
 
 [features]
-default = ["sensor-i2c", "sensor-sht40", "sensor-scd41"]
+default = ["sensor-sht40", "sensor-scd41"]
 
 # Core sensor infrastructure (I2C mux and bus handling)
-sensor-i2c = ["dep:tca9548a-embedded"]
 
-# Individual sensors (each depends on sensor-i2c)
-sensor-sht40 = ["sensor-i2c", "dep:sht4x"]
-sensor-scd41 = ["sensor-i2c", "dep:scd41-embedded"]
+# Individual sensors
+sensor-sht40 = ["dep:sht4x"]
+sensor-scd41 = ["dep:scd41-embedded"]
 
 [profile.dev]
 # Rust debug is too slow.

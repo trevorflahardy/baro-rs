@@ -24,7 +24,6 @@ use mipidsi::{
     options::{ColorInversion, ColorOrder},
 };
 use static_cell::StaticCell;
-#[cfg(feature = "sensor-i2c")]
 use tca9548a_embedded::r#async::Tca9548aAsync;
 
 use crate::async_i2c_bus::AsyncI2cDevice;
@@ -32,7 +31,6 @@ use crate::dual_mode_pin::{
     DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
 };
 
-#[cfg(feature = "sensor-i2c")]
 pub type Tca9548SpiMultiplexer<'a> =
     Tca9548aAsync<AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>>;
 
@@ -90,11 +88,10 @@ pub struct SpiHardware {
 /// - AXP2101 power management chip
 /// - AW9523 GPIO expander
 /// - FT6336U capacitive touch controller
-/// - (Optional) TCA9548A I2C multiplexer for sensors (if sensor-i2c feature enabled)
+/// - TCA9548A I2C multiplexer for sensors
 ///
 /// # Returns
 /// A tuple of (I2cHardware, Tca9548SpiMultiplexer)
-#[cfg(feature = "sensor-i2c")]
 pub async fn init_i2c_hardware(
     i2c0: esp_hal::i2c::master::I2c<'static, esp_hal::Async>,
 ) -> (I2cHardware<'static>, Tca9548SpiMultiplexer<'static>) {
@@ -187,103 +184,6 @@ pub async fn init_i2c_hardware(
     };
 
     (hardware, i2c_for_sensors)
-}
-
-/// Initialize the I2C bus and all I2C-based peripherals (without sensor mux)
-///
-/// This function sets up:
-/// - I2C bus (400 kHz)
-/// - AXP2101 power management chip
-/// - AW9523 GPIO expander
-/// - FT6336U capacitive touch controller
-///
-/// # Returns
-/// I2cHardware only (no sensor mux)
-#[cfg(not(feature = "sensor-i2c"))]
-pub async fn init_i2c_hardware(
-    i2c0: esp_hal::i2c::master::I2c<'static, esp_hal::Async>,
-) -> I2cHardware<'static> {
-    // The I2C bus is shared between the various devices.
-    // NOTE: This ONLY applies to devices on the internal I2C bus:
-    //      - the power management chip (AXP2101)
-    //      - the GPIO expander (AW9523)
-    //      - the touch controller (FT6336U)
-    info!("Configuring I2C devices...");
-
-    static I2C0_BUS: StaticCell<
-        AsyncMutex<CriticalSectionRawMutex, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>,
-    > = StaticCell::new();
-    let i2c0_bus = I2C0_BUS.init(AsyncMutex::new(i2c0));
-
-    // Create device wrappers
-    let i2c_for_axp = AsyncI2cDevice::new(i2c0_bus);
-    let i2c_for_aw = AsyncI2cDevice::new(i2c0_bus);
-    let i2c_for_touch = AsyncI2cDevice::new(i2c0_bus);
-
-    // Initialize power management
-    info!("Configuring power management");
-    let mut power_mgmt_chip = AsyncAxp2101::new(i2c_for_axp);
-
-    match power_mgmt_chip.init().await {
-        Ok(_) => info!("Power management ready"),
-        Err(e) => info!("Power init failed: {:?}", e),
-    }
-
-    power_mgmt_chip
-        .set_charging_led_mode(axp2101_embedded::ChargeLedMode::On)
-        .await
-        .unwrap();
-
-    // Enable all LDOs
-    power_mgmt_chip.enable_aldo1().await.unwrap();
-    power_mgmt_chip.enable_aldo2().await.unwrap();
-    power_mgmt_chip.enable_aldo3().await.unwrap();
-    power_mgmt_chip.enable_aldo4().await.unwrap();
-    power_mgmt_chip.enable_bldo1().await.unwrap();
-    power_mgmt_chip.enable_bldo2().await.unwrap();
-    power_mgmt_chip.enable_dldo1().await.unwrap();
-
-    // Set ALDO4 voltage to 3.3V for display
-    power_mgmt_chip.set_aldo4_voltage(3300).await.unwrap();
-
-    // Initialize GPIO expander
-    info!("Configuring GPIO expander...");
-    let mut gpio_expander = aw9523_embedded::r#async::Aw9523Async::new(i2c_for_aw, 0x58);
-    gpio_expander.init().await.unwrap();
-
-    // Configure P1_2 (pin 10) as input for touch interrupt
-    gpio_expander
-        .pin_mode(10, aw9523_embedded::PinMode::Input)
-        .await
-        .unwrap();
-    gpio_expander.enable_interrupt(10, true).await.unwrap();
-
-    info!("GPIO expander ready (P1_2 configured for touch interrupt)");
-
-    // Initialize touch controller
-    info!("Configuring touch controller...");
-    let mut touch_interface = FT6336U::new(i2c_for_touch);
-    let library_version = touch_interface.read_library_version().await.unwrap_or(0);
-    let chip_id = touch_interface.read_chip_id().await.unwrap();
-
-    // Configure touch controller in Polling mode (INT stays LOW while touched)
-    // This is better than Trigger mode for continuous touch detection
-    touch_interface
-        .write_g_mode(ft6336u_driver::GestureMode::Polling)
-        .await
-        .unwrap();
-    let g_mode = touch_interface.read_g_mode().await.unwrap();
-
-    info!(
-        "Touch controller ready (library: 0x{:04X}, chip: 0x{:02X}, mode: 0x{:02X})",
-        library_version, chip_id, g_mode
-    );
-
-    I2cHardware {
-        power_mgmt: power_mgmt_chip,
-        gpio_expander,
-        touch_interface,
-    }
 }
 
 /// Initialize the I2C bus hardware

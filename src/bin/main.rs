@@ -478,11 +478,7 @@ async fn main(spawner: Spawner) -> ! {
         // 1. I2C hardware (power management, GPIO expander, touch controller)
         let i2c0 = create_i2c_bus(peripherals.I2C0, peripherals.GPIO12, peripherals.GPIO11);
 
-        #[cfg(feature = "sensor-i2c")]
         let (i2c_hardware, i2c_for_sensors) = init_i2c_hardware(i2c0).await;
-
-        #[cfg(not(feature = "sensor-i2c"))]
-        let i2c_hardware = init_i2c_hardware(i2c0).await;
 
         // 2. SPI hardware (display and SD card)
         let spi_hardware = init_spi_peripherals(
@@ -498,22 +494,13 @@ async fn main(spawner: Spawner) -> ! {
             DISPLAY_HEIGHT,
         );
 
-        #[cfg(feature = "sensor-i2c")]
-        return (i2c_hardware, Some(i2c_for_sensors), spi_hardware);
-
-        #[cfg(not(feature = "sensor-i2c"))]
-        return (i2c_hardware, spi_hardware);
+        return (i2c_hardware, i2c_for_sensors, spi_hardware);
     };
 
     info!("Spawning concurrent initialization tasks...");
 
     // Both futures should complete around the same time
-    #[cfg(feature = "sensor-i2c")]
-    let ((interfaces, wifi_connected), (i2c_hardware, i2c_for_sensors_opt, spi_hardware)) =
-        embassy_futures::join::join(wifi_future, hardware_future).await;
-
-    #[cfg(not(feature = "sensor-i2c"))]
-    let ((interfaces, wifi_connected), (i2c_hardware, spi_hardware)) =
+    let ((interfaces, wifi_connected), (i2c_hardware, i2c_mux, spi_hardware)) =
         embassy_futures::join::join(wifi_future, hardware_future).await;
 
     info!("=== Concurrent initialization complete ===\n");
@@ -566,14 +553,7 @@ async fn main(spawner: Spawner) -> ! {
         info!("Starting sensor and storage tasks...");
 
         // Create sensors state
-        #[cfg(feature = "sensor-i2c")]
-        let sensors = {
-            let i2c_mux = i2c_for_sensors_opt.unwrap();
-            SensorsState::new(i2c_mux)
-        };
-
-        #[cfg(not(feature = "sensor-i2c"))]
-        let sensors = SensorsState::new();
+        let sensors = { SensorsState::new(i2c_mux) };
 
         spawner
             .spawn(background_sensor_reading_task(

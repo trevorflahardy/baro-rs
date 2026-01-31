@@ -1,6 +1,5 @@
 //! Sensor management and state
 
-#[cfg(feature = "sensor-i2c")]
 use crate::async_i2c_bus::AsyncI2cDevice;
 
 #[cfg(feature = "sensor-scd41")]
@@ -12,13 +11,10 @@ use crate::sensors::SensorError;
 #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
 use log::error;
 
-#[cfg(feature = "sensor-i2c")]
 use tca9548a_embedded::r#async::{I2cChannelAsync, Tca9548aAsync};
 
-#[cfg(feature = "sensor-i2c")]
 type AsyncI2cDeviceType<'a> = AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>;
 
-#[cfg(feature = "sensor-i2c")]
 type I2CChannelAsyncDeviceType<'a> =
     I2cChannelAsync<'a, AsyncI2cDeviceType<'a>, esp_hal::i2c::master::Error>;
 
@@ -36,10 +32,7 @@ type SCD41IndexedAsyncI2CDeviceType<'a> = SCD41Indexed<I2CChannelAsyncDeviceType
 /// where its data is stored in the values array and which I2C mux
 /// channel they reside on.
 pub struct SensorsState<'a> {
-    #[cfg(feature = "sensor-i2c")]
     mux: Tca9548aAsync<AsyncI2cDeviceType<'a>>,
-    #[cfg(not(feature = "sensor-i2c"))]
-    _phantom: core::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> SensorsState<'a> {
@@ -47,16 +40,8 @@ impl<'a> SensorsState<'a> {
     ///
     /// The I2C mux is stored and sensors are created on-demand during reads.
     /// Each sensor type knows its own mux channel via compile-time const generics.
-    #[cfg(feature = "sensor-i2c")]
     pub fn new(mux: Tca9548aAsync<AsyncI2cDeviceType<'a>>) -> Self {
         Self { mux }
-    }
-
-    #[cfg(not(feature = "sensor-i2c"))]
-    pub fn new() -> Self {
-        Self {
-            _phantom: core::marker::PhantomData,
-        }
     }
 
     #[cfg(feature = "sensor-sht40")]
