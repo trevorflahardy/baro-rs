@@ -333,8 +333,8 @@ Built with:
 
 **Active Development** — Core functionality complete, actively expanding features and sensor support.
 
-**Hardware tested**: M5Stack CoreS3 SE  
-**Current sensor count**: 1 (SHT40)  
+**Hardware tested**: M5Stack CoreS3 SE
+**Current sensor count**: 1 (SHT40)
 **Target sensor count**: 20+
 
 ---
