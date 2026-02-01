@@ -70,11 +70,11 @@ impl<I: I2c> Sensor<1> for SCD41Sensor<I> {
 
     async fn read(&mut self) -> Result<SCD41Readings, super::SensorError> {
         // Initialize sensor on first read
-        if !self.calibrated {
-            if let Err(e) = self.initialize().await {
-                error!("SCD41 initialization failed: {:?}", e);
-                return Err(e);
-            }
+        if !self.calibrated
+            && let Err(e) = self.initialize().await
+        {
+            error!("SCD41 initialization failed: {:?}", e);
+            return Err(e);
         }
 
         self.sensor.measure_single_shot().await.map_err(|e| {
