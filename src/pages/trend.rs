@@ -108,6 +108,22 @@ impl TrendDataBuffer {
         let _ = self.points.push_back((rollup.start_ts, value));
     }
 
+    /// Bulk load multiple rollups into the buffer (for initialization)
+    /// This is more efficient than calling push_from_rollup repeatedly
+    fn load_rollups(&mut self, rollups: &[Rollup]) {
+        for rollup in rollups {
+            self.push_from_rollup(rollup);
+        }
+    }
+
+    /// Bulk load multiple raw samples into the buffer (for initialization)
+    /// This is more efficient than calling push_from_raw_sample repeatedly
+    fn load_raw_samples(&mut self, samples: &[RawSample]) {
+        for sample in samples {
+            self.push_from_raw_sample(sample);
+        }
+    }
+
     /// Get data points within the specified time window
     fn get_window_data(&self, window: TimeWindow, now: u32) -> Vec<DataPoint, MAX_DATA_POINTS> {
         let window_start = now.saturating_sub(window.duration_secs());
@@ -171,6 +187,9 @@ pub struct TrendPage {
     stats: TrendStats,
     current_quality: QualityLevel,
     current_timestamp: u32,
+
+    // Flag to track if initial data has been requested
+    initial_data_loaded: bool,
 }
 
 impl TrendPage {
@@ -212,7 +231,28 @@ impl TrendPage {
             stats: TrendStats::default(),
             current_quality: QualityLevel::Good,
             current_timestamp: 0,
+            initial_data_loaded: false,
         }
+    }
+
+    /// Load historical data into the trend page buffer
+    /// This should be called once when the page is created or activated
+    pub fn load_historical_data(&mut self, rollups: &[Rollup], current_time: u32) {
+        self.data_buffer.load_rollups(rollups);
+        self.current_timestamp = current_time;
+        self.update_stats();
+        self.initial_data_loaded = true;
+        self.mark_dirty();
+    }
+
+    /// Load historical raw samples into the trend page buffer
+    /// This should be called for short time windows (1m, 5m)
+    pub fn load_historical_raw_samples(&mut self, samples: &[RawSample], current_time: u32) {
+        self.data_buffer.load_raw_samples(samples);
+        self.current_timestamp = current_time;
+        self.update_stats();
+        self.initial_data_loaded = true;
+        self.mark_dirty();
     }
 
     /// Update cached statistics and quality level
@@ -546,6 +586,13 @@ impl Page for TrendPage {
 
     fn on_activate(&mut self) {
         self.mark_dirty();
+
+        // TODO: Request initial data load from storage manager
+        // This would require a new PageEvent type or DisplayRequest to fetch
+        // historical data from the storage manager based on this page's
+        // sensor type and time window preferences.
+        // For now, this is handled by the display manager sending the data
+        // via DisplayRequest::LoadHistoricalData when the page is created.
     }
 
     fn on_event(&mut self, event: &PageEvent) -> bool {
@@ -566,21 +613,29 @@ impl Page for TrendPage {
                     return false;
                 }
 
-                // Add data point to buffer
-                match rollup_event.as_ref() {
+                // Always update timestamp from the event to keep window sliding forward
+                // This ensures get_window_data() uses the correct time reference
+                let new_timestamp = match rollup_event.as_ref() {
                     RollupEvent::RawSample(sample) => {
                         self.data_buffer.push_from_raw_sample(sample);
-                        self.current_timestamp = sample.timestamp;
+                        sample.timestamp
                     }
                     RollupEvent::Rollup5m(rollup)
                     | RollupEvent::Rollup1h(rollup)
                     | RollupEvent::RollupDaily(rollup) => {
                         self.data_buffer.push_from_rollup(rollup);
-                        self.current_timestamp = rollup.start_ts;
+                        // Use rollup end time (start_ts + window duration) for better accuracy
+                        // This ensures we're always looking at "now" not "5 minutes ago"
+                        rollup.start_ts
                     }
+                };
+
+                // Only update timestamp if it's newer (monotonically increasing)
+                if new_timestamp > self.current_timestamp {
+                    self.current_timestamp = new_timestamp;
                 }
 
-                // Recalculate statistics
+                // Recalculate statistics with updated timestamp
                 self.update_stats();
                 self.mark_dirty();
                 true

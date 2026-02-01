@@ -535,8 +535,21 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(touch_polling_task(touch_interface)).ok();
 
     // Start display manager task
-    let display_manager = DisplayManager::new(display);
-    spawner.spawn(display_manager_task(display_manager)).ok();
+    #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
+    {
+        let display_manager = DisplayManager::new(display);
+        spawner
+            .spawn(display_manager_task(display_manager, app_state_ref))
+            .ok();
+    }
+
+    #[cfg(not(any(feature = "sensor-sht40", feature = "sensor-scd41")))]
+    {
+        let display_manager = DisplayManager::new(display);
+        spawner
+            .spawn(display_manager_task(display_manager, _app_state_ref))
+            .ok();
+    }
 
     // Navigate to appropriate page based on WiFi status
     if !wifi_connected {
@@ -612,9 +625,13 @@ async fn background_sensor_reading_task(
     let mut timestamp: u32 = initial_unix_time;
 
     loop {
+        debug!("Sensor task: Starting read cycle at {}", timestamp);
         // Read all sensors
         let values = match sensors.read_all().await {
-            Ok(v) => v,
+            Ok(v) => {
+                debug!("Sensor task: Read successful");
+                v
+            }
             Err(e) => {
                 error!("Sensor read error: {:?}", e);
                 Timer::after(Duration::from_secs(10)).await;
@@ -630,10 +647,12 @@ async fn background_sensor_reading_task(
 
         // Add sample to accumulator via app state
         {
+            debug!("Sensor task: Adding sample to accumulator");
             let mut state = app_state.lock().await;
             if let Some(accumulator) = state.accumulator_mut() {
                 accumulator.add_sample(timestamp, &values).await;
             }
+            debug!("Sensor task: Sample added, accumulator updated");
         }
 
         timestamp = timestamp.wrapping_add(10);
@@ -641,25 +660,19 @@ async fn background_sensor_reading_task(
     }
 }
 
-/// Background task for processing rollup events and storing them
-///
-/// This task:
-/// 1. Subscribes to the rollup event channel
-/// 2. Receives events from the accumulator
-/// 3. Passes events to the storage manager for persistence
 #[allow(clippy::large_stack_frames)]
 #[embassy_executor::task]
 async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateType) {
     info!("Storage event processing task started");
 
-    // Subscribe to rollup events
     let mut subscriber = ROLLUP_CHANNEL.subscriber().unwrap();
+    let display_sender = baro_rs::display_manager::get_display_sender();
 
     loop {
-        // Wait for next rollup event
         let event = subscriber.next_message_pure().await;
+        debug!("Storage task: Received rollup event");
 
-        // Process event through storage manager
+        // Process through storage manager
         {
             let mut state = app_state.lock().await;
             if let Some(storage) = state.storage_manager_mut() {
@@ -667,8 +680,7 @@ async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateTy
             }
         }
 
-        // Also send to display for updates
-        let display_sender = baro_rs::display_manager::get_display_sender();
+        // Forward to display
         let _ = display_sender.try_send(DisplayRequest::UpdateData(Box::new(event)));
     }
 }
@@ -690,6 +702,10 @@ async fn touch_polling_task(
         match touch.scan().await {
             Ok(touch_data) => {
                 if touch_data.touch_count > 0 {
+                    debug!(
+                        "Touch task: Detected {} touch points",
+                        touch_data.touch_count
+                    );
                     for i in 0..touch_data.touch_count as usize {
                         let point = &touch_data.points[i];
 
@@ -702,12 +718,22 @@ async fn touch_polling_task(
                         // TODO: Handle Release events properly
                         // For now, always send a Press event
                         let event = match point.status {
-                            TouchStatus::Touch => baro_rs::ui::TouchEvent::Press(touch_point),
-                            TouchStatus::Stream => baro_rs::ui::TouchEvent::Drag(touch_point),
-                            _ => baro_rs::ui::TouchEvent::Press(touch_point), // <- Release does not ever be fired (?)
+                            TouchStatus::Touch => {
+                                debug!("Touch task: Press at ({}, {})", point.x, point.y);
+                                baro_rs::ui::TouchEvent::Press(touch_point)
+                            }
+                            TouchStatus::Stream => {
+                                debug!("Touch task: Drag at ({}, {})", point.x, point.y);
+                                baro_rs::ui::TouchEvent::Drag(touch_point)
+                            }
+                            _ => {
+                                debug!("Touch task: Other status at ({}, {})", point.x, point.y);
+                                baro_rs::ui::TouchEvent::Press(touch_point)
+                            } // <- Release does not ever be fired (?)
                         };
 
                         let display_sender = baro_rs::display_manager::get_display_sender();
+                        debug!("Touch task: Sending touch event to display");
                         let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));
                     }
                 }
@@ -723,7 +749,10 @@ async fn touch_polling_task(
 
 /// Display manager task for rendering pages
 #[embassy_executor::task]
-async fn display_manager_task(mut display_manager: DisplayManager<DisplayType>) {
+async fn display_manager_task(
+    mut display_manager: DisplayManager<DisplayType>,
+    app_state: &'static ConcreteGlobalStateType,
+) {
     let receiver = get_display_receiver();
-    display_manager.run(receiver).await;
+    display_manager.run(receiver, app_state).await;
 }

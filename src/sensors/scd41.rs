@@ -35,12 +35,6 @@ impl<I: I2c> SCD41Sensor<I> {
     /// Perform calibration and start periodic measurement.
     /// This should be called once during initialization.
     async fn initialize(&mut self) -> Result<(), SensorError> {
-        // Stop any ongoing measurement first
-        if let Err(e) = self.sensor.stop_periodic_measurement().await {
-            // Ignore error if measurement wasn't running, but log it
-            log::debug!("SCD41 stop measurement (expected on first init): {:?}", e);
-        }
-
         // Enable automatic self-calibration (ASC)
         // ASC continuously calibrates the sensor over time (requires 7 days of operation)
         self.sensor
@@ -56,9 +50,7 @@ impl<I: I2c> SCD41Sensor<I> {
 
         info!("SCD41: Automatic self-calibration enabled");
 
-        // Start periodic measurement
         self.calibrated = true;
-        info!("SCD41: Periodic measurement started");
 
         Ok(())
     }
