@@ -1,4 +1,6 @@
 use super::MAX_SENSORS;
+use crate::sensors::{CO2, HUMIDITY, TEMPERATURE};
+use core::fmt::Display;
 
 /// Raw sensor sample, recorded every 10 seconds
 ///
@@ -16,9 +18,24 @@ pub struct RawSample {
     /// Each sensor value is stored as a signed 32-bit integer. For example:
     /// - Temperature: 25.3°C → 25300 (milli-degrees)
     /// - Humidity: 45.2% → 45200 (milli-percent)
+    /// - CO2: 415 ppm → 415000 (milli-ppm)
     pub values: [i32; MAX_SENSORS],
     /// Padding to reach 96 bytes for efficient SD card I/O
     _padding: [u8; 12],
+}
+
+impl Display for RawSample {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let temp_c = self.values[TEMPERATURE] as f32 / 1000.0;
+        let humidity_pct = self.values[HUMIDITY] as f32 / 1000.0;
+        let co2_ppm = self.values[CO2] as f32 / 1000.0;
+
+        write!(
+            f,
+            "[RawSample] timestamp: {}, temperature: {:.2}°C, humidity: {:.2}%, co2: {:.2} ppm",
+            self.timestamp, temp_c, humidity_pct, co2_ppm
+        )
+    }
 }
 
 /// Aggregated rollup record containing average, minimum, and maximum values
@@ -40,6 +57,21 @@ pub struct Rollup {
     pub max: [i32; MAX_SENSORS],
     /// Padding to reach 256 bytes for efficient SD card I/O
     _padding: [u8; 12],
+}
+
+impl Display for Rollup {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Only displaying averages here as others aren't vital for debugging.
+        let temp_avg = self.avg[TEMPERATURE] as f32 / 1000.0;
+        let humidity_avg = self.avg[HUMIDITY] as f32 / 1000.0;
+        let co2_avg = self.avg[CO2] as f32 / 1000.0;
+
+        write!(
+            f,
+            "[Rollup] start_ts: {}, avg: {:.2}°C, {:.2}%, {:.2} ppm",
+            self.start_ts, temp_avg, humidity_avg, co2_avg
+        )
+    }
 }
 
 impl AsMut<[u8]> for Rollup {
@@ -77,6 +109,30 @@ pub struct LifetimeStats {
     pub sensor_min: [i32; MAX_SENSORS],
     /// Padding to reach 256 bytes for efficient SD card I/O
     _padding: [u8; 24],
+}
+
+impl Display for LifetimeStats {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let temp_max = self.sensor_max[TEMPERATURE] as f32 / 1000.0;
+        let temp_min = self.sensor_min[TEMPERATURE] as f32 / 1000.0;
+        let humidity_max = self.sensor_max[HUMIDITY] as f32 / 1000.0;
+        let humidity_min = self.sensor_min[HUMIDITY] as f32 / 1000.0;
+        let co2_max = self.sensor_max[CO2] as f32 / 1000.0;
+        let co2_min = self.sensor_min[CO2] as f32 / 1000.0;
+
+        write!(
+            f,
+            "[LifetimeStats] boot_time: {}, total_samples: {}, temp_max: {:.2}°C, temp_min: {:.2}°C, humidity_max: {:.2}%, humidity_min: {:.2}%, co2_max: {:.2} ppm, co2_min: {:.2} ppm",
+            self.boot_time,
+            self.total_samples,
+            temp_max,
+            temp_min,
+            humidity_max,
+            humidity_min,
+            co2_max,
+            co2_min
+        )
+    }
 }
 
 impl RawSample {
