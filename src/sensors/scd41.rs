@@ -57,17 +57,6 @@ impl<I: I2c> SCD41Sensor<I> {
         info!("SCD41: Automatic self-calibration enabled");
 
         // Start periodic measurement
-        self.sensor
-            .start_periodic_measurement()
-            .await
-            .map_err(|e| {
-                error!("SCD41 start_periodic_measurement failed: {:?}", e);
-                SensorError::InitializationFailed {
-                    sensor: "SCD41",
-                    details: "Failed to start periodic measurement",
-                }
-            })?;
-
         self.calibrated = true;
         info!("SCD41: Periodic measurement started");
 
@@ -86,27 +75,41 @@ impl<I: I2c> Sensor<1> for SCD41Sensor<I> {
                 error!("SCD41 initialization failed: {:?}", e);
                 return Err(e);
             }
-
-            // Wait for first measurement to be ready (5 seconds)
-            embassy_time::Timer::after_millis(CO2_MEASUREMENT_INTERVAL_MS as u64).await;
         }
 
-        // Check if data is ready
-        let ready = self.sensor.data_ready().await.map_err(|e| {
+        self.sensor.measure_single_shot().await.map_err(|e| {
+            error!("SCD41 single shot measurement failed: {:?}", e);
+            SensorError::ReadFailed {
+                sensor: "SCD41",
+                operation: "initiate single shot measurement",
+                details: "I2C communication error",
+            }
+        })?;
+
+        // Wait for 5s to allow measurement to complete
+        embassy_time::Timer::after_millis(CO2_MEASUREMENT_INTERVAL_MS as u64).await;
+
+        // While the sensor data is not ready, continue waiting for it, max of 5 times.
+        // If we exceed this, return a timeout error.
+        let mut attempts = 0;
+        while (!self.sensor.data_ready().await.map_err(|e| {
             error!("SCD41 data_ready check failed: {:?}", e);
             SensorError::ReadFailed {
                 sensor: "SCD41",
                 operation: "check data ready status",
                 details: "I2C communication error",
             }
-        })?;
+        })?) && attempts < 5
+        {
+            embassy_time::Timer::after_millis(1000).await;
+            attempts += 1;
+        }
 
-        if !ready {
-            // Data not ready yet, this is expected during startup or between measurements
-            log::debug!("SCD41 data not ready (waiting for next measurement cycle)");
-            return Err(SensorError::DataNotReady {
+        if attempts >= 5 {
+            error!("SCD41 data not ready after multiple attempts");
+            return Err(SensorError::Timeout {
                 sensor: "SCD41",
-                operation: "CO2 measurement",
+                operation: "wait for data ready status",
             });
         }
 

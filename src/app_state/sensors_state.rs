@@ -8,7 +8,6 @@ use crate::sensors::{SCD41Indexed, SCD41Sensor};
 use crate::sensors::{SHT40Indexed, SHT40Sensor};
 
 use crate::sensors::SensorError;
-#[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
 use log::error;
 
 use tca9548a_embedded::r#async::{I2cChannelAsync, Tca9548aAsync};
