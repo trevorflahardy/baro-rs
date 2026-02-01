@@ -128,7 +128,7 @@ where
                 let page = crate::pages::TrendPage::new(
                     self.bounds,
                     SensorType::Co2,
-                    TimeWindow::FiveMinutes,
+                    TimeWindow::ThirtyMinutes,
                 );
                 self.current_page = PageWrapper::TrendPage(Box::new(page));
             }
