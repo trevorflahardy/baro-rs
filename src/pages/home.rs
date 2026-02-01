@@ -70,6 +70,12 @@ impl HomePage {
         .with_palette(palette)
         .with_variant(ButtonVariant::Secondary);
 
+        let co2_btn = crate::ui::components::Button::new(
+            hint,
+            "CO2 Graph",
+            Action::NavigateToPage(PageId::TrendCo2),
+        );
+
         let settings_btn = crate::ui::components::Button::new(
             hint,
             "Settings",
@@ -86,6 +92,9 @@ impl HomePage {
                 Element::Button(Box::new(humidity_btn)),
                 SizeConstraint::Grow(1),
             )
+            .ok();
+        self.container
+            .add_child(Element::Button(Box::new(co2_btn)), SizeConstraint::Grow(1))
             .ok();
         self.container
             .add_child(
