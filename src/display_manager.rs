@@ -17,6 +17,10 @@ use log::{debug, error, info};
 use crate::pages::page_manager::{Page, PageWrapper};
 use crate::pages::{home::HomePage, settings::SettingsPage};
 use crate::sensors::SensorType;
+use crate::sensors::{
+    CO2 as SENSOR_CO2_INDEX, HUMIDITY as SENSOR_HUMIDITY_INDEX,
+    TEMPERATURE as SENSOR_TEMPERATURE_INDEX,
+};
 use crate::storage::TimeWindow;
 use crate::storage::accumulator::RollupEvent;
 use crate::ui::{Action, PageEvent, PageId, SensorData, TouchEvent};
@@ -25,9 +29,6 @@ extern crate alloc;
 use alloc::boxed::Box;
 
 // Sensor indices from sensors module
-const SENSOR_TEMPERATURE: usize = 0;
-const SENSOR_HUMIDITY: usize = 1;
-
 const DISPLAY_WIDTH: u16 = 320;
 const DISPLAY_HEIGHT: u16 = 240;
 
@@ -123,6 +124,14 @@ where
                 );
                 self.current_page = PageWrapper::TrendPage(Box::new(page));
             }
+            PageId::TrendCo2 => {
+                let page = crate::pages::TrendPage::new(
+                    self.bounds,
+                    SensorType::Co2,
+                    TimeWindow::FiveMinutes,
+                );
+                self.current_page = PageWrapper::TrendPage(Box::new(page));
+            }
             PageId::WifiError => {
                 let page = crate::pages::WifiErrorPage::new();
                 self.current_page = PageWrapper::WifiError(Box::new(page));
@@ -161,18 +170,21 @@ where
         match *event {
             RollupEvent::RawSample(sample) => {
                 // Extract sensor values from the raw sample (in milli-units)
-                let temperature_mc = sample.values[SENSOR_TEMPERATURE];
-                let humidity_mp = sample.values[SENSOR_HUMIDITY];
+                let temperature_mc = sample.values[SENSOR_TEMPERATURE_INDEX];
+                let humidity_mp = sample.values[SENSOR_HUMIDITY_INDEX];
+                let co2_mp = sample.values[SENSOR_CO2_INDEX];
 
                 // Convert to float values (divide by 1000)
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
+                let co2_ppm = co2_mp as f32 / 1000.0;
 
-                debug!(" Raw sample - T: {:.1}°C, H: {:.1}%", temp_c, humidity_pct);
+                debug!("{}", sample);
 
                 let sensor_data = SensorData {
                     temperature: Some(temp_c),
                     humidity: Some(humidity_pct),
+                    co2: Some(co2_ppm),
                     timestamp: sample.timestamp as u64,
                 };
 
@@ -188,20 +200,20 @@ where
             | RollupEvent::Rollup1h(rollup)
             | RollupEvent::RollupDaily(rollup) => {
                 // For rollups, use the average values
-                let temperature_mc = rollup.avg[SENSOR_TEMPERATURE];
-                let humidity_mp = rollup.avg[SENSOR_HUMIDITY];
+                let temperature_mc = rollup.avg[SENSOR_TEMPERATURE_INDEX];
+                let humidity_mp = rollup.avg[SENSOR_HUMIDITY_INDEX];
+                let co2_mp = rollup.avg[SENSOR_CO2_INDEX];
 
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
+                let co2_ppm = co2_mp as f32 / 1000.0;
 
-                debug!(
-                    " Rollup - T: {:.1}°C (avg), H: {:.1}% (avg)",
-                    temp_c, humidity_pct
-                );
+                debug!("{}", rollup);
 
                 let sensor_data = SensorData {
                     temperature: Some(temp_c),
                     humidity: Some(humidity_pct),
+                    co2: Some(co2_ppm),
                     timestamp: rollup.start_ts as u64,
                 };
 
