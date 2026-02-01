@@ -68,6 +68,7 @@ pub enum PageId {
     TrendPage,
     TrendTemperature,
     TrendHumidity,
+    TrendCo2,
     WifiError,
 }
 
@@ -185,6 +186,7 @@ pub enum PageEvent {
 pub struct SensorData {
     pub temperature: Option<f32>,
     pub humidity: Option<f32>,
+    pub co2: Option<f32>,
     pub timestamp: u64,
 }
 
