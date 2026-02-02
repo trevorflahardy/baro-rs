@@ -38,7 +38,7 @@ pub trait Page {
 
     /// Draw the page to display
     fn draw_page<D: DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>>(
-        &self,
+        &mut self,
         display: &mut D,
     ) -> Result<(), D::Error>;
 
@@ -96,7 +96,7 @@ impl<T: Page> Page for Box<T> {
     }
 
     fn draw_page<D: DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>>(
-        &self,
+        &mut self,
         display: &mut D,
     ) -> Result<(), D::Error> {
         (**self).draw_page(display)
@@ -192,7 +192,7 @@ impl Page for PageWrapper {
     }
 
     fn draw_page<D: DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>>(
-        &self,
+        &mut self,
         display: &mut D,
     ) -> Result<(), D::Error> {
         match self {

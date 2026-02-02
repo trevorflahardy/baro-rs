@@ -3,10 +3,11 @@
 //! This page provides a generic interface for visualizing any sensor's data
 //! over configurable time windows, with quality assessment and statistics.
 
+use embedded_charts::prelude::*;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X10};
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{Line, PrimitiveStyle, Rectangle};
+use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
 use embedded_graphics::{Drawable as EgDrawable, pixelcolor::Rgb565};
 use heapless::{Deque, Vec};
@@ -379,130 +380,7 @@ impl TrendPage {
             return Ok(());
         }
 
-        // Draw a simple line graph manually using embedded-graphics with interpolation
-        // Find min/max values for scaling
-        let mut min_val = i32::MAX;
-        let mut max_val = i32::MIN;
-        for (_, val) in data.iter() {
-            min_val = min_val.min(*val);
-            max_val = max_val.max(*val);
-        }
-
-        // Add some padding to the range
-        let range = max_val - min_val;
-        let padding = range / 10;
-        min_val -= padding;
-        max_val += padding;
-
-        // Ensure we have a non-zero range
-        if min_val == max_val {
-            min_val -= 1000;
-            max_val += 1000;
-        }
-
-        let graph_width = self.graph_bounds.size.width as i32 - 10; // 5px padding each side
-        let graph_height = self.graph_bounds.size.height as i32 - 10;
-        let x_offset = self.graph_bounds.top_left.x + 5;
-        let y_offset = self.graph_bounds.top_left.y + 5;
-
-        // Use Catmull-Rom spline interpolation for smooth curves
-        // We'll draw segments between points with interpolated intermediate points
-        let segments_per_interval = 4; // Number of interpolated points between data points
-
-        let mut prev_point: Option<Point> = None;
-        let line_color = self.current_quality.foreground_color();
-
-        for i in 0..data.len() {
-            let curr_idx = i;
-
-            // Get surrounding points for interpolation (p0, p1, p2, p3)
-            let p0_idx = if i > 0 { i - 1 } else { i };
-            let p1_idx = i;
-            let p2_idx = if i + 1 < data.len() { i + 1 } else { i };
-            let p3_idx = if i + 2 < data.len() { i + 2 } else { p2_idx };
-
-            let (_t0, v0) = data[p0_idx];
-            let (_t1, v1) = data[p1_idx];
-            let (_t2, v2) = data[p2_idx];
-            let (_t3, v3) = data[p3_idx];
-
-            // Draw interpolated segments between p1 and p2
-            for seg in 0..=segments_per_interval {
-                let t = seg as f32 / segments_per_interval as f32;
-
-                // Catmull-Rom spline interpolation
-                // Formula: 0.5 * (2*p1 + (-p0 + p2)*t + (2*p0 - 5*p1 + 4*p2 - p3)*t^2 + (-p0 + 3*p1 - 3*p2 + p3)*t^3)
-                let t2 = t * t;
-                let t3 = t2 * t;
-
-                let v0_f = v0 as f32;
-                let v1_f = v1 as f32;
-                let v2_f = v2 as f32;
-                let v3_f = v3 as f32;
-
-                let interpolated_val = (0.5
-                    * (2.0 * v1_f
-                        + (-v0_f + v2_f) * t
-                        + (2.0 * v0_f - 5.0 * v1_f + 4.0 * v2_f - v3_f) * t2
-                        + (-v0_f + 3.0 * v1_f - 3.0 * v2_f + v3_f) * t3))
-                    as i32;
-
-                // Map x position (blend between p1 and p2)
-                let base_x = (curr_idx as i32 * graph_width) / (data.len() as i32 - 1).max(1);
-                let next_x = if curr_idx + 1 < data.len() {
-                    ((curr_idx + 1) as i32 * graph_width) / (data.len() as i32 - 1).max(1)
-                } else {
-                    base_x
-                };
-                let x = x_offset + base_x + ((next_x - base_x) as f32 * t) as i32;
-
-                // Map y position (invert because screen y grows downward)
-                let normalized =
-                    ((interpolated_val - min_val) * graph_height) / (max_val - min_val).max(1);
-                let y = y_offset + graph_height - normalized;
-
-                let current_point = Point::new(x, y);
-
-                // Draw line from previous point to current point
-                if let Some(prev) = prev_point {
-                    Line::new(prev, current_point)
-                        .into_styled(PrimitiveStyle::with_stroke(line_color, 2))
-                        .draw(display)?;
-                }
-
-                prev_point = Some(current_point);
-            }
-        }
-
-        // Draw y-axis labels (min, max)
-        let label_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
-
-        let mut max_str = String::new();
-        let mut min_str = String::new();
-        use core::fmt::Write;
-        let _ = write!(max_str, "{:.1}", TrendStats::to_float(max_val));
-        let _ = write!(min_str, "{:.1}", TrendStats::to_float(min_val));
-
-        // Draw max value at top
-        Text::with_alignment(
-            &max_str,
-            Point::new(self.graph_bounds.top_left.x + 2, y_offset + 8),
-            label_style,
-            Alignment::Left,
-        )
-        .draw(display)?;
-
-        // Draw min value at bottom
-        Text::with_alignment(
-            &min_str,
-            Point::new(
-                self.graph_bounds.top_left.x + 2,
-                y_offset + graph_height - 2,
-            ),
-            label_style,
-            Alignment::Left,
-        )
-        .draw(display)?;
+        // TODO: graph drawing and rendering w/ embedded_charts
 
         Ok(())
     }
@@ -654,7 +532,10 @@ impl Page for TrendPage {
         // Called in UI loop - could be used for animations
     }
 
-    fn draw_page<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
+    fn draw_page<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        display: &mut D,
+    ) -> Result<(), D::Error> {
         // Clear background
         self.bounds
             .into_styled(PrimitiveStyle::with_fill(COLOR_BACKGROUND))

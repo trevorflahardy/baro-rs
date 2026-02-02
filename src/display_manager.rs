@@ -346,7 +346,7 @@ where
                 .draw(&mut self.display)?;
 
             // Draw the current page
-            let current_page = &self.current_page;
+            let current_page = &mut self.current_page;
             current_page.draw_page(&mut self.display)?;
 
             self.needs_redraw = false;

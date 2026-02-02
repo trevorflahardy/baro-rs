@@ -72,7 +72,10 @@ impl Page for WifiErrorPage {
         // No updates needed for static error page
     }
 
-    fn draw_page<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
+    fn draw_page<D: DrawTarget<Color = Rgb565>>(
+        &mut self,
+        display: &mut D,
+    ) -> Result<(), D::Error> {
         Drawable::draw(self, display)
     }
 
