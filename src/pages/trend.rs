@@ -10,7 +10,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
 use embedded_graphics::{Drawable as EgDrawable, pixelcolor::Rgb565};
-use heapless::{Deque, Vec};
+use heapless::{Deque, Vec, index_set::FnvIndexSet};
 
 use crate::metrics::QualityLevel;
 use crate::pages::Page;
@@ -31,8 +31,8 @@ const COLOR_FOREGROUND: Rgb565 = Rgb565::new(26 >> 3, 32 >> 2, 33 >> 3);
 const _COLOR_STROKE: Rgb565 = Rgb565::new(43 >> 3, 55 >> 2, 57 >> 3);
 const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
 
-/// Maximum data points for the largest time window (1 day = 288 hourly points)
-const MAX_DATA_POINTS: usize = 288;
+/// Maximum data points for the largest time window (limited by embedded_charts)
+const MAX_DATA_POINTS: usize = 256;
 
 /// Data point for graphing: (timestamp, value)
 type DataPoint = (u32, i32);
@@ -184,6 +184,10 @@ pub struct TrendPage {
     graph_bounds: Rectangle,
     stats_bounds: Rectangle,
 
+    // Graph repr for animation slides
+    line_chart: LineChart<Rgb565>,
+    line_stream: StreamingAnimator<Point2D>,
+
     // Cached state
     stats: TrendStats,
     current_quality: QualityLevel,
@@ -220,6 +224,15 @@ impl TrendPage {
             Size::new(bounds.size.width, STATS_HEIGHT),
         );
 
+        // TODO: line color should be that of the current quality FG color
+        let line_chart = LineChartBuilder::new()
+            .smooth(true)
+            .smooth_subdivisions(2)
+            .line_width(2)
+            .line_color(Rgb565::WHITE)
+            .build()
+            .unwrap(); // We want this to fail at run time if it can't be built
+
         Self {
             bounds,
             sensor,
@@ -229,6 +242,8 @@ impl TrendPage {
             header_bounds,
             graph_bounds,
             stats_bounds,
+            line_stream: StreamingAnimator::new(),
+            line_chart,
             stats: TrendStats::default(),
             current_quality: QualityLevel::Good,
             current_timestamp: 0,
@@ -341,7 +356,7 @@ impl TrendPage {
     }
 
     /// Draw the graph using embedded_charts with interpolation
-    fn draw_graph<D>(&self, display: &mut D) -> Result<(), D::Error>
+    fn draw_graph<D>(&mut self, display: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Rgb565>,
     {
@@ -380,13 +395,45 @@ impl TrendPage {
             return Ok(());
         }
 
-        // TODO: graph drawing and rendering w/ embedded_charts
+        // Our goal here is to push new points to the inner_graph for smooth sliding, however,
+        // we do not want to rebuild the entire graph from scratch each time. Because events
+        // come in chronologically, as we walk through the data points, we'll also be walking
+        // chronologically.
+        let existing: FnvIndexSet<u32, MAX_DATA_POINTS> = self
+            .line_stream
+            .current_data()
+            .map(|item| item.x as u32)
+            .collect();
+
+        let stream = &mut self.line_stream;
+
+        for (ts, value) in data.iter() {
+            if !existing.contains(ts) {
+                let point = Point2D::new(*ts as f32, *value as f32);
+                stream.push_data(point);
+            }
+        }
+
+        let mut temp_series = StaticDataSeries::<Point2D, MAX_DATA_POINTS>::new();
+        for point in stream.current_data() {
+            // TODO: Remove unwrap here, impl custom Error type - just base impl for now
+            let _ = temp_series.push(point).unwrap();
+        }
+
+        self.line_chart
+            .draw(
+                &temp_series,
+                self.line_chart.config(),
+                self.graph_bounds,
+                display,
+            )
+            .unwrap();
 
         Ok(())
     }
 
     /// Draw the statistics bar at the bottom
-    fn draw_stats<D>(&self, display: &mut D) -> Result<(), D::Error>
+    fn draw_stats<D>(&mut self, display: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Rgb565>,
     {
