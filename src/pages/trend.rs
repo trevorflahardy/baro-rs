@@ -6,7 +6,6 @@
 use embedded_charts::prelude::*;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X10};
-use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
 use embedded_graphics::{Drawable as EgDrawable, pixelcolor::Rgb565};
