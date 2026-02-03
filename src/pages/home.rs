@@ -7,8 +7,8 @@ use embedded_graphics::{
 
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Alignment, ButtonVariant, ColorPalette, Container, Direction, Drawable, Element,
-    PageId, SizeConstraint, TextSize, TouchEvent, TouchResult, Touchable,
+    Action, Alignment, Button, ButtonVariant, ColorPalette, Container, Direction, Drawable,
+    Element, PageId, SizeConstraint, TextComponent, TextSize, TouchEvent, TouchResult, Touchable,
 };
 
 extern crate alloc;
@@ -41,20 +41,20 @@ impl HomePage {
         let hint = Rectangle::new(Point::zero(), Size::new(self.bounds.size.width, 1));
 
         // Title.
-        let title =
-            crate::ui::components::TextComponent::new(hint, "Baro Dashboard", TextSize::Large)
-                .with_alignment(embedded_graphics::text::Alignment::Center);
+        let title = TextComponent::new(hint, "Hello User!", TextSize::Large)
+            .with_alignment(embedded_graphics::text::Alignment::Center);
+
         self.container
             .add_child(Element::Text(Box::new(title)), SizeConstraint::Fixed(30))
             .ok();
 
-        // Spacer.
+        // Spacer
         self.container
             .add_child(Element::spacer(hint), SizeConstraint::Fixed(10))
             .ok();
 
         // Buttons: share remaining space.
-        let temp_btn = crate::ui::components::Button::new(
+        let temp_btn = Button::new(
             hint,
             "Temperature Graph",
             Action::NavigateToPage(PageId::TrendTemperature),
@@ -62,7 +62,7 @@ impl HomePage {
         .with_palette(palette)
         .with_variant(ButtonVariant::Primary);
 
-        let humidity_btn = crate::ui::components::Button::new(
+        let humidity_btn = Button::new(
             hint,
             "Humidity Graph",
             Action::NavigateToPage(PageId::TrendHumidity),
@@ -70,19 +70,11 @@ impl HomePage {
         .with_palette(palette)
         .with_variant(ButtonVariant::Secondary);
 
-        let co2_btn = crate::ui::components::Button::new(
-            hint,
-            "CO2 Graph",
-            Action::NavigateToPage(PageId::TrendCo2),
-        );
+        let co2_btn = Button::new(hint, "CO2 Graph", Action::NavigateToPage(PageId::TrendCo2));
 
-        let settings_btn = crate::ui::components::Button::new(
-            hint,
-            "Settings",
-            Action::NavigateToPage(PageId::Settings),
-        )
-        .with_palette(palette)
-        .with_variant(ButtonVariant::Secondary);
+        let settings_btn = Button::new(hint, "Settings", Action::NavigateToPage(PageId::Settings))
+            .with_palette(palette)
+            .with_variant(ButtonVariant::Secondary);
 
         self.container
             .add_child(Element::Button(Box::new(temp_btn)), SizeConstraint::Grow(1))
