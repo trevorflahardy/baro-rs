@@ -83,6 +83,43 @@ impl Button {
         }
     }
 
+    /// Create a button with automatic sizing based on label.
+    ///
+    /// The button will size itself to fit the label with standard padding.
+    /// Minimum button size is 100x44 for touchability.
+    pub fn auto(label: &str, action: Action) -> Self {
+        let mut label_string = heapless::String::new();
+        label_string.push_str(label).ok();
+
+        // Standard font for buttons
+        let font = &FONT_6X10;
+        let char_width = font.character_size.width;
+        let char_height = font.character_size.height;
+
+        // Calculate content size with padding
+        const HORIZONTAL_PADDING: u32 = 20;
+        const VERTICAL_PADDING: u32 = 12;
+        const MIN_WIDTH: u32 = 100;
+        const MIN_HEIGHT: u32 = 44;
+
+        let text_width = (label_string.len() as u32) * char_width;
+        let width = (text_width + 2 * HORIZONTAL_PADDING).max(MIN_WIDTH);
+        let height = (char_height + 2 * VERTICAL_PADDING).max(MIN_HEIGHT);
+
+        let bounds = Rectangle::new(Point::zero(), Size::new(width, height));
+
+        Self {
+            bounds,
+            label: label_string,
+            action,
+            state: ButtonState::Normal,
+            variant: ButtonVariant::Primary,
+            palette: ColorPalette::default(),
+            border_radius: 8,
+            dirty: true,
+        }
+    }
+
     /// Set the button's visual variant.
     ///
     /// Variants control the button's color scheme (Primary, Secondary, etc.).

@@ -17,12 +17,25 @@ use embedded_graphics::primitives::Rectangle;
 extern crate alloc;
 use alloc::boxed::Box;
 
+/// Maximum container size for nested containers.
+///
+/// This const generic allows Element to hold containers with up to 16 children.
+/// If you need more, increase this value, but be aware of stack usage.
+pub const MAX_CONTAINER_CHILDREN: usize = 16;
+
 /// A concrete, layout-friendly UI element.
+///
+/// This enum allows heterogeneous child widgets without trait objects (which aren't
+/// object-safe in embedded-graphics). Elements can be composed and nested freely.
 pub enum Element {
     Text(Box<TextComponent>),
     MultiLineText(Box<MultiLineText>),
     Button(Box<Button>),
-    /// A layout-only element that draws nothing.
+    /// Nested container for composable layouts.
+    ///
+    /// Containers can now be elements, enabling arbitrarily nested layout hierarchies.
+    Container(Box<crate::ui::layouts::Container<MAX_CONTAINER_CHILDREN>>),
+    /// A layout-only element that draws nothing but occupies space.
     Spacer {
         bounds: Rectangle,
         dirty: bool,
@@ -56,6 +69,7 @@ impl Element {
             Element::Text(t) => t.set_bounds(bounds),
             Element::MultiLineText(t) => t.set_bounds(bounds),
             Element::Button(b) => b.set_bounds(bounds),
+            Element::Container(c) => c.set_bounds(bounds),
             Element::Spacer { bounds: b, dirty } => {
                 if *b != bounds {
                     *b = bounds;
@@ -70,6 +84,14 @@ impl Element {
         Self::Text(Box::new(TextComponent::new(bounds, text, size)))
     }
 
+    /// Convenience constructor: auto-sized text element.
+    ///
+    /// Text will size itself based on content, eliminating the need to
+    /// specify bounds upfront. Particularly useful in containers.
+    pub fn text_auto(text: &str, size: TextSize) -> Self {
+        Self::Text(Box::new(TextComponent::auto(text, size)))
+    }
+
     /// Convenience constructor: multiline text element.
     pub fn multiline(bounds: Rectangle, text: &str, size: TextSize) -> Self {
         Self::MultiLineText(Box::new(MultiLineText::new(bounds, text, size)))
@@ -78,6 +100,21 @@ impl Element {
     /// Convenience constructor: button element.
     pub fn button(bounds: Rectangle, label: &str, action: crate::ui::core::Action) -> Self {
         Self::Button(Box::new(Button::new(bounds, label, action)))
+    }
+
+    /// Convenience constructor: auto-sized button element.
+    ///
+    /// Button will size itself based on label, eliminating the need to
+    /// specify bounds upfront. Ideal for use in containers.
+    pub fn button_auto(label: &str, action: crate::ui::core::Action) -> Self {
+        Self::Button(Box::new(Button::auto(label, action)))
+    }
+
+    /// Convenience constructor: container element.
+    ///
+    /// Wraps a Container in an Element, enabling nested layout hierarchies.
+    pub fn container(container: crate::ui::layouts::Container<MAX_CONTAINER_CHILDREN>) -> Self {
+        Self::Container(Box::new(container))
     }
 
     /// Convenience constructor: spacer.
@@ -98,6 +135,7 @@ impl Drawable for Element {
             Element::Text(t) => t.draw(display),
             Element::MultiLineText(t) => t.draw(display),
             Element::Button(b) => b.draw(display),
+            Element::Container(c) => c.draw(display),
             Element::Spacer { .. } => Ok(()),
         }
     }
@@ -107,6 +145,7 @@ impl Drawable for Element {
             Element::Text(t) => t.bounds(),
             Element::MultiLineText(t) => t.bounds(),
             Element::Button(b) => b.bounds(),
+            Element::Container(c) => c.bounds(),
             Element::Spacer { bounds, .. } => *bounds,
         }
     }
@@ -116,6 +155,7 @@ impl Drawable for Element {
             Element::Text(t) => t.is_dirty(),
             Element::MultiLineText(t) => t.is_dirty(),
             Element::Button(b) => b.is_dirty(),
+            Element::Container(c) => c.is_dirty(),
             Element::Spacer { dirty, .. } => *dirty,
         }
     }
@@ -125,6 +165,7 @@ impl Drawable for Element {
             Element::Text(t) => t.mark_clean(),
             Element::MultiLineText(t) => t.mark_clean(),
             Element::Button(b) => b.mark_clean(),
+            Element::Container(c) => c.mark_clean(),
             Element::Spacer { dirty, .. } => *dirty = false,
         }
     }
@@ -134,6 +175,7 @@ impl Drawable for Element {
             Element::Text(t) => t.mark_dirty(),
             Element::MultiLineText(t) => t.mark_dirty(),
             Element::Button(b) => b.mark_dirty(),
+            Element::Container(c) => c.mark_dirty(),
             Element::Spacer { dirty, .. } => *dirty = true,
         }
     }
@@ -143,6 +185,7 @@ impl Drawable for Element {
             Element::Text(t) => t.dirty_region(),
             Element::MultiLineText(t) => t.dirty_region(),
             Element::Button(b) => b.dirty_region(),
+            Element::Container(c) => c.dirty_region(),
             Element::Spacer { bounds, dirty } => {
                 if *dirty {
                     Some(DirtyRegion::new(*bounds))
@@ -164,7 +207,33 @@ impl Touchable for Element {
             Element::Text(_) => TouchResult::NotHandled,
             Element::MultiLineText(_) => TouchResult::NotHandled,
             Element::Button(b) => b.handle_touch(event),
+            Element::Container(c) => c.handle_touch(event),
             Element::Spacer { .. } => TouchResult::NotHandled,
         }
+    }
+}
+
+// From trait implementations for ergonomic conversions
+impl From<TextComponent> for Element {
+    fn from(text: TextComponent) -> Self {
+        Element::Text(Box::new(text))
+    }
+}
+
+impl From<MultiLineText> for Element {
+    fn from(text: MultiLineText) -> Self {
+        Element::MultiLineText(Box::new(text))
+    }
+}
+
+impl From<Button> for Element {
+    fn from(button: Button) -> Self {
+        Element::Button(Box::new(button))
+    }
+}
+
+impl From<crate::ui::layouts::Container<MAX_CONTAINER_CHILDREN>> for Element {
+    fn from(container: crate::ui::layouts::Container<MAX_CONTAINER_CHILDREN>) -> Self {
+        Element::Container(Box::new(container))
     }
 }

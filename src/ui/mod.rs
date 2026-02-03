@@ -60,7 +60,7 @@ pub use core::{
     Action, DirtyRegion, Drawable, Interactive, PageEvent, PageId, SensorData, StorageEvent,
     SystemEvent, TouchEvent, TouchPoint, TouchResult, Touchable,
 };
-pub use elements::Element;
+pub use elements::{Element, MAX_CONTAINER_CHILDREN};
 pub use layouts::{
     Alignment, Container, Direction, MainAxisAlignment, ScrollDirection, ScrollableContainer,
     SizeConstraint,

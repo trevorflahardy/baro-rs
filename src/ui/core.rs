@@ -122,6 +122,27 @@ impl DirtyRegion {
     }
 }
 
+/// Trait for calculating intrinsic content size.
+///
+/// This trait enables SwiftUI-like automatic sizing where views can report
+/// their ideal dimensions based on content, rather than requiring explicit
+/// bounds upfront.
+pub trait IntrinsicSize {
+    /// Calculate the intrinsic (ideal) size for this element's content.
+    ///
+    /// The returned size represents the ideal dimensions the element would
+    /// prefer, though layout containers may propose different sizes.
+    fn intrinsic_size(&self) -> Size;
+}
+
+impl<const N: usize> IntrinsicSize for crate::ui::layouts::Container<N> {
+    fn intrinsic_size(&self) -> Size {
+        // For now, return current bounds size.
+        // A full implementation would calculate based on children.
+        self.bounds().size
+    }
+}
+
 /// Trait for any UI element that can be drawn
 pub trait Drawable {
     /// Draw the element to the display within the given bounds

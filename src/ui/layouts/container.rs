@@ -466,6 +466,34 @@ impl Axis {
     }
 }
 
+// Additional Container builder methods for ergonomic construction.
+impl<const N: usize> Container<N> {
+    /// Create a vertical stack container with automatic sizing.
+    ///
+    /// This is a convenience constructor for the common case of a vertical list
+    /// of items. The initial bounds are zero and will be set during layout.
+    pub fn vstack() -> Self {
+        Self::new(Rectangle::zero(), Direction::Vertical).with_alignment(Alignment::Stretch)
+    }
+
+    /// Create a horizontal stack container with automatic sizing.
+    ///
+    /// This is a convenience constructor for the common case of a horizontal
+    /// row of items. The initial bounds are zero and will be set during layout.
+    pub fn hstack() -> Self {
+        Self::new(Rectangle::zero(), Direction::Horizontal).with_alignment(Alignment::Center)
+    }
+
+    /// Builder-style method to add a child with constraint.
+    ///
+    /// Returns self for chaining, unlike `add_child` which returns Result.
+    /// Silently ignores overflow if the container is full.
+    pub fn with_child(mut self, element: Element, constraint: SizeConstraint) -> Self {
+        let _ = self.add_child(element, constraint);
+        self
+    }
+}
+
 impl<const N: usize> Drawable for Container<N> {
     fn draw<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
         // Background/border.

@@ -78,6 +78,32 @@ impl TextComponent {
         }
     }
 
+    /// Create a text component with automatic sizing.
+    ///
+    /// The bounds will be calculated based on text content and font size.
+    /// Useful when you don't know the exact size upfront.
+    pub fn auto(text: &str, size: TextSize) -> Self {
+        let mut text_string = heapless::String::new();
+        text_string.push_str(text).ok();
+
+        let font = size.font();
+        let char_width = font.character_size.width;
+        let char_height = font.character_size.height;
+        let text_width = (text_string.len() as u32) * char_width;
+        let text_height = char_height;
+
+        let bounds = Rectangle::new(Point::zero(), Size::new(text_width, text_height));
+
+        Self {
+            bounds,
+            text: text_string,
+            size,
+            alignment: Alignment::Left,
+            style: Style::default(),
+            dirty: true,
+        }
+    }
+
     /// Set the text alignment (Left, Center, or Right).
     pub fn with_alignment(mut self, alignment: Alignment) -> Self {
         self.alignment = alignment;
