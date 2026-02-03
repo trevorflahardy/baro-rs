@@ -19,6 +19,8 @@ use crate::storage::{RawSample, Rollup, RollupTier, TimeWindow};
 use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
 use crate::ui::{Container, Direction, Drawable, Padding, Style, WHITE};
 
+use core::fmt::Write;
+
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
 
@@ -296,7 +298,6 @@ impl TrendPage {
 
         // Draw sensor name and time window
         let mut title = String::new();
-        use core::fmt::Write;
         let _ = write!(title, "{} - {}", self.sensor.name(), self.window.label());
 
         Text::with_alignment(
@@ -416,7 +417,7 @@ impl TrendPage {
         let mut temp_series = StaticDataSeries::<Point2D, MAX_DATA_POINTS>::new();
         for point in stream.current_data() {
             // TODO: Remove unwrap here, impl custom Error type - just base impl for now
-            let _ = temp_series.push(point).unwrap();
+            temp_series.push(point).unwrap();
         }
 
         self.line_chart
@@ -454,7 +455,6 @@ impl TrendPage {
         let mut min_str = String::new();
         let mut max_str = String::new();
 
-        use core::fmt::Write;
         let _ = write!(avg_str, "Avg: {:.1}{}", self.stats.avg_f32(), unit);
         let _ = write!(min_str, "Min: {:.1}{}", self.stats.min_f32(), unit);
         let _ = write!(max_str, "Max: {:.1}{}", self.stats.max_f32(), unit);
