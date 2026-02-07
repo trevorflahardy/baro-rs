@@ -118,6 +118,7 @@ pub(super) fn draw_x_axis_labels<D: DrawTarget<Color = Rgb565>>(
 
     let plot_area = viewport.plot_area();
     let data_bounds = viewport.data_bounds();
+    let data_range = data_bounds.x_range();
 
     // Calculate label positions
     let spacing = plot_area.size.width / (config.label_count.saturating_sub(1).max(1)) as u32;
@@ -134,7 +135,8 @@ pub(super) fn draw_x_axis_labels<D: DrawTarget<Color = Rgb565>>(
         let data_x = data_bounds.x_min + (data_bounds.x_max - data_bounds.x_min) * t;
 
         // Format label
-        let label_text = format_label(data_x, data_bounds.x_max, &config.label_formatter);
+        let label_text =
+            format_label(data_x, data_bounds.x_max, data_range, &config.label_formatter);
 
         // Calculate screen position
         let label_x = if i == 0 {
@@ -181,6 +183,7 @@ pub(super) fn draw_y_axis_labels<D: DrawTarget<Color = Rgb565>>(
 
     let plot_area = viewport.plot_area();
     let data_bounds = viewport.data_bounds();
+    let data_range = data_bounds.y_range();
 
     // Calculate label positions
     let spacing = plot_area.size.height / (config.label_count.saturating_sub(1).max(1)) as u32;
@@ -198,7 +201,8 @@ pub(super) fn draw_y_axis_labels<D: DrawTarget<Color = Rgb565>>(
         let data_y = data_bounds.y_min + (data_bounds.y_max - data_bounds.y_min) * (1.0 - t);
 
         // Format label
-        let label_text = format_label(data_y, data_bounds.y_max, &config.label_formatter);
+        let label_text =
+            format_label(data_y, data_bounds.y_max, data_range, &config.label_formatter);
 
         // Calculate screen position
         let label_y = if i == 0 {
@@ -226,12 +230,15 @@ pub(super) fn draw_y_axis_labels<D: DrawTarget<Color = Rgb565>>(
 fn format_label(
     value: f32,
     max_value: f32,
+    data_range: f32,
     formatter: &LabelFormatter,
 ) -> String<MAX_AXIS_LABEL_LENGTH> {
     match formatter {
         LabelFormatter::TimeOffset { now_label } => {
-            // Check if this is the "now" point (within 1% of max)
-            if (value - max_value).abs() / max_value < 0.01 {
+            let threshold = (data_range.abs() * 0.02).max(1.0);
+
+            // Check if this is the "now" point (within 2% of range or 1s)
+            if (value - max_value).abs() <= threshold {
                 let mut s = String::new();
                 let _ = core::fmt::write(&mut s, format_args!("{}", now_label));
                 s

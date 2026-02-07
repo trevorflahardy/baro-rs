@@ -295,6 +295,10 @@ impl TrendPage {
                 show_axis_line: false,
             });
 
+        let window_start = self
+            .current_timestamp
+            .saturating_sub(self.window.duration_secs());
+
         // Create data series with quality-based styling
         let mut series = DataSeries::new()
             .with_style(SeriesStyle {
@@ -306,7 +310,9 @@ impl TrendPage {
 
         // Add data points to series
         for (ts, value) in data.iter() {
-            let point = DataPoint::new(*ts as f32, *value as f32);
+            let relative_ts = ts.saturating_sub(window_start) as f32;
+            let value_f32 = TrendStats::to_float(*value);
+            let point = DataPoint::new(relative_ts, value_f32);
             let _ = series.push(point); // Ignore capacity errors
         }
 
@@ -453,9 +459,19 @@ impl Page for TrendPage {
                     | RollupEvent::Rollup1h(rollup)
                     | RollupEvent::RollupDaily(rollup) => {
                         self.data_buffer.push_from_rollup(rollup);
-                        // Use rollup end time (start_ts + window duration) for better accuracy
-                        // This ensures we're always looking at "now" not "5 minutes ago"
-                        rollup.start_ts
+                        // Use rollup end time for better accuracy so "now" advances as expected.
+                        match rollup_event.as_ref() {
+                            RollupEvent::Rollup5m(_) => {
+                                rollup.start_ts + TimeWindow::FiveMinutes.duration_secs()
+                            }
+                            RollupEvent::Rollup1h(_) => {
+                                rollup.start_ts + TimeWindow::OneHour.duration_secs()
+                            }
+                            RollupEvent::RollupDaily(_) => {
+                                rollup.start_ts + TimeWindow::OneDay.duration_secs()
+                            }
+                            RollupEvent::RawSample(_) => rollup.start_ts,
+                        }
                     }
                 };
 
