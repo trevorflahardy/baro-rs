@@ -120,7 +120,7 @@ use crate::ui::*;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 
-fn create_button_row(bounds: Rectangle) -> Container<3> {
+fn create_button_row(bounds: Rectangle) -> Result<Container<3>, &'static str> {
     Container::<3>::new(bounds, Direction::Horizontal)
         .with_alignment(Alignment::Center)
         .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
@@ -128,11 +128,11 @@ fn create_button_row(bounds: Rectangle) -> Container<3> {
         .with_child(
             Element::button_auto("Back", Action::GoBack),
             SizeConstraint::Fit
-        )
+        )?
         .with_child(
             Element::button_auto("Home", Action::NavigateToPage(PageId::Home)),
             SizeConstraint::Fit
-        )
+        )?
         .with_child(
             Element::button_auto("Next", Action::Custom(1)),
             SizeConstraint::Fit

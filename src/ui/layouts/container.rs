@@ -486,11 +486,21 @@ impl<const N: usize> Container<N> {
 
     /// Builder-style method to add a child with constraint.
     ///
-    /// Returns self for chaining, unlike `add_child` which returns Result.
-    /// Silently ignores overflow if the container is full.
-    pub fn with_child(mut self, element: Element, constraint: SizeConstraint) -> Self {
-        let _ = self.add_child(element, constraint);
-        self
+    /// Returns `Result<Self, &'static str>` for chaining. Unlike the silent
+    /// behavior of ignoring overflow, this forces callers to explicitly handle
+    /// the case where the container is full, making layout bugs more visible.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err("Container full")` if the container has reached its
+    /// compile-time capacity `N`.
+    pub fn with_child(
+        mut self,
+        element: Element,
+        constraint: SizeConstraint,
+    ) -> Result<Self, &'static str> {
+        self.add_child(element, constraint)?;
+        Ok(self)
     }
 }
 
