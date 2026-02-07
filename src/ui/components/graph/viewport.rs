@@ -189,15 +189,26 @@ impl Viewport {
 
         // Convert to screen coordinates
         // Note: y-axis is inverted (screen Y increases downward)
-        let screen_x = plot_area.top_left.x + (x_norm * plot_area.size.width as f32) as i32;
-        let screen_y =
-            plot_area.top_left.y + ((1.0 - y_norm) * plot_area.size.height as f32) as i32;
+        let width = plot_area.size.width as i32;
+        let height = plot_area.size.height as i32;
 
-        // Bounds check
+        // Avoid mapping into an empty plot area
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+
+        // Use (width - 1, height - 1) so that normalized 1.0 maps to the last
+        // valid pixel inside the rectangle, not the exclusive right/bottom edge.
+        let screen_x =
+            plot_area.top_left.x + (x_norm * (width - 1) as f32) as i32;
+        let screen_y =
+            plot_area.top_left.y + ((1.0 - y_norm) * (height - 1) as f32) as i32;
+
+        // Bounds check (right/bottom edges are exclusive)
         if screen_x < plot_area.top_left.x
-            || screen_x > plot_area.top_left.x + plot_area.size.width as i32
+            || screen_x >= plot_area.top_left.x + width
             || screen_y < plot_area.top_left.y
-            || screen_y > plot_area.top_left.y + plot_area.size.height as i32
+            || screen_y >= plot_area.top_left.y + height
         {
             return None;
         }
