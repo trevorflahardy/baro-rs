@@ -326,23 +326,23 @@ fn catmull_rom_point(
     let t2 = t * t;
     let t3 = t2 * t;
 
-    // Catmull-Rom basis matrix coefficients
-    // Adjusted by tension parameter for curve tightness control
-    let _tau = tension.clamp(0.0, 1.0);
+    // Clamp tension and use it to scale tangents: higher tension -> tighter curve
+    let tau = tension.clamp(0.0, 1.0);
+    let tangent_scale = (1.0 - tau) * 0.5;
 
-    // Standard Catmull-Rom formula (tension = 0.5)
-    // Can be adjusted with _tau if needed for custom tension control
-    let x = 0.5
-        * (2.0 * p1.x
-            + (-p0.x + p2.x) * t
-            + (2.0 * p0.x - 5.0 * p1.x + 4.0 * p2.x - p3.x) * t2
-            + (-p0.x + 3.0 * p1.x - 3.0 * p2.x + p3.x) * t3);
+    // Tangents at p1 and p2 (Cardinal spline / Catmull-Rom when tension = 0.0)
+    let m1x = tangent_scale * (p2.x - p0.x);
+    let m1y = tangent_scale * (p2.y - p0.y);
+    let m2x = tangent_scale * (p3.x - p1.x);
+    let m2y = tangent_scale * (p3.y - p1.y);
 
-    let y = 0.5
-        * (2.0 * p1.y
-            + (-p0.y + p2.y) * t
-            + (2.0 * p0.y - 5.0 * p1.y + 4.0 * p2.y - p3.y) * t2
-            + (-p0.y + 3.0 * p1.y - 3.0 * p2.y + p3.y) * t3);
+    // Cubic Hermite basis functions
+    let h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
+    let h10 = t3 - 2.0 * t2 + t;
+    let h01 = -2.0 * t3 + 3.0 * t2;
+    let h11 = t3 - t2;
 
+    let x = h00 * p1.x + h10 * m1x + h01 * p2.x + h11 * m2x;
+    let y = h00 * p1.y + h10 * m1y + h01 * p2.y + h11 * m2y;
     DataPoint { x, y }
 }
