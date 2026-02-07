@@ -303,7 +303,7 @@ impl TrendPage {
         let mut series = DataSeries::new()
             .with_style(SeriesStyle {
                 color: self.current_quality.foreground_color(),
-                line_width: 2,
+                line_width: 3,
                 show_points: false,
             })
             .with_interpolation(InterpolationType::Smooth { tension: 0.5 });
@@ -318,6 +318,10 @@ impl TrendPage {
 
         // Add series to graph
         if self.graph.add_series(series).is_ok() {
+            let _ = self
+                .graph
+                .set_x_bounds(0.0, self.window.duration_secs() as f32);
+
             // Set current value display if we have data
             if let Some((_, current_value)) = self.data_buffer.points.back() {
                 let value_f32 = TrendStats::to_float(*current_value);

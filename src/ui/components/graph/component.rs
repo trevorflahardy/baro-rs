@@ -161,6 +161,20 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
         self.dirty = true;
     }
 
+    /// Override the X-axis bounds without changing Y-axis auto-scaling.
+    pub fn set_x_bounds(&mut self, x_min: f32, x_max: f32) -> GraphResult<()> {
+        if x_min >= x_max {
+            return Err(GraphError::InvalidDataBounds);
+        }
+
+        let mut bounds = *self.viewport.data_bounds();
+        bounds.x_min = x_min;
+        bounds.x_max = x_max;
+        self.viewport.set_data_bounds(bounds);
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Clear current value display
     pub fn clear_current_value(&mut self) {
         self.current_value_display = None;
