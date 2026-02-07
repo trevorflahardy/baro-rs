@@ -199,10 +199,8 @@ impl Viewport {
 
         // Use (width - 1, height - 1) so that normalized 1.0 maps to the last
         // valid pixel inside the rectangle, not the exclusive right/bottom edge.
-        let screen_x =
-            plot_area.top_left.x + (x_norm * (width - 1) as f32) as i32;
-        let screen_y =
-            plot_area.top_left.y + ((1.0 - y_norm) * (height - 1) as f32) as i32;
+        let screen_x = plot_area.top_left.x + (x_norm * (width - 1) as f32) as i32;
+        let screen_y = plot_area.top_left.y + ((1.0 - y_norm) * (height - 1) as f32) as i32;
 
         // Bounds check (right/bottom edges are exclusive)
         if screen_x < plot_area.top_left.x
