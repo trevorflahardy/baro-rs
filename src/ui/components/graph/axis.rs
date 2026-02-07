@@ -135,8 +135,12 @@ pub(super) fn draw_x_axis_labels<D: DrawTarget<Color = Rgb565>>(
         let data_x = data_bounds.x_min + (data_bounds.x_max - data_bounds.x_min) * t;
 
         // Format label
-        let label_text =
-            format_label(data_x, data_bounds.x_max, data_range, &config.label_formatter);
+        let label_text = format_label(
+            data_x,
+            data_bounds.x_max,
+            data_range,
+            &config.label_formatter,
+        );
 
         // Calculate screen position
         let label_x = if i == 0 {
@@ -201,8 +205,12 @@ pub(super) fn draw_y_axis_labels<D: DrawTarget<Color = Rgb565>>(
         let data_y = data_bounds.y_min + (data_bounds.y_max - data_bounds.y_min) * (1.0 - t);
 
         // Format label
-        let label_text =
-            format_label(data_y, data_bounds.y_max, data_range, &config.label_formatter);
+        let label_text = format_label(
+            data_y,
+            data_bounds.y_max,
+            data_range,
+            &config.label_formatter,
+        );
 
         // Calculate screen position
         let label_y = if i == 0 {
