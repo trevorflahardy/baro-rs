@@ -17,6 +17,7 @@ jobs:
   rust-checks:
     name: Rust Checks
     runs-on: ubuntu-latest
+    environment: "Actions Secrets"
     strategy:
       fail-fast: false
       matrix:
@@ -39,4 +40,7 @@ jobs:
       - name: Enable caching
         uses: Swatinem/rust-cache@v2
       - name: Run command
+        env:
+          WIFI_SSID: ${{ vars.WIFI_SSID }}
+          WIFI_PASSWORD: ${{ vars.WIFI_PASSWORD }}
         run: cargo ${{ matrix.action.command }} ${{ matrix.action.args }}
