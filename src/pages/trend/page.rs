@@ -282,7 +282,7 @@ impl TrendPage {
             .with_grid(GridConfig {
                 vertical_lines: None,
                 horizontal_lines: Some(HorizontalGridLines {
-                    count: 5,
+                    count: 3,
                     color: FAINT_GRAY,
                     width: 1,
                     style: LineStyle::Solid,
