@@ -362,7 +362,6 @@ async fn setup_network_stack(
 /// # Returns
 /// Optional Unix timestamp if sync was successful
 #[allow(clippy::large_stack_frames)]
-#[allow(clippy::large_stack_frames)]
 async fn sync_time(stack: &embassy_net::Stack<'static>) -> Option<u32> {
     info!("Performing time sync...");
     match udp_time_sync(stack).await {
