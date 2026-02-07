@@ -16,7 +16,7 @@ use esp_hal::{
     time::Rate,
 };
 use ft6336u_driver::FT6336U;
-use log::info;
+use log::{error, info, warn};
 use mipidsi::{
     Builder as MipidsiBuilder,
     interface::SpiInterface,
@@ -25,6 +25,35 @@ use mipidsi::{
 };
 use static_cell::StaticCell;
 use tca9548a_embedded::r#async::Tca9548aAsync;
+use thiserror_no_std::Error;
+
+/// Hardware initialization error type
+///
+/// Represents failures during hardware peripheral setup. Used primarily
+/// for documentation and future Result-returning init functions.
+#[derive(Debug, Error)]
+pub enum HardwareError {
+    #[error("Power management (AXP2101) failed: {operation}")]
+    PowerManagement { operation: &'static str },
+
+    #[error("GPIO expander (AW9523) failed: {operation}")]
+    GpioExpander { operation: &'static str },
+
+    #[error("Touch controller (FT6336U) failed: {operation}")]
+    TouchController { operation: &'static str },
+
+    #[error("I2C bus creation failed")]
+    I2cBus,
+
+    #[error("SPI bus creation failed")]
+    SpiBus,
+
+    #[error("SPI device creation failed: {device}")]
+    SpiDevice { device: &'static str },
+
+    #[error("Display initialization failed")]
+    DisplayInit,
+}
 
 use crate::async_i2c_bus::AsyncI2cDevice;
 use crate::dual_mode_pin::{
@@ -127,34 +156,58 @@ pub async fn init_i2c_hardware(
         Err(e) => info!("Power init failed: {:?}", e),
     }
 
-    power_mgmt_chip
+    if let Err(e) = power_mgmt_chip
         .set_charging_led_mode(axp2101_embedded::ChargeLedMode::On)
         .await
-        .unwrap();
+    {
+        warn!("Failed to set charging LED mode: {:?}", e);
+    }
 
-    // Enable all LDOs
-    power_mgmt_chip.enable_aldo1().await.unwrap();
-    power_mgmt_chip.enable_aldo2().await.unwrap();
-    power_mgmt_chip.enable_aldo3().await.unwrap();
-    power_mgmt_chip.enable_aldo4().await.unwrap();
-    power_mgmt_chip.enable_bldo1().await.unwrap();
-    power_mgmt_chip.enable_bldo2().await.unwrap();
-    power_mgmt_chip.enable_dldo1().await.unwrap();
+    // Enable all LDOs - log failures but continue since partial power may still work
+    if let Err(e) = power_mgmt_chip.enable_aldo1().await {
+        error!("Failed to enable ALDO1: {:?}", e);
+    }
+    if let Err(e) = power_mgmt_chip.enable_aldo2().await {
+        error!("Failed to enable ALDO2: {:?}", e);
+    }
+    if let Err(e) = power_mgmt_chip.enable_aldo3().await {
+        error!("Failed to enable ALDO3: {:?}", e);
+    }
+    if let Err(e) = power_mgmt_chip.enable_aldo4().await {
+        error!("Failed to enable ALDO4: {:?}", e);
+    }
+    if let Err(e) = power_mgmt_chip.enable_bldo1().await {
+        error!("Failed to enable BLDO1: {:?}", e);
+    }
+    if let Err(e) = power_mgmt_chip.enable_bldo2().await {
+        error!("Failed to enable BLDO2: {:?}", e);
+    }
+    if let Err(e) = power_mgmt_chip.enable_dldo1().await {
+        error!("Failed to enable DLDO1: {:?}", e);
+    }
 
     // Set ALDO4 voltage to 3.3V for display
-    power_mgmt_chip.set_aldo4_voltage(3300).await.unwrap();
+    if let Err(e) = power_mgmt_chip.set_aldo4_voltage(3300).await {
+        error!("Failed to set ALDO4 voltage to 3.3V: {:?}", e);
+    }
 
     // Initialize GPIO expander
     info!("Configuring GPIO expander...");
     let mut gpio_expander = aw9523_embedded::r#async::Aw9523Async::new(i2c_for_aw, 0x58);
-    gpio_expander.init().await.unwrap();
+    if let Err(e) = gpio_expander.init().await {
+        warn!("GPIO expander init failed: {:?}", e);
+    }
 
     // Configure P1_2 (pin 10) as input for touch interrupt
-    gpio_expander
+    if let Err(e) = gpio_expander
         .pin_mode(10, aw9523_embedded::PinMode::Input)
         .await
-        .unwrap();
-    gpio_expander.enable_interrupt(10, true).await.unwrap();
+    {
+        warn!("GPIO expander pin_mode config failed: {:?}", e);
+    }
+    if let Err(e) = gpio_expander.enable_interrupt(10, true).await {
+        warn!("GPIO expander enable_interrupt failed: {:?}", e);
+    }
 
     info!("GPIO expander ready (P1_2 configured for touch interrupt)");
 
@@ -162,15 +215,17 @@ pub async fn init_i2c_hardware(
     info!("Configuring touch controller...");
     let mut touch_interface = FT6336U::new(i2c_for_touch);
     let library_version = touch_interface.read_library_version().await.unwrap_or(0);
-    let chip_id = touch_interface.read_chip_id().await.unwrap();
+    let chip_id = touch_interface.read_chip_id().await.unwrap_or(0);
 
     // Configure touch controller in Polling mode (INT stays LOW while touched)
     // This is better than Trigger mode for continuous touch detection
-    touch_interface
+    if let Err(e) = touch_interface
         .write_g_mode(ft6336u_driver::GestureMode::Polling)
         .await
-        .unwrap();
-    let g_mode = touch_interface.read_g_mode().await.unwrap();
+    {
+        warn!("Touch controller write_g_mode failed: {:?}", e);
+    }
+    let g_mode = touch_interface.read_g_mode().await.unwrap_or(0);
 
     info!(
         "Touch controller ready (library: 0x{:04X}, chip: 0x{:02X}, mode: 0x{:02X})",

@@ -6,6 +6,19 @@ pub mod manager;
 
 pub use rollup_storage::*;
 
+use sd_card::SdCardManagerError;
+use thiserror_no_std::Error;
+
+/// Storage subsystem error type
+///
+/// Wraps lower-level SD card errors to provide a single error type
+/// for the storage manager and its callers.
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("SD card error: {0}")]
+    SdCard(#[from] SdCardManagerError),
+}
+
 /// Maximum number of sensor values stored per sample
 pub const MAX_SENSORS: usize = 20;
 

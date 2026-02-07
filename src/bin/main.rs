@@ -11,7 +11,7 @@
 
 use alloc::boxed::Box;
 use baro_rs::app_state::{
-    AppError, AppRunState, AppState, FromUnchecked, GlobalStateType, ROLLUP_CHANNEL, SensorsState,
+    AppError, AppRunState, AppState, GlobalStateType, ROLLUP_CHANNEL, SensorsState, TimeSyncError,
     create_i2c_bus, init_i2c_hardware, init_spi_peripherals,
 };
 use baro_rs::display_manager::{
@@ -19,6 +19,7 @@ use baro_rs::display_manager::{
 };
 use baro_rs::storage::{MAX_SENSORS, manager::StorageManager, sd_card::SdCardManager};
 use baro_rs::ui::core::PageId;
+use baro_rs::ui::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX};
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{Config as EmbassyNetConfig, IpListenEndpoint, Runner, StackResources};
@@ -29,7 +30,6 @@ use embassy_time::{Duration, Timer};
 use esp_hal::{clock::CpuClock, gpio::Output, spi::master::Spi, timer::timg::TimerGroup};
 use esp_radio::Controller;
 use esp_radio::wifi::{ClientConfig, WifiController, WifiDevice};
-use heapless::String;
 use static_cell::StaticCell;
 
 use log::{debug, error, info};
@@ -87,9 +87,6 @@ type DisplayType = mipidsi::Display<DisplayInterface<'static>, ILI9342CRgb565, O
 static NET_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
 static WIFI_CONTROLLER: StaticCell<WifiController<'static>> = StaticCell::new();
 static RADIO_INIT: StaticCell<Controller<'static>> = StaticCell::new();
-
-const DISPLAY_WIDTH: u16 = 320;
-const DISPLAY_HEIGHT: u16 = 240;
 
 // Static dual-mode pin for GPIO35 (shared between SD card MISO and display DC)
 static GPIO35_PIN: DualModePin<35> = DualModePin::new();
@@ -205,9 +202,7 @@ async fn udp_time_sync(stack: &embassy_net::Stack<'static>) -> Result<u32, AppEr
         }
     }
 
-    Err(AppError::TimeSync(String::from_unchecked(
-        "All NTP servers failed",
-    )))
+    Err(TimeSyncError::AllServersFailed.into())
 }
 
 /// Simple time source for embedded-sdmmc that uses actual Unix time
@@ -298,9 +293,14 @@ async fn setup_wifi(
         .with_ssid(wifi_secrets::WIFI_SSID.into())
         .with_password(wifi_secrets::WIFI_PASSWORD.into());
 
-    wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config))
-        .unwrap();
-    wifi.start_async().await.unwrap();
+    if let Err(e) = wifi.set_config(&esp_radio::wifi::ModeConfig::Client(client_config)) {
+        error!("WiFi configuration failed: {:?}", e);
+        return (interfaces, false);
+    }
+    if let Err(e) = wifi.start_async().await {
+        error!("WiFi start failed: {:?}", e);
+        return (interfaces, false);
+    }
 
     let wifi_result = wifi.connect_async().await;
     let wifi_connected = wifi_result.is_ok();
@@ -489,8 +489,8 @@ async fn main(spawner: Spawner) -> ! {
             peripherals.GPIO36, // spi_sck_pin
             peripherals.GPIO37, // spi_mosi_pin
             peripherals.GPIO35, // spi_miso_pin
-            DISPLAY_WIDTH,
-            DISPLAY_HEIGHT,
+            DISPLAY_WIDTH_PX,
+            DISPLAY_HEIGHT_PX,
         );
 
         (i2c_hardware, i2c_for_sensors, spi_hardware)
@@ -531,23 +531,31 @@ async fn main(spawner: Spawner) -> ! {
     // === Spawn Background Tasks ===
 
     // Start touch polling task
-    spawner.spawn(touch_polling_task(touch_interface)).ok();
+    if spawner.spawn(touch_polling_task(touch_interface)).is_err() {
+        error!("Failed to spawn touch polling task");
+    }
 
     // Start display manager task
     #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
     {
         let display_manager = DisplayManager::new(display);
-        spawner
+        if spawner
             .spawn(display_manager_task(display_manager, app_state_ref))
-            .ok();
+            .is_err()
+        {
+            error!("Failed to spawn display manager task");
+        }
     }
 
     #[cfg(not(any(feature = "sensor-sht40", feature = "sensor-scd41")))]
     {
         let display_manager = DisplayManager::new(display);
-        spawner
+        if spawner
             .spawn(display_manager_task(display_manager, _app_state_ref))
-            .ok();
+            .is_err()
+        {
+            error!("Failed to spawn display manager task");
+        }
     }
 
     // Navigate to appropriate page based on WiFi status
@@ -567,18 +575,24 @@ async fn main(spawner: Spawner) -> ! {
         // Create sensors state
         let sensors = { SensorsState::new(i2c_mux) };
 
-        spawner
+        if spawner
             .spawn(background_sensor_reading_task(
                 sensors,
                 app_state_ref,
                 initial_time,
             ))
-            .ok();
+            .is_err()
+        {
+            error!("Failed to spawn sensor reading task");
+        }
 
         // Start storage event processing task
-        spawner
+        if spawner
             .spawn(storage_event_processing_task(app_state_ref))
-            .ok();
+            .is_err()
+        {
+            error!("Failed to spawn storage event processing task");
+        }
 
         info!("Sensor and storage tasks started");
     } else {
@@ -674,8 +688,10 @@ async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateTy
         // Process through storage manager
         {
             let mut state = app_state.lock().await;
-            if let Some(storage) = state.storage_manager_mut() {
-                storage.process_event(event).await;
+            if let Some(storage) = state.storage_manager_mut()
+                && let Err(e) = storage.process_event(event).await
+            {
+                error!("Storage write failed: {:?}", e);
             }
         }
 

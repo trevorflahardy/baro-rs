@@ -210,3 +210,29 @@ impl Padding {
         self.top + self.bottom
     }
 }
+
+// ============================================================================
+// Display Dimensions
+// ============================================================================
+
+/// Physical display width in pixels (M5Stack CoreS3 SE ILI9342C)
+pub const DISPLAY_WIDTH_PX: u16 = 320;
+
+/// Physical display height in pixels (M5Stack CoreS3 SE ILI9342C)
+pub const DISPLAY_HEIGHT_PX: u16 = 240;
+
+// ============================================================================
+// Font Metrics
+// ============================================================================
+
+/// Character width for FONT_6X10 in pixels
+pub const FONT_6X10_CHAR_WIDTH_PX: u32 = 6;
+
+/// Character height for FONT_6X10 in pixels
+pub const FONT_6X10_CHAR_HEIGHT_PX: u32 = 10;
+
+/// Line height for FONT_6X10 including 2px inter-line spacing
+pub const FONT_6X10_LINE_HEIGHT_PX: u32 = 12;
+
+/// Character height for FONT_10X20 in pixels
+pub const FONT_10X20_CHAR_HEIGHT_PX: u32 = 20;

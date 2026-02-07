@@ -1,10 +1,8 @@
 // cSpell: disable
-use crate::storage::sd_card::{
-    ROLLUP_FILE_1H, ROLLUP_FILE_5M, ROLLUP_FILE_DAILY, SdCardManager, SdCardManagerError,
-};
+use crate::storage::sd_card::{ROLLUP_FILE_1H, ROLLUP_FILE_5M, ROLLUP_FILE_DAILY, SdCardManager};
 
-use super::{LifetimeStats, RawSample, Rollup, accumulator::RollupEvent};
-use log::{debug, error, info};
+use super::{LifetimeStats, RawSample, Rollup, StorageError, accumulator::RollupEvent};
+use log::{debug, info};
 
 extern crate alloc;
 use alloc::collections::VecDeque;
@@ -65,97 +63,58 @@ where
         }
     }
 
-    pub async fn init(&mut self, time: u32) -> Result<(), SdCardManagerError> {
+    pub async fn init(&mut self, time: u32) -> Result<(), StorageError> {
         info!(" Initializing storage manager, loading data from SD card...");
 
         let lifetime_data_buffer = &mut [0u8; core::mem::size_of::<LifetimeStats>()];
-        let lifetime_data = match self
-            .sd_card_manager
-            .read_lifetime_data(lifetime_data_buffer)
-        {
-            Ok(_) => Ok(LifetimeStats::from(lifetime_data_buffer)),
-            Err(e) => {
-                error!(" Failed to load lifetime stats from SD card: {:?}", e);
-                Err(e)
-            }
-        }?;
-
-        self.lifetime_stats = lifetime_data;
-
-        // Calculate time window - load the max capacity worth of data
-        // For each rollup type, we want to load the last N entries where N is the capacity
+        self.sd_card_manager
+            .read_lifetime_data(lifetime_data_buffer)?;
+        self.lifetime_stats = LifetimeStats::from(lifetime_data_buffer);
 
         // Load 5-minute rollups (last 7 days)
         let window_5m = (time.saturating_sub(7 * 24 * 60 * 60), time);
         let mut buffer_5m = alloc::vec![Rollup::default(); ROLLUPS_5M_CAPACITY];
-        match self
+        let count_5m = self
             .sd_card_manager
-            .read_rollup_data(ROLLUP_FILE_5M, &mut buffer_5m, window_5m)
-        {
-            Ok(count) => {
-                info!(" Loaded {} 5-minute rollups from SD card", count);
-                for rollup in &buffer_5m[..count] {
-                    self.rollups_5m.push_back(*rollup);
-                }
-
-                Ok(())
-            }
-            Err(e) => {
-                error!(" Failed to load 5-minute rollups: {:?}", e);
-                Err(e)
-            }
-        }?;
+            .read_rollup_data(ROLLUP_FILE_5M, &mut buffer_5m, window_5m)?;
+        info!(" Loaded {} 5-minute rollups from SD card", count_5m);
+        for rollup in &buffer_5m[..count_5m] {
+            self.rollups_5m.push_back(*rollup);
+        }
 
         // Load hourly rollups (last 30 days)
         let window_1h = (time.saturating_sub(30 * 24 * 60 * 60), time);
         let mut buffer_1h = alloc::vec![Rollup::default(); ROLLUPS_1H_CAPACITY];
-        match self
+        let count_1h = self
             .sd_card_manager
-            .read_rollup_data(ROLLUP_FILE_1H, &mut buffer_1h, window_1h)
-        {
-            Ok(count) => {
-                info!(" Loaded {} hourly rollups from SD card", count);
-                for rollup in &buffer_1h[..count] {
-                    self.rollups_1h.push_back(*rollup);
-                }
-
-                Ok(())
-            }
-            Err(e) => {
-                error!(" Failed to load hourly rollups: {:?}", e);
-                Err(e)
-            }
-        }?;
+            .read_rollup_data(ROLLUP_FILE_1H, &mut buffer_1h, window_1h)?;
+        info!(" Loaded {} hourly rollups from SD card", count_1h);
+        for rollup in &buffer_1h[..count_1h] {
+            self.rollups_1h.push_back(*rollup);
+        }
 
         // Load daily rollups (last 365 days)
         let window_daily = (time.saturating_sub(365 * 24 * 60 * 60), time);
         let mut buffer_daily = alloc::vec![Rollup::default(); ROLLUPS_DAILY_CAPACITY];
-        match self.sd_card_manager.read_rollup_data(
+        let count_daily = self.sd_card_manager.read_rollup_data(
             ROLLUP_FILE_DAILY,
             &mut buffer_daily,
             window_daily,
-        ) {
-            Ok(count) => {
-                info!(" Loaded {} daily rollups from SD card", count);
-                for rollup in &buffer_daily[..count] {
-                    self.rollups_daily.push_back(*rollup);
-                }
-
-                Ok(())
-            }
-            Err(e) => {
-                error!(" Failed to load daily rollups: {:?}", e);
-
-                Err(e)
-            }
-        }?;
+        )?;
+        info!(" Loaded {} daily rollups from SD card", count_daily);
+        for rollup in &buffer_daily[..count_daily] {
+            self.rollups_daily.push_back(*rollup);
+        }
 
         info!(" Storage manager initialization complete");
         Ok(())
     }
 
     /// Process a rollup event (store in RAM and write to SD card)
-    pub async fn process_event(&mut self, event: RollupEvent) {
+    ///
+    /// RAM storage always succeeds. Returns `Err` only if an SD card write fails.
+    /// The caller should log the error and continue — RAM data remains valid.
+    pub async fn process_event(&mut self, event: RollupEvent) -> Result<(), StorageError> {
         match event {
             RollupEvent::RawSample(sample) => {
                 // Add to ring buffer (oldest is automatically dropped when full)
@@ -167,6 +126,7 @@ where
                 // Update lifetime stats
                 self.lifetime_stats.update(&sample);
                 debug!(" Recalculated lifetime stats: {:?}", self.lifetime_stats);
+                Ok(())
             }
             RollupEvent::Rollup5m(rollup) => {
                 if self.rollups_5m.len() >= ROLLUPS_5M_CAPACITY {
@@ -175,24 +135,15 @@ where
                 self.rollups_5m.push_back(rollup);
 
                 // Append to rollup_5m.bin on SD card
-                if let Err(e) = self
-                    .sd_card_manager
-                    .append_rollup_data(ROLLUP_FILE_5M, &rollup)
-                {
-                    error!(" Failed to write 5m rollup to SD: {:?}", e);
-                } else {
-                    info!(" Updating rollup file 5m.");
-                }
+                self.sd_card_manager
+                    .append_rollup_data(ROLLUP_FILE_5M, &rollup)?;
+                info!(" Updating rollup file 5m.");
 
                 // Rewrite the lifetime stats as well
-                if let Err(e) = self
-                    .sd_card_manager
-                    .overwrite_lifetime_data(self.lifetime_stats.as_ref())
-                {
-                    error!(" Failed to write lifetime stats to SD: {:?}", e);
-                } else {
-                    info!(" Updated lifetime stats on SD card.");
-                }
+                self.sd_card_manager
+                    .overwrite_lifetime_data(self.lifetime_stats.as_ref())?;
+                info!(" Updated lifetime stats on SD card.");
+                Ok(())
             }
             RollupEvent::Rollup1h(rollup) => {
                 if self.rollups_1h.len() >= ROLLUPS_1H_CAPACITY {
@@ -201,14 +152,10 @@ where
                 self.rollups_1h.push_back(rollup);
 
                 // Append to rollup_1h.bin on SD card
-                if let Err(e) = self
-                    .sd_card_manager
-                    .append_rollup_data(ROLLUP_FILE_1H, &rollup)
-                {
-                    error!(" Failed to write 1h rollup to SD: {:?}", e);
-                } else {
-                    info!(" Updating rollup file 1h.");
-                }
+                self.sd_card_manager
+                    .append_rollup_data(ROLLUP_FILE_1H, &rollup)?;
+                info!(" Updating rollup file 1h.");
+                Ok(())
             }
             RollupEvent::RollupDaily(rollup) => {
                 if self.rollups_daily.len() >= ROLLUPS_DAILY_CAPACITY {
@@ -217,14 +164,10 @@ where
                 self.rollups_daily.push_back(rollup);
 
                 // Append to rollup_daily.bin on SD card
-                if let Err(e) = self
-                    .sd_card_manager
-                    .append_rollup_data(ROLLUP_FILE_DAILY, &rollup)
-                {
-                    error!(" Failed to write daily rollup to SD: {:?}", e);
-                } else {
-                    info!(" Updating rollup file 24h.");
-                }
+                self.sd_card_manager
+                    .append_rollup_data(ROLLUP_FILE_DAILY, &rollup)?;
+                info!(" Updating rollup file 24h.");
+                Ok(())
             }
         }
     }

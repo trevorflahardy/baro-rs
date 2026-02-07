@@ -27,8 +27,16 @@ use core::fmt::Write;
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
 
+use crate::ui::{FONT_6X10_CHAR_HEIGHT_PX, FONT_6X10_CHAR_WIDTH_PX};
+
 use super::constants::{
-    COLOR_FOREGROUND, FAINT_GRAY, GRADIENT_FILL_OPACITY, LIGHT_GRAY, MAX_DATA_POINTS,
+    COLOR_FOREGROUND, CURRENT_VALUE_OFFSET_X_PX, CURRENT_VALUE_OFFSET_Y_PX, FAINT_GRAY,
+    GRADIENT_FILL_HEIGHT_PX, GRADIENT_FILL_OPACITY, HEADER_HEIGHT_PX,
+    HEADER_TITLE_PADDING_LEFT_PX, LIGHT_GRAY, MAX_DATA_POINTS, QUALITY_INDICATOR_BORDER_WIDTH_PX,
+    QUALITY_INDICATOR_CORNER_RADIUS_PX, QUALITY_INDICATOR_HEIGHT_PX,
+    QUALITY_INDICATOR_MARGIN_RIGHT_PX, QUALITY_INDICATOR_PADDING_HORIZONTAL_PX,
+    QUALITY_INDICATOR_PADDING_VERTICAL_PX, QUALITY_INDICATOR_TEXT_PADDING_PX,
+    SERIES_LINE_WIDTH_PX, STATS_HEIGHT_PX,
 };
 use super::data::TrendDataBuffer;
 use super::stats::TrendStats;
@@ -61,28 +69,25 @@ pub struct TrendPage {
 impl TrendPage {
     /// Create a new trend page for a specific sensor and time window
     pub fn new(bounds: Rectangle, sensor: SensorType, window: TimeWindow) -> Self {
-        const HEADER_HEIGHT: u32 = 40;
-        const STATS_HEIGHT: u32 = 55;
-
         let graph_height = bounds
             .size
             .height
-            .saturating_sub(HEADER_HEIGHT + STATS_HEIGHT);
+            .saturating_sub(HEADER_HEIGHT_PX + STATS_HEIGHT_PX);
 
         let header_bounds =
-            Rectangle::new(bounds.top_left, Size::new(bounds.size.width, HEADER_HEIGHT));
+            Rectangle::new(bounds.top_left, Size::new(bounds.size.width, HEADER_HEIGHT_PX));
 
         let graph_bounds = Rectangle::new(
-            Point::new(bounds.top_left.x, bounds.top_left.y + HEADER_HEIGHT as i32),
+            Point::new(bounds.top_left.x, bounds.top_left.y + HEADER_HEIGHT_PX as i32),
             Size::new(bounds.size.width, graph_height),
         );
 
         let stats_bounds = Rectangle::new(
             Point::new(
                 bounds.top_left.x,
-                bounds.top_left.y + (HEADER_HEIGHT + graph_height) as i32,
+                bounds.top_left.y + (HEADER_HEIGHT_PX + graph_height) as i32,
             ),
-            Size::new(bounds.size.width, STATS_HEIGHT),
+            Size::new(bounds.size.width, STATS_HEIGHT_PX),
         );
 
         // Create graph with default configuration matching image design
@@ -171,11 +176,15 @@ impl TrendPage {
         let mut title = String::new();
         let _ = write!(title, "{} - {}", self.sensor.name(), self.window.label());
 
+        // Center text vertically in header
+        let title_y = self.header_bounds.top_left.y
+            + (HEADER_HEIGHT_PX as i32 - FONT_6X10_CHAR_HEIGHT_PX as i32) / 2;
+
         Text::with_alignment(
             &title,
             Point::new(
-                self.header_bounds.top_left.x + 5,
-                self.header_bounds.top_left.y + 15,
+                self.header_bounds.top_left.x + HEADER_TITLE_PADDING_LEFT_PX,
+                title_y,
             ),
             text_style,
             Alignment::Left,
@@ -184,34 +193,45 @@ impl TrendPage {
 
         // Draw quality indicator on the right - round pill-shaped with two-tone color
         let quality_text = self.current_quality.label();
-        let text_width = quality_text.len() as u32 * 6; // FONT_6X10 is ~6px wide per char
-        let indicator_width = text_width + 20; // Tighter padding
-        let indicator_height = 20;
+        let text_width = quality_text.len() as u32 * FONT_6X10_CHAR_WIDTH_PX;
+        let indicator_width = text_width + QUALITY_INDICATOR_TEXT_PADDING_PX;
+
+        // Center indicator vertically in header
+        let indicator_y = self.header_bounds.top_left.y
+            + (HEADER_HEIGHT_PX as i32 - QUALITY_INDICATOR_HEIGHT_PX as i32) / 2;
 
         let quality_bounds = Rectangle::new(
             Point::new(
                 self.header_bounds.top_left.x + self.header_bounds.size.width as i32
                     - indicator_width as i32
-                    - 5,
-                self.header_bounds.top_left.y + 10,
+                    - QUALITY_INDICATOR_MARGIN_RIGHT_PX,
+                indicator_y,
             ),
-            Size::new(indicator_width, indicator_height),
+            Size::new(indicator_width, QUALITY_INDICATOR_HEIGHT_PX),
         );
 
         // Use two-tone color scheme: darker background, brighter foreground border
         let quality_style = Style::new()
             .with_background(self.current_quality.background_color())
             .with_foreground(WHITE)
-            .with_border(self.current_quality.foreground_color(), 2);
+            .with_border(
+                self.current_quality.foreground_color(),
+                QUALITY_INDICATOR_BORDER_WIDTH_PX,
+            );
 
         let mut container = Container::<1>::new(quality_bounds, Direction::Horizontal)
             .with_style(quality_style)
-            .with_corner_radius(10) // More rounded
-            .with_padding(Padding::symmetric(2, 4)) // Tighter padding
+            .with_corner_radius(QUALITY_INDICATOR_CORNER_RADIUS_PX)
+            .with_padding(Padding::symmetric(
+                QUALITY_INDICATOR_PADDING_VERTICAL_PX,
+                QUALITY_INDICATOR_PADDING_HORIZONTAL_PX,
+            ))
             .with_alignment(crate::ui::Alignment::Center);
 
-        let text_bounds =
-            Rectangle::new(Point::zero(), Size::new(indicator_width, indicator_height));
+        let text_bounds = Rectangle::new(
+            Point::zero(),
+            Size::new(indicator_width, QUALITY_INDICATOR_HEIGHT_PX),
+        );
         let text = crate::ui::components::TextComponent::new(
             text_bounds,
             quality_text,
@@ -294,13 +314,13 @@ impl TrendPage {
 
         let series_style = SeriesStyle {
             color: self.current_quality.foreground_color(),
-            line_width: 3,
+            line_width: SERIES_LINE_WIDTH_PX,
             show_points: false,
             fill: Some(
                 GradientFill::new(
                     self.current_quality.foreground_color(),
                     self.current_quality.background_color(),
-                    12,
+                    GRADIENT_FILL_HEIGHT_PX,
                 )
                 .with_opacity(GRADIENT_FILL_OPACITY),
             ),
@@ -331,8 +351,8 @@ impl TrendPage {
                 value: value_f32,
                 label,
                 position: CurrentValuePosition::TopRight {
-                    offset_x: 10,
-                    offset_y: 30,
+                    offset_x: CURRENT_VALUE_OFFSET_X_PX,
+                    offset_y: CURRENT_VALUE_OFFSET_Y_PX,
                 },
                 value_style: MonoTextStyle::new(&FONT_10X20, WHITE),
                 label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
@@ -361,6 +381,7 @@ impl TrendPage {
 
         let text_style = MonoTextStyle::new(&FONT_6X10, WHITE);
         let section_width = self.stats_bounds.size.width / 3;
+        let stats_text_y = self.stats_bounds.top_left.y + STATS_HEIGHT_PX as i32 / 2;
 
         // Format stats with sensor unit
         let unit = self.sensor.unit();
@@ -377,7 +398,7 @@ impl TrendPage {
             &avg_str,
             Point::new(
                 self.stats_bounds.top_left.x + section_width as i32 / 2,
-                self.stats_bounds.top_left.y + 25,
+                stats_text_y,
             ),
             text_style,
             Alignment::Center,
@@ -389,7 +410,7 @@ impl TrendPage {
             &min_str,
             Point::new(
                 self.stats_bounds.top_left.x + section_width as i32 + section_width as i32 / 2,
-                self.stats_bounds.top_left.y + 25,
+                stats_text_y,
             ),
             text_style,
             Alignment::Center,
@@ -401,7 +422,7 @@ impl TrendPage {
             &max_str,
             Point::new(
                 self.stats_bounds.top_left.x + 2 * section_width as i32 + section_width as i32 / 2,
-                self.stats_bounds.top_left.y + 25,
+                stats_text_y,
             ),
             text_style,
             Alignment::Center,

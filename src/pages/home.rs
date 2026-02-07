@@ -5,6 +5,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, Rectangle},
 };
 
+use crate::pages::constants::{BUTTON_HEIGHT_PX, PAGE_HEADER_HEIGHT_PX};
 use crate::pages::page_manager::Page;
 use crate::ui::{
     Action, Alignment, ColorPalette, Container, Direction, Drawable, Element,
@@ -13,6 +14,12 @@ use crate::ui::{
 };
 
 extern crate alloc;
+
+/// Gap between major layout sections (header, body) in pixels
+const SECTION_GAP_PX: u32 = 10;
+
+/// Internal gap within the header container in pixels
+const HEADER_INTERNAL_GAP_PX: u32 = 5;
 
 /// Home page with nested container architecture.
 ///
@@ -30,7 +37,7 @@ impl HomePage {
     pub fn new(bounds: Rectangle) -> Self {
         let root_container = Container::new(bounds, Direction::Vertical)
             .with_alignment(Alignment::Stretch)
-            .with_gap(10);
+            .with_gap(SECTION_GAP_PX);
 
         Self {
             bounds,
@@ -44,32 +51,34 @@ impl HomePage {
 
         // Create header container with title
         let mut header = Container::<MAX_CONTAINER_CHILDREN>::new(
-            Rectangle::new(Point::zero(), Size::new(self.bounds.size.width, 60)),
+            Rectangle::new(
+                Point::zero(),
+                Size::new(self.bounds.size.width, PAGE_HEADER_HEIGHT_PX),
+            ),
             Direction::Vertical,
         )
         .with_alignment(Alignment::Center)
         .with_main_axis_alignment(MainAxisAlignment::Center)
-        .with_gap(5);
+        .with_gap(HEADER_INTERNAL_GAP_PX);
 
         let title = TextComponent::auto("Baro Metrics", TextSize::Large)
             .with_alignment(embedded_graphics::text::Alignment::Center);
         header.add_child(title.into(), SizeConstraint::Fit).ok();
 
         // Create body container with buttons
-        let button_height = 50;
         let mut body = Container::<MAX_CONTAINER_CHILDREN>::new(
             Rectangle::new(Point::zero(), Size::new(self.bounds.size.width, 1)),
             Direction::Vertical,
         )
         .with_alignment(Alignment::Stretch)
-        .with_gap(10);
+        .with_gap(SECTION_GAP_PX);
 
         body.add_child(
             Element::button_auto(
                 "Temperature Graph",
                 Action::NavigateToPage(PageId::TrendTemperature),
             ),
-            SizeConstraint::Fixed(button_height),
+            SizeConstraint::Fixed(BUTTON_HEIGHT_PX),
         )
         .ok();
 
@@ -78,25 +87,25 @@ impl HomePage {
                 "Humidity Graph",
                 Action::NavigateToPage(PageId::TrendHumidity),
             ),
-            SizeConstraint::Fixed(button_height),
+            SizeConstraint::Fixed(BUTTON_HEIGHT_PX),
         )
         .ok();
 
         body.add_child(
             Element::button_auto("CO₂ Graph", Action::NavigateToPage(PageId::TrendCo2)),
-            SizeConstraint::Fixed(button_height),
+            SizeConstraint::Fixed(BUTTON_HEIGHT_PX),
         )
         .ok();
 
         body.add_child(
             Element::button_auto("Settings", Action::NavigateToPage(PageId::Settings)),
-            SizeConstraint::Fixed(button_height),
+            SizeConstraint::Fixed(BUTTON_HEIGHT_PX),
         )
         .ok();
 
         // Add containers to root using From trait
         self.root_container
-            .add_child(header.into(), SizeConstraint::Fixed(60))
+            .add_child(header.into(), SizeConstraint::Fixed(PAGE_HEADER_HEIGHT_PX))
             .ok();
 
         self.root_container

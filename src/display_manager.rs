@@ -25,14 +25,10 @@ use crate::sensors::{
 };
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RollupTier, TimeWindow};
-use crate::ui::{Action, PageEvent, PageId, SensorData, TouchEvent};
+use crate::ui::{Action, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, PageEvent, PageId, SensorData, TouchEvent};
 
 extern crate alloc;
 use alloc::boxed::Box;
-
-// Sensor indices from sensors module
-const DISPLAY_WIDTH: u16 = 320;
-const DISPLAY_HEIGHT: u16 = 240;
 
 /// Channel capacity for page change requests
 const PAGE_CHANGE_CAPACITY: usize = 4;
@@ -73,7 +69,7 @@ where
     pub fn new(display: D) -> Self {
         let bounds = Rectangle::new(
             Point::zero(),
-            Size::new(DISPLAY_WIDTH as u32, DISPLAY_HEIGHT as u32),
+            Size::new(DISPLAY_WIDTH_PX as u32, DISPLAY_HEIGHT_PX as u32),
         );
 
         // Start with the home page

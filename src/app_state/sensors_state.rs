@@ -49,7 +49,14 @@ impl<'a> SensorsState<'a> {
         into: &mut [i32; crate::storage::MAX_SENSORS],
     ) -> Result<(), SensorError> {
         let channel = SHT40IndexedAsyncI2CDeviceType::mux_channel();
-        let sht40_i2c = self.mux.channel(channel).unwrap();
+        let sht40_i2c = self.mux.channel(channel).map_err(|e| {
+            error!("Failed to select mux channel {} for SHT40: {:?}", channel, e);
+            SensorError::I2cError {
+                sensor: "SHT40",
+                channel,
+                details: "Failed to select mux channel",
+            }
+        })?;
         let mut sht40 = SHT40Indexed::from(SHT40Sensor::new(sht40_i2c));
 
         sht40.read_into(into).await.map_err(|e| {
@@ -64,7 +71,14 @@ impl<'a> SensorsState<'a> {
         into: &mut [i32; crate::storage::MAX_SENSORS],
     ) -> Result<(), SensorError> {
         let channel = SCD41IndexedAsyncI2CDeviceType::mux_channel();
-        let scd41_i2c = self.mux.channel(channel).unwrap();
+        let scd41_i2c = self.mux.channel(channel).map_err(|e| {
+            error!("Failed to select mux channel {} for SCD41: {:?}", channel, e);
+            SensorError::I2cError {
+                sensor: "SCD41",
+                channel,
+                details: "Failed to select mux channel",
+            }
+        })?;
         let mut scd41 = SCD41Indexed::from(SCD41Sensor::new(scd41_i2c));
 
         scd41.read_into(into).await.map_err(|e| {

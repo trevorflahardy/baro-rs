@@ -4,6 +4,7 @@
 
 use crate::pages::Page;
 use crate::ui::core::{Action, Drawable, PageId, TouchEvent};
+use crate::ui::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, FONT_10X20_CHAR_HEIGHT_PX};
 use core::cell::Cell;
 use embedded_graphics::{
     Drawable as EgDrawable,
@@ -14,9 +15,6 @@ use embedded_graphics::{
     primitives::Rectangle,
     text::{Alignment, Text},
 };
-
-const DISPLAY_WIDTH: u16 = 320;
-const DISPLAY_HEIGHT: u16 = 240;
 
 /// WiFi error page that displays a centered error message
 pub struct WifiErrorPage {
@@ -106,25 +104,25 @@ impl Drawable for WifiErrorPage {
         display.clear(Rgb565::BLACK)?;
 
         // Calculate center position
-        let center_x = (DISPLAY_WIDTH / 2) as i32;
-        let center_y = (DISPLAY_HEIGHT / 2) as i32;
+        let center_x = (DISPLAY_WIDTH_PX / 2) as i32;
+        let center_y = (DISPLAY_HEIGHT_PX / 2) as i32;
 
-        // Draw main error message centered
+        // Draw main error message one line-height above center
         EgDrawable::draw(
             &Text::with_alignment(
                 self.error_message,
-                Point::new(center_x, center_y - 20),
+                Point::new(center_x, center_y - FONT_10X20_CHAR_HEIGHT_PX as i32),
                 MonoTextStyle::new(&FONT_10X20, Rgb565::RED),
                 Alignment::Center,
             ),
             display,
         )?;
 
-        // Draw additional help text
+        // Draw additional help text one line-height below center
         EgDrawable::draw(
             &Text::with_alignment(
                 "Check WiFi credentials",
-                Point::new(center_x, center_y + 20),
+                Point::new(center_x, center_y + FONT_10X20_CHAR_HEIGHT_PX as i32),
                 MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
                 Alignment::Center,
             ),
@@ -138,7 +136,7 @@ impl Drawable for WifiErrorPage {
     fn bounds(&self) -> Rectangle {
         Rectangle::new(
             Point::zero(),
-            Size::new(DISPLAY_WIDTH as u32, DISPLAY_HEIGHT as u32),
+            Size::new(DISPLAY_WIDTH_PX as u32, DISPLAY_HEIGHT_PX as u32),
         )
     }
 

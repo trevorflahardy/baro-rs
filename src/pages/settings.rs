@@ -1,10 +1,14 @@
 // src/pages/settings.rs
 //! Settings page with live sensor data and log feed.
 
+use crate::pages::constants::{
+    LOG_BORDER_STROKE_WIDTH_PX, LOG_BOTTOM_MARGIN_PX, LOG_TEXT_PADDING_LEFT_PX,
+    TEXT_ROW_HEIGHT_PX, TITLE_ROW_HEIGHT_PX,
+};
 use crate::pages::page_manager::Page;
 use crate::ui::{
-    Action, Alignment, Container, Direction, Drawable, Element, PageEvent, PageId, SizeConstraint,
-    StorageEvent, TextSize, TouchEvent,
+    Action, Alignment, Container, Direction, Drawable, Element, FONT_6X10_LINE_HEIGHT_PX,
+    PageEvent, PageId, SizeConstraint, StorageEvent, TextSize, TouchEvent,
 };
 use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -14,6 +18,9 @@ use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Recta
 use embedded_graphics::text::Text;
 use heapless::{String as HeaplessString, Vec};
 use log::debug;
+
+/// Gap between settings container children in pixels
+const CONTAINER_GAP_PX: u32 = 5;
 
 /// Log entry for the live feed.
 #[derive(Clone)]
@@ -47,7 +54,7 @@ impl SettingsPage {
     pub fn new(bounds: Rectangle) -> Self {
         let container = Container::new(bounds, Direction::Vertical)
             .with_alignment(Alignment::Stretch)
-            .with_gap(5);
+            .with_gap(CONTAINER_GAP_PX);
 
         // Temporary indices (replaced in init).
         Self {
@@ -67,20 +74,13 @@ impl SettingsPage {
     }
 
     pub fn init(&mut self) {
-        // Layout:
-        // - Title: 30px
-        // - Sensor header: 20px
-        // - Temperature: 20px
-        // - Humidity: 20px
-        // - Log header: 20px
-        // - Log display: grows
         let hint = Rectangle::new(Point::zero(), Size::new(self.bounds.size.width, 1));
 
         self.title_idx = self
             .container
             .add_child(
                 Element::text(hint, "Settings & Monitor", TextSize::Large),
-                SizeConstraint::Fixed(30),
+                SizeConstraint::Fixed(TITLE_ROW_HEIGHT_PX),
             )
             .unwrap_or(0);
 
@@ -88,7 +88,7 @@ impl SettingsPage {
             .container
             .add_child(
                 Element::text(hint, "Current Sensor Values:", TextSize::Medium),
-                SizeConstraint::Fixed(20),
+                SizeConstraint::Fixed(TEXT_ROW_HEIGHT_PX),
             )
             .unwrap_or(1);
 
@@ -96,7 +96,7 @@ impl SettingsPage {
             .container
             .add_child(
                 Element::text(hint, "Temperature: --", TextSize::Medium),
-                SizeConstraint::Fixed(20),
+                SizeConstraint::Fixed(TEXT_ROW_HEIGHT_PX),
             )
             .unwrap_or(2);
 
@@ -104,7 +104,7 @@ impl SettingsPage {
             .container
             .add_child(
                 Element::text(hint, "Humidity: --", TextSize::Medium),
-                SizeConstraint::Fixed(20),
+                SizeConstraint::Fixed(TEXT_ROW_HEIGHT_PX),
             )
             .unwrap_or(3);
 
@@ -112,7 +112,7 @@ impl SettingsPage {
             .container
             .add_child(
                 Element::text(hint, "Live Data Feed:", TextSize::Medium),
-                SizeConstraint::Fixed(20),
+                SizeConstraint::Fixed(TEXT_ROW_HEIGHT_PX),
             )
             .unwrap_or(4);
 
@@ -301,7 +301,7 @@ impl Drawable for SettingsPage {
         let style = PrimitiveStyleBuilder::new()
             .fill_color(Rgb565::BLACK)
             .stroke_color(Rgb565::WHITE)
-            .stroke_width(1)
+            .stroke_width(LOG_BORDER_STROKE_WIDTH_PX)
             .build();
 
         log_area.into_styled(style).draw(display)?;
@@ -311,8 +311,9 @@ impl Drawable for SettingsPage {
             Rgb565::WHITE,
         );
 
-        let mut y = log_area.top_left.y + 12;
-        let max_y = log_area.top_left.y + log_area.size.height as i32 - 2;
+        let line_height = FONT_6X10_LINE_HEIGHT_PX as i32;
+        let mut y = log_area.top_left.y + line_height;
+        let max_y = log_area.top_left.y + log_area.size.height as i32 - LOG_BOTTOM_MARGIN_PX;
 
         for entry in self.log_entries.iter().rev() {
             if y > max_y {
@@ -320,11 +321,11 @@ impl Drawable for SettingsPage {
             }
             Text::new(
                 entry.message.as_str(),
-                Point::new(log_area.top_left.x + 4, y),
+                Point::new(log_area.top_left.x + LOG_TEXT_PADDING_LEFT_PX, y),
                 text_style,
             )
             .draw(display)?;
-            y += 12;
+            y += line_height;
         }
 
         Ok(())

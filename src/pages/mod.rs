@@ -1,3 +1,4 @@
+pub mod constants;
 pub mod home;
 pub mod page_manager;
 pub mod settings;

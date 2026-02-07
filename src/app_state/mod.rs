@@ -6,8 +6,6 @@ mod sensors_state;
 pub use hardware::*;
 pub use sensors_state::*;
 
-use core::str::FromStr;
-
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_sync::pubsub::PubSubChannel;
@@ -122,26 +120,47 @@ where
 
 pub type GlobalStateType<'a, S, D, T> = AsyncMutex<CriticalSectionRawMutex, AppState<'a, S, D, T>>;
 
-#[derive(Error, Debug)]
+/// WiFi subsystem error type
+#[derive(Debug, Error)]
+pub enum WifiError {
+    #[error("WiFi initialization failed")]
+    InitFailed,
+
+    #[error("WiFi connection failed")]
+    ConnectionFailed,
+
+    #[error("WiFi configuration failed")]
+    ConfigFailed,
+}
+
+/// Time synchronization error type
+#[derive(Debug, Error)]
+pub enum TimeSyncError {
+    #[error("All NTP servers failed")]
+    AllServersFailed,
+
+    #[error("NTP response too short: {len} bytes")]
+    ResponseTooShort { len: usize },
+}
+
+/// Top-level application error type
+///
+/// Wraps all sub-module error types with automatic `From` conversions,
+/// enabling use of `?` operator across module boundaries.
+#[derive(Debug, Error)]
 pub enum AppError {
-    #[error("WiFi connection failed: {0}")]
-    Wifi(heapless::String<64>),
-    #[error("Time sync failed: {0}")]
-    TimeSync(heapless::String<64>),
-    #[error("SD card error: {0}")]
-    Storage(heapless::String<64>),
+    #[error("WiFi error: {0}")]
+    Wifi(#[from] WifiError),
+
+    #[error("Time sync error: {0}")]
+    TimeSync(#[from] TimeSyncError),
+
+    #[error("Storage error: {0}")]
+    Storage(#[from] crate::storage::StorageError),
+
     #[error("Sensor error: {0}")]
-    Sensor(heapless::String<64>),
-    #[error("Unknown error")]
-    Unknown,
-}
+    Sensor(#[from] crate::sensors::SensorError),
 
-pub trait FromUnchecked<T> {
-    fn from_unchecked(value: T) -> Self;
-}
-
-impl<'a, const N: usize> FromUnchecked<&'a str> for heapless::String<N> {
-    fn from_unchecked(value: &'a str) -> Self {
-        heapless::String::<N>::from_str(value).unwrap()
-    }
+    #[error("Hardware error: {0}")]
+    Hardware(#[from] hardware::HardwareError),
 }

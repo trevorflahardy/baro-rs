@@ -43,6 +43,9 @@ pub use colors::{
     COLOR_POOR_BACKGROUND, COLOR_POOR_FOREGROUND, COLOR_STROKE, ColorPalette, DARK_GRAY,
     LIGHT_GRAY, WHITE,
 };
-pub use layout::{BorderRadius, Padding, Spacing};
+pub use layout::{
+    BorderRadius, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, FONT_10X20_CHAR_HEIGHT_PX,
+    FONT_6X10_CHAR_HEIGHT_PX, FONT_6X10_CHAR_WIDTH_PX, FONT_6X10_LINE_HEIGHT_PX, Padding, Spacing,
+};
 pub use style::{ButtonVariant, Style};
 pub use theme::Theme;
