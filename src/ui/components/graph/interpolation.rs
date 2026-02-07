@@ -54,10 +54,11 @@ pub(super) fn draw_linear_fill<D: DrawTarget<Color = Rgb565>>(
     points: &[DataPoint],
     viewport: &Viewport,
     fill: &GradientFill,
+    background: Rgb565,
     display: &mut D,
 ) -> Result<(), D::Error> {
     let screen_points = collect_linear_screen_points(points, viewport);
-    draw_gradient_fill_from_screen_points(&screen_points, viewport, fill, display)
+    draw_gradient_fill_from_screen_points(&screen_points, viewport, fill, background, display)
 }
 
 /// Draw a data series with smooth Catmull-Rom spline interpolation
@@ -119,10 +120,11 @@ pub(super) fn draw_smooth_fill<D: DrawTarget<Color = Rgb565>>(
     viewport: &Viewport,
     fill: &GradientFill,
     tension: f32,
+    background: Rgb565,
     display: &mut D,
 ) -> Result<(), D::Error> {
     let screen_points = collect_smooth_screen_points(points, viewport, tension);
-    draw_gradient_fill_from_screen_points(&screen_points, viewport, fill, display)
+    draw_gradient_fill_from_screen_points(&screen_points, viewport, fill, background, display)
 }
 
 fn collect_linear_screen_points(points: &[DataPoint], viewport: &Viewport) -> Vec<Point> {
@@ -180,6 +182,7 @@ fn draw_gradient_fill_from_screen_points<D: DrawTarget<Color = Rgb565>>(
     screen_points: &[Point],
     viewport: &Viewport,
     fill: &GradientFill,
+    background: Rgb565,
     display: &mut D,
 ) -> Result<(), D::Error> {
     if screen_points.len() < 2 {
@@ -188,7 +191,7 @@ fn draw_gradient_fill_from_screen_points<D: DrawTarget<Color = Rgb565>>(
 
     let plot_area = viewport.plot_area();
     let bottom = plot_area.top_left.y + plot_area.size.height as i32;
-    let colors = build_gradient_colors(fill);
+    let colors = build_gradient_colors(fill, background);
 
     for pair in screen_points.windows(2) {
         let mut x0 = pair[0].x;
@@ -245,8 +248,19 @@ fn draw_gradient_column<D: DrawTarget<Color = Rgb565>>(
     Ok(())
 }
 
-fn build_gradient_colors(fill: &GradientFill) -> Vec<Rgb565> {
+fn build_gradient_colors(fill: &GradientFill, background: Rgb565) -> Vec<Rgb565> {
     let bands = fill.bands.max(1) as usize;
+    let alpha = fill.opacity as f32 / 255.0;
+    let start_color = if fill.opacity == u8::MAX {
+        fill.start_color
+    } else {
+        lerp_color(background, fill.start_color, alpha)
+    };
+    let end_color = if fill.opacity == u8::MAX {
+        fill.end_color
+    } else {
+        lerp_color(background, fill.end_color, alpha)
+    };
     let mut colors = Vec::with_capacity(bands);
     for i in 0..bands {
         let t = if bands > 1 {
@@ -254,7 +268,7 @@ fn build_gradient_colors(fill: &GradientFill) -> Vec<Rgb565> {
         } else {
             1.0
         };
-        colors.push(lerp_color(fill.start_color, fill.end_color, t));
+        colors.push(lerp_color(start_color, end_color, t));
     }
     colors
 }

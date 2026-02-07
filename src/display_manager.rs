@@ -136,11 +136,11 @@ where
                 let mut page = crate::pages::TrendPage::new(
                     self.bounds,
                     SensorType::Humidity,
-                    TimeWindow::FiveMinutes,
+                    TimeWindow::OneHour,
                 );
 
                 // Load historical data directly from storage
-                Self::load_trend_data(app_state, &mut page, TimeWindow::FiveMinutes).await;
+                Self::load_trend_data(app_state, &mut page, TimeWindow::OneHour).await;
 
                 self.current_page = PageWrapper::TrendPage(Box::new(page));
             }

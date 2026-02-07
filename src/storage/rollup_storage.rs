@@ -38,6 +38,36 @@ impl Display for RawSample {
     }
 }
 
+impl RawSample {
+    fn as_slice(&self) -> &[u8] {
+        // Safety: RawSample is #[repr(C)] and contains only plain data types
+        unsafe {
+            core::slice::from_raw_parts(
+                (self as *const RawSample) as *const u8,
+                core::mem::size_of::<RawSample>(),
+            )
+        }
+    }
+}
+
+impl AsRef<[u8]> for RawSample {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl AsMut<[u8]> for RawSample {
+    fn as_mut(&mut self) -> &mut [u8] {
+        // Safety: RawSample is #[repr(C)] and contains only plain data types
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                (self as *mut RawSample) as *mut u8,
+                core::mem::size_of::<RawSample>(),
+            )
+        }
+    }
+}
+
 /// Aggregated rollup record containing average, minimum, and maximum values
 ///
 /// Used for 5-minute, hourly, and daily rollups. Each rollup summarizes

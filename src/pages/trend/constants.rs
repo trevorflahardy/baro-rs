@@ -15,5 +15,8 @@ pub(super) const FAINT_GRAY: Rgb565 = Rgb565::new(10, 20, 10);
 /// Maximum data points for the largest time window (limited by embedded_charts)
 pub(super) const MAX_DATA_POINTS: usize = 256;
 
+/// Gradient fill opacity (80% transparent)
+pub(super) const GRADIENT_FILL_OPACITY: u8 = 51;
+
 /// Data point for graphing: (timestamp, value)
 pub(super) type DataPoint = (u32, i32);

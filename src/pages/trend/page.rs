@@ -27,7 +27,9 @@ use core::fmt::Write;
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
 
-use super::constants::{COLOR_FOREGROUND, FAINT_GRAY, LIGHT_GRAY, MAX_DATA_POINTS};
+use super::constants::{
+    COLOR_FOREGROUND, FAINT_GRAY, GRADIENT_FILL_OPACITY, LIGHT_GRAY, MAX_DATA_POINTS,
+};
 use super::data::TrendDataBuffer;
 use super::stats::TrendStats;
 
@@ -294,11 +296,14 @@ impl TrendPage {
             color: self.current_quality.foreground_color(),
             line_width: 3,
             show_points: false,
-            fill: Some(GradientFill::new(
-                self.current_quality.foreground_color(),
-                self.current_quality.background_color(),
-                12,
-            )),
+            fill: Some(
+                GradientFill::new(
+                    self.current_quality.foreground_color(),
+                    self.current_quality.background_color(),
+                    12,
+                )
+                .with_opacity(GRADIENT_FILL_OPACITY),
+            ),
         };
 
         let _ = self.graph.set_series_style(0, series_style);

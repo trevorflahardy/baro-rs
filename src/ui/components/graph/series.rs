@@ -76,6 +76,8 @@ pub struct GradientFill {
     pub end_color: Rgb565,
     /// Number of gradient bands to render
     pub bands: u8,
+    /// Opacity (0 = fully transparent, 255 = fully opaque)
+    pub opacity: u8,
 }
 
 impl GradientFill {
@@ -85,7 +87,14 @@ impl GradientFill {
             start_color,
             end_color,
             bands,
+            opacity: u8::MAX,
         }
+    }
+
+    /// Set the gradient opacity
+    pub const fn with_opacity(mut self, opacity: u8) -> Self {
+        self.opacity = opacity;
+        self
     }
 }
 

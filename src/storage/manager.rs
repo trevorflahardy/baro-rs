@@ -66,7 +66,7 @@ where
     }
 
     pub async fn init(&mut self, time: u32) -> Result<(), SdCardManagerError> {
-        info!(" Initializing storage manager, loading rollups from SD card...");
+        info!(" Initializing storage manager, loading data from SD card...");
 
         let lifetime_data_buffer = &mut [0u8; core::mem::size_of::<LifetimeStats>()];
         let lifetime_data = match self
@@ -86,10 +86,7 @@ where
         // For each rollup type, we want to load the last N entries where N is the capacity
 
         // Load 5-minute rollups (last 7 days)
-        let window_5m = (
-            time.saturating_sub(7 * 24 * 60 * 60), // 7 days ago
-            time,
-        );
+        let window_5m = (time.saturating_sub(7 * 24 * 60 * 60), time);
         let mut buffer_5m = alloc::vec![Rollup::default(); ROLLUPS_5M_CAPACITY];
         match self
             .sd_card_manager
@@ -110,10 +107,7 @@ where
         }?;
 
         // Load hourly rollups (last 30 days)
-        let window_1h = (
-            time.saturating_sub(30 * 24 * 60 * 60), // 30 days ago
-            time,
-        );
+        let window_1h = (time.saturating_sub(30 * 24 * 60 * 60), time);
         let mut buffer_1h = alloc::vec![Rollup::default(); ROLLUPS_1H_CAPACITY];
         match self
             .sd_card_manager
@@ -134,10 +128,7 @@ where
         }?;
 
         // Load daily rollups (last 365 days)
-        let window_daily = (
-            time.saturating_sub(365 * 24 * 60 * 60), // 365 days ago
-            time,
-        );
+        let window_daily = (time.saturating_sub(365 * 24 * 60 * 60), time);
         let mut buffer_daily = alloc::vec![Rollup::default(); ROLLUPS_DAILY_CAPACITY];
         match self.sd_card_manager.read_rollup_data(
             ROLLUP_FILE_DAILY,

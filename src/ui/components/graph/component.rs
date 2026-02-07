@@ -285,10 +285,23 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
             if let Some(fill) = &series.style().fill {
                 match series.interpolation() {
                     InterpolationType::Linear => {
-                        draw_linear_fill(series.points(), &self.viewport, fill, display)?;
+                        draw_linear_fill(
+                            series.points(),
+                            &self.viewport,
+                            fill,
+                            self.background_color,
+                            display,
+                        )?;
                     }
                     InterpolationType::Smooth { tension } => {
-                        draw_smooth_fill(series.points(), &self.viewport, fill, tension, display)?;
+                        draw_smooth_fill(
+                            series.points(),
+                            &self.viewport,
+                            fill,
+                            tension,
+                            self.background_color,
+                            display,
+                        )?;
                     }
                 }
             }
