@@ -241,12 +241,12 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
         // Collect all points from all series
         // Note: We use a large fixed capacity since const generic expressions
         // are not yet stable in Rust
-        const MAX_TOTAL_POINTS: usize = 512;
-        let mut all_points: Vec<DataPoint> = Vec::with_capacity(MAX_TOTAL_POINTS);
+        let max_total_points = MAX_SERIES * MAX_POINTS;
+        let mut all_points: Vec<DataPoint> = Vec::with_capacity(max_total_points);
 
         for series in self.series_collection.iter() {
             for point in series.points() {
-                if all_points.len() >= MAX_TOTAL_POINTS {
+                if all_points.len() >= max_total_points {
                     break;
                 }
                 all_points.push(*point);
