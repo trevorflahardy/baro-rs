@@ -4,6 +4,7 @@ target/
 
 # Editor configuration
 .vscode/
+.claude/
 .zed/
 .helix/
 .nvim.lua
