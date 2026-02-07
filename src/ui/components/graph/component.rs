@@ -128,9 +128,13 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
     ///
     /// Returns the series index on success, or error if at capacity.
     pub fn add_series(&mut self, series: DataSeries<MAX_POINTS>) -> GraphResult<usize> {
-        self.series_collection.add(series).inspect(|_| {
+        let result = self.series_collection.add(series);
+        if result.is_ok() {
+            // Recalculate viewport to fit the new series data
+            let _ = self.recalculate_viewport();
             self.dirty = true;
-        })
+        }
+        result
     }
 
     /// Push a data point to a specific series

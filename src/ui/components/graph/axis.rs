@@ -236,10 +236,30 @@ fn format_label(
                 let _ = core::fmt::write(&mut s, format_args!("{}", now_label));
                 s
             } else {
-                // Format as time offset in hours
-                let hours = ((value - max_value) / 3600.0) as i32;
+                // Calculate time offset in seconds
+                let offset_seconds = (value - max_value) as i32;
                 let mut s = String::new();
-                let _ = core::fmt::write(&mut s, format_args!("{}H", hours));
+
+                // Format adaptively based on magnitude
+                let abs_offset = offset_seconds.abs();
+
+                if abs_offset >= 86400 {
+                    // >= 1 day: show days
+                    let days = offset_seconds / 86400;
+                    let _ = core::fmt::write(&mut s, format_args!("{}D", days));
+                } else if abs_offset >= 3600 {
+                    // >= 1 hour: show hours
+                    let hours = offset_seconds / 3600;
+                    let _ = core::fmt::write(&mut s, format_args!("{}H", hours));
+                } else if abs_offset >= 60 {
+                    // >= 1 minute: show minutes
+                    let minutes = offset_seconds / 60;
+                    let _ = core::fmt::write(&mut s, format_args!("{}M", minutes));
+                } else {
+                    // < 1 minute: show seconds
+                    let _ = core::fmt::write(&mut s, format_args!("{}S", offset_seconds));
+                }
+
                 s
             }
         }
