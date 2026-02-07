@@ -32,9 +32,9 @@ pub enum TimeWindow {
     OneMinute,
     /// 5 minute window (30 raw samples)
     FiveMinutes,
-    /// 30 minute window (6 x 5m rollups)
+    /// 30 minute window (raw samples at 10s interval)
     ThirtyMinutes,
-    /// 1 hour window (12 x 5m rollups)
+    /// 1 hour window (raw samples at 10s interval)
     OneHour,
     /// 12 hour window (12 x 1h rollups)
     TwelveHours,
@@ -76,19 +76,19 @@ impl TimeWindow {
         match self {
             Self::OneMinute => 6,
             Self::FiveMinutes => 30,
-            Self::ThirtyMinutes => 36,
-            Self::OneHour => 72,
-            Self::TwelveHours => 144,
-            Self::OneDay => 288,
-            Self::OneWeek => 168,
+            Self::ThirtyMinutes => 180,
+            Self::OneHour => 360,
+            Self::TwelveHours => 12,
+            Self::OneDay => 24,
+            Self::OneWeek => 7,
         }
     }
 
     /// Determine which rollup tier to use for this time window
     pub const fn preferred_rollup_tier(self) -> RollupTier {
         match self {
-            Self::OneMinute | Self::FiveMinutes => RollupTier::RawSample,
-            Self::ThirtyMinutes | Self::OneHour => RollupTier::FiveMinute,
+            Self::OneMinute | Self::FiveMinutes | Self::ThirtyMinutes => RollupTier::RawSample,
+            Self::OneHour => RollupTier::FiveMinute,
             Self::TwelveHours | Self::OneDay => RollupTier::Hourly,
             Self::OneWeek => RollupTier::Daily,
         }

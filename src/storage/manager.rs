@@ -32,7 +32,7 @@ where
     D: embedded_hal::delay::DelayNs,
     T: embedded_sdmmc::TimeSource,
 {
-    /// Ring buffer for raw samples (last 1 hour for 5m and 1h graphs)
+    /// Ring buffer for raw samples (last 1 hour for 5m/30m/1h graphs)
     raw_samples: VecDeque<RawSample>,
     /// Ring buffer for 5-minute rollups (last 7 days for 24h and 7d graphs)
     rollups_5m: VecDeque<Rollup>,
@@ -74,9 +74,9 @@ where
         // Load 5-minute rollups (last 7 days)
         let window_5m = (time.saturating_sub(7 * 24 * 60 * 60), time);
         let mut buffer_5m = alloc::vec![Rollup::default(); ROLLUPS_5M_CAPACITY];
-        let count_5m = self
-            .sd_card_manager
-            .read_rollup_data(ROLLUP_FILE_5M, &mut buffer_5m, window_5m)?;
+        let count_5m =
+            self.sd_card_manager
+                .read_rollup_data(ROLLUP_FILE_5M, &mut buffer_5m, window_5m)?;
         info!(" Loaded {} 5-minute rollups from SD card", count_5m);
         for rollup in &buffer_5m[..count_5m] {
             self.rollups_5m.push_back(*rollup);
@@ -85,9 +85,9 @@ where
         // Load hourly rollups (last 30 days)
         let window_1h = (time.saturating_sub(30 * 24 * 60 * 60), time);
         let mut buffer_1h = alloc::vec![Rollup::default(); ROLLUPS_1H_CAPACITY];
-        let count_1h = self
-            .sd_card_manager
-            .read_rollup_data(ROLLUP_FILE_1H, &mut buffer_1h, window_1h)?;
+        let count_1h =
+            self.sd_card_manager
+                .read_rollup_data(ROLLUP_FILE_1H, &mut buffer_1h, window_1h)?;
         info!(" Loaded {} hourly rollups from SD card", count_1h);
         for rollup in &buffer_1h[..count_1h] {
             self.rollups_1h.push_back(*rollup);

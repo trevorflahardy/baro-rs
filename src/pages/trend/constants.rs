@@ -12,8 +12,8 @@ pub(super) const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
 /// Very faint gray for grid lines (less visible than LIGHT_GRAY)
 pub(super) const FAINT_GRAY: Rgb565 = Rgb565::new(10, 20, 10);
 
-/// Maximum data points for the largest time window (limited by embedded_charts)
-pub(super) const MAX_DATA_POINTS: usize = 256;
+/// Maximum data points for the largest time window (1 hour at 10s interval)
+pub(super) const MAX_DATA_POINTS: usize = 360;
 
 /// Gradient fill opacity (80% transparent)
 pub(super) const GRADIENT_FILL_OPACITY: u8 = 51;
