@@ -31,12 +31,12 @@ use crate::ui::{FONT_6X10_CHAR_HEIGHT_PX, FONT_6X10_CHAR_WIDTH_PX};
 
 use super::constants::{
     COLOR_FOREGROUND, CURRENT_VALUE_OFFSET_X_PX, CURRENT_VALUE_OFFSET_Y_PX, FAINT_GRAY,
-    GRADIENT_FILL_HEIGHT_PX, GRADIENT_FILL_OPACITY, HEADER_HEIGHT_PX,
-    HEADER_TITLE_PADDING_LEFT_PX, LIGHT_GRAY, MAX_DATA_POINTS, QUALITY_INDICATOR_BORDER_WIDTH_PX,
+    GRADIENT_FILL_HEIGHT_PX, GRADIENT_FILL_OPACITY, HEADER_HEIGHT_PX, HEADER_TITLE_PADDING_LEFT_PX,
+    LIGHT_GRAY, MAX_DATA_POINTS, QUALITY_INDICATOR_BORDER_WIDTH_PX,
     QUALITY_INDICATOR_CORNER_RADIUS_PX, QUALITY_INDICATOR_HEIGHT_PX,
     QUALITY_INDICATOR_MARGIN_RIGHT_PX, QUALITY_INDICATOR_PADDING_HORIZONTAL_PX,
-    QUALITY_INDICATOR_PADDING_VERTICAL_PX, QUALITY_INDICATOR_TEXT_PADDING_PX,
-    SERIES_LINE_WIDTH_PX, STATS_HEIGHT_PX,
+    QUALITY_INDICATOR_PADDING_VERTICAL_PX, QUALITY_INDICATOR_TEXT_PADDING_PX, SERIES_LINE_WIDTH_PX,
+    STATS_HEIGHT_PX, WINDOW_GROWTH_CHUNK_SECS,
 };
 use super::data::TrendDataBuffer;
 use super::stats::TrendStats;
@@ -74,11 +74,16 @@ impl TrendPage {
             .height
             .saturating_sub(HEADER_HEIGHT_PX + STATS_HEIGHT_PX);
 
-        let header_bounds =
-            Rectangle::new(bounds.top_left, Size::new(bounds.size.width, HEADER_HEIGHT_PX));
+        let header_bounds = Rectangle::new(
+            bounds.top_left,
+            Size::new(bounds.size.width, HEADER_HEIGHT_PX),
+        );
 
         let graph_bounds = Rectangle::new(
-            Point::new(bounds.top_left.x, bounds.top_left.y + HEADER_HEIGHT_PX as i32),
+            Point::new(
+                bounds.top_left.x,
+                bounds.top_left.y + HEADER_HEIGHT_PX as i32,
+            ),
             Size::new(bounds.size.width, graph_height),
         );
 
@@ -150,14 +155,32 @@ impl TrendPage {
 
     /// Update cached statistics and quality level
     fn update_stats(&mut self) {
+        let effective_window_secs = self.effective_window_secs();
         self.stats = self
             .data_buffer
-            .calculate_stats(self.window, self.current_timestamp);
+            .calculate_stats(effective_window_secs, self.current_timestamp);
 
         // Assess quality based on average value
         if self.stats.count > 0 {
             self.current_quality = QualityLevel::assess(self.sensor, self.stats.avg_f32());
         }
+    }
+
+    fn effective_window_secs(&self) -> u32 {
+        let window_secs = self.window.duration_secs();
+        let chunk_secs = WINDOW_GROWTH_CHUNK_SECS.min(window_secs).max(1);
+
+        let Some(oldest_ts) = self.data_buffer.oldest_timestamp() else {
+            return window_secs;
+        };
+
+        let span_secs = self.current_timestamp.saturating_sub(oldest_ts);
+        if span_secs == 0 {
+            return chunk_secs.min(window_secs);
+        }
+
+        let rounded_span = ((span_secs + chunk_secs - 1) / chunk_secs) * chunk_secs;
+        rounded_span.clamp(chunk_secs, window_secs)
     }
 
     /// Draw the header with title and quality indicator
@@ -278,9 +301,10 @@ impl TrendPage {
         }
 
         // Get data for current window
+        let effective_window_secs = self.effective_window_secs();
         let data = self
             .data_buffer
-            .get_window_data(self.window, self.current_timestamp);
+            .get_window_data(effective_window_secs, self.current_timestamp);
 
         if data.is_empty() {
             // Draw empty graph background
@@ -308,9 +332,7 @@ impl TrendPage {
             let _ = self.graph.add_series(DataSeries::new());
         }
 
-        let window_start = self
-            .current_timestamp
-            .saturating_sub(self.window.duration_secs());
+        let window_start = self.current_timestamp.saturating_sub(effective_window_secs);
 
         let series_style = SeriesStyle {
             color: self.current_quality.foreground_color(),
@@ -337,9 +359,7 @@ impl TrendPage {
         }
 
         let _ = self.graph.set_series_points(0, &series_points);
-        let _ = self
-            .graph
-            .set_x_bounds(0.0, self.window.duration_secs() as f32);
+        let _ = self.graph.set_x_bounds(0.0, effective_window_secs as f32);
 
         // Set current value display if we have data
         if let Some((_, current_value)) = self.data_buffer.points.back() {

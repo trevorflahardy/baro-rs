@@ -3,7 +3,7 @@
 use heapless::{Deque, Vec};
 
 use crate::sensors::SensorType;
-use crate::storage::{RawSample, Rollup, TimeWindow};
+use crate::storage::{RawSample, Rollup};
 
 use super::constants::{DataPoint, MAX_DATA_POINTS};
 use super::stats::TrendStats;
@@ -61,13 +61,18 @@ impl TrendDataBuffer {
         }
     }
 
-    /// Get data points within the specified time window
+    /// Get the oldest timestamp in the buffer
+    pub(super) fn oldest_timestamp(&self) -> Option<u32> {
+        self.points.front().map(|(ts, _)| *ts)
+    }
+
+    /// Get data points within the specified time window (seconds)
     pub(super) fn get_window_data(
         &self,
-        window: TimeWindow,
+        window_secs: u32,
         now: u32,
     ) -> Vec<DataPoint, MAX_DATA_POINTS> {
-        let window_start = now.saturating_sub(window.duration_secs());
+        let window_start = now.saturating_sub(window_secs);
 
         self.points
             .iter()
@@ -76,9 +81,9 @@ impl TrendDataBuffer {
             .collect()
     }
 
-    /// Calculate statistics for the current time window
-    pub(super) fn calculate_stats(&self, window: TimeWindow, now: u32) -> TrendStats {
-        let data = self.get_window_data(window, now);
+    /// Calculate statistics for the current time window (seconds)
+    pub(super) fn calculate_stats(&self, window_secs: u32, now: u32) -> TrendStats {
+        let data = self.get_window_data(window_secs, now);
 
         if data.is_empty() {
             return TrendStats::default();

@@ -15,6 +15,9 @@ pub(super) const FAINT_GRAY: Rgb565 = Rgb565::new(10, 20, 10);
 /// Maximum data points for the largest time window (1 hour at 10s interval)
 pub(super) const MAX_DATA_POINTS: usize = 360;
 
+/// Window growth chunk size for auto-zoom (seconds)
+pub(super) const WINDOW_GROWTH_CHUNK_SECS: u32 = 300;
+
 /// Gradient fill opacity (80% transparent)
 pub(super) const GRADIENT_FILL_OPACITY: u8 = 51;
 
