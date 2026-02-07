@@ -10,6 +10,10 @@ To date, it would be very hard for you, as a user, to reproduce this project on 
 
 Have no fear! With enough time, I hope for this project to evolve out of its breadboard phase and into a completely polished, single-PCB design with 20+ integrated sensors. At that point, it will be much easier for anyone to build (or buy) their own device, use it, and even contribute to the project.
 
+<img width="414" height="356" alt="image" src="https://github.com/user-attachments/assets/3aa8cdf3-0e02-4e15-ad62-3fa980b84ee4" />
+<img width="414" height="356" alt="image" src="https://github.com/user-attachments/assets/095a26be-16b5-4113-8366-6ff56dbe6902" />
+
+
 ---
 
 ## 🎯 Project Vision
