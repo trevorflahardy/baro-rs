@@ -121,7 +121,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 
 fn create_button_row(bounds: Rectangle) -> Result<Container<3>, &'static str> {
-    Container::<3>::new(bounds, Direction::Horizontal)
+    Ok(Container::<3>::new(bounds, Direction::Horizontal)
         .with_alignment(Alignment::Center)
         .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
         .with_gap(10)
@@ -136,7 +136,7 @@ fn create_button_row(bounds: Rectangle) -> Result<Container<3>, &'static str> {
         .with_child(
             Element::button_auto("Next", Action::Custom(1)),
             SizeConstraint::Fit
-        )
+        )?)
 }
 ```
 
