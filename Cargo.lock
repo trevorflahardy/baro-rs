@@ -57,7 +57,6 @@ dependencies = [
  "embassy-net",
  "embassy-sync 0.7.2",
  "embassy-time",
- "embedded-charts",
  "embedded-graphics",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -492,17 +491,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9d2e857f87ac832df68fa498d18ddc679175cf3d2e4aa893988e5601baf9438"
 dependencies = [
  "nb 1.1.0",
-]
-
-[[package]]
-name = "embedded-charts"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0f40f8efdf5a3671d058fac2598a3aebab60ff0b643caadf9ebf5e29dc33719"
-dependencies = [
- "embedded-graphics",
- "heapless 0.8.0",
- "micromath",
 ]
 
 [[package]]

@@ -1,18 +1,23 @@
 //! TrendPage implementation and Page trait
 
-use embedded_charts::prelude::*;
+use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X10};
+use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
-use embedded_graphics::{Drawable as EgDrawable, pixelcolor::Rgb565};
-use heapless::{Vec, index_set::FnvIndexSet};
+use heapless::Vec;
 
 use crate::metrics::QualityLevel;
 use crate::pages::Page;
 use crate::sensors::SensorType;
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RawSample, Rollup, RollupTier, TimeWindow};
+use crate::ui::components::graph::{
+    CurrentValueDisplay, CurrentValuePosition, DataPoint, DataSeries, Graph, GridConfig,
+    InterpolationType, LabelFormatter, LineStyle, SeriesStyle, VerticalGridLines, XAxisConfig,
+};
 use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
 use crate::ui::{Container, Direction, Drawable, Padding, Style, WHITE};
 
@@ -38,8 +43,8 @@ pub struct TrendPage {
     graph_bounds: Rectangle,
     stats_bounds: Rectangle,
 
-    // Graph streaming for animation slides
-    line_stream: StreamingAnimator<Point2D>,
+    // Custom graph component
+    graph: Graph<1, MAX_DATA_POINTS>,
 
     // Cached state
     stats: TrendStats,
@@ -77,6 +82,25 @@ impl TrendPage {
             Size::new(bounds.size.width, STATS_HEIGHT),
         );
 
+        // Create graph with default configuration matching image design
+        let graph = Graph::new(graph_bounds)
+            .with_background(QualityLevel::Good.background_color())
+            .with_grid(GridConfig {
+                vertical_lines: Some(VerticalGridLines {
+                    count: 5,
+                    color: LIGHT_GRAY,
+                    width: 1,
+                    style: LineStyle::Solid,
+                }),
+                horizontal_lines: None, // No horizontal lines per image design
+            })
+            .with_x_axis(XAxisConfig {
+                label_count: 3,
+                label_formatter: LabelFormatter::TimeOffset { now_label: "NOW" },
+                label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
+                show_axis_line: false,
+            });
+
         Self {
             bounds,
             sensor,
@@ -86,7 +110,7 @@ impl TrendPage {
             header_bounds,
             graph_bounds,
             stats_bounds,
-            line_stream: StreamingAnimator::new(),
+            graph,
             stats: TrendStats::default(),
             current_quality: QualityLevel::Good,
             current_timestamp: 0,
@@ -203,20 +227,33 @@ impl TrendPage {
         Ok(())
     }
 
-    /// Draw the graph using embedded_charts with interpolation
+    /// Draw the graph using custom graph library
     fn draw_graph<D>(&mut self, display: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Rgb565>,
     {
-        // Clear graph area with quality-based background color
-        self.graph_bounds
-            .into_styled(PrimitiveStyle::with_fill(
-                self.current_quality.background_color(),
-            ))
-            .draw(display)?;
+        // Update graph background to match current quality level
+        self.graph = Graph::new(self.graph_bounds)
+            .with_background(self.current_quality.background_color())
+            .with_grid(GridConfig {
+                vertical_lines: Some(VerticalGridLines {
+                    count: 5,
+                    color: LIGHT_GRAY,
+                    width: 1,
+                    style: LineStyle::Solid,
+                }),
+                horizontal_lines: None,
+            })
+            .with_x_axis(XAxisConfig {
+                label_count: 3,
+                label_formatter: LabelFormatter::TimeOffset { now_label: "NOW" },
+                label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
+                show_axis_line: false,
+            });
 
         // Check if we have data
         if self.data_buffer.is_empty() {
+            self.graph.draw(display)?; // Draw empty graph with grid
             let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
             Text::with_alignment(
                 "No data available",
@@ -234,6 +271,7 @@ impl TrendPage {
             .get_window_data(self.window, self.current_timestamp);
 
         if data.is_empty() {
+            self.graph.draw(display)?; // Draw empty graph with grid
             let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
             Text::with_alignment(
                 "No data in window",
@@ -245,118 +283,44 @@ impl TrendPage {
             return Ok(());
         }
 
-        // Draw current reading in top right of graph area
-        if let Some((_, current_value)) = self.data_buffer.points.back() {
-            // Format value without unit for main display
-            let mut value_str = String::new();
-            let _ = write!(value_str, "{:.1}", TrendStats::to_float(*current_value));
+        // Create data series with quality-based styling
+        let mut series = DataSeries::new()
+            .with_style(SeriesStyle {
+                color: self.current_quality.foreground_color(),
+                line_width: 2,
+                show_points: false,
+            })
+            .with_interpolation(InterpolationType::Smooth { tension: 0.5 });
 
-            // Position for the reading (top right of graph area)
-            let reading_x = self.graph_bounds.top_left.x + self.graph_bounds.size.width as i32 - 10;
-            let reading_y = self.graph_bounds.top_left.y + 30;
-
-            // Draw the value in large white text
-            let value_style = MonoTextStyle::new(&FONT_10X20, WHITE);
-
-            Text::with_alignment(
-                &value_str,
-                Point::new(reading_x, reading_y),
-                value_style,
-                Alignment::Right,
-            )
-            .draw(display)?;
-
-            // Draw the sensor type in small gray text below
-            let type_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
-            Text::with_alignment(
-                self.sensor.name().to_lowercase().as_str(),
-                Point::new(reading_x, reading_y + 15),
-                type_style,
-                Alignment::Right,
-            )
-            .draw(display)?;
-        }
-
-        // Our goal here is to push new points to the inner_graph for smooth sliding, however,
-        // we do not want to rebuild the entire graph from scratch each time. Because events
-        // come in chronologically, as we walk through the data points, we'll also be walking
-        // chronologically.
-        let existing: FnvIndexSet<u32, MAX_DATA_POINTS> = self
-            .line_stream
-            .current_data()
-            .map(|item| item.x as u32)
-            .collect();
-
-        let stream = &mut self.line_stream;
-
+        // Add data points to series
         for (ts, value) in data.iter() {
-            if !existing.contains(ts) {
-                let point = Point2D::new(*ts as f32, *value as f32);
-                stream.push_data(point);
-            }
+            let point = DataPoint::new(*ts as f32, *value as f32);
+            let _ = series.push(point); // Ignore capacity errors
         }
 
-        let mut temp_series = StaticDataSeries::<Point2D, MAX_DATA_POINTS>::new();
-        for point in stream.current_data() {
-            // TODO: Remove unwrap here, impl custom Error type - just base impl for now
-            temp_series.push(point).unwrap();
-        }
+        // Add series to graph
+        if self.graph.add_series(series).is_ok() {
+            // Set current value display if we have data
+            if let Some((_, current_value)) = self.data_buffer.points.back() {
+                let value_f32 = TrendStats::to_float(*current_value);
+                let mut label = heapless::String::<8>::new();
+                let _ = write!(&mut label, "{}", self.sensor.unit());
 
-        // Calculate bounds from the data to properly configure axes
-        let bounds = match temp_series.bounds() {
-            Ok(b) => b,
-            Err(_) => {
-                // If we can't calculate bounds, show error message
-                let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
-                Text::with_alignment(
-                    "Unable to calculate data bounds",
-                    self.graph_bounds.center(),
-                    text_style,
-                    Alignment::Center,
-                )
-                .draw(display)?;
-                return Ok(());
+                self.graph.set_current_value(CurrentValueDisplay {
+                    value: value_f32,
+                    label,
+                    position: CurrentValuePosition::TopRight {
+                        offset_x: 10,
+                        offset_y: 30,
+                    },
+                    value_style: MonoTextStyle::new(&FONT_10X20, WHITE),
+                    label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
+                });
             }
-        };
 
-        let ((x_min, x_max), (y_min, y_max)) =
-            calculate_nice_ranges_from_bounds(&bounds, RangeCalculationConfig::default());
-
-        // Create axes with the calculated ranges and minimal styling
-        let x_axis = presets::professional_x_axis(x_min, x_max)
-            .tick_count(5)
-            .show_grid(true)
-            .show_labels(false) // Hide axis labels
-            .build()
-            .unwrap();
-
-        let y_axis = presets::professional_y_axis(y_min, y_max)
-            .tick_count(5)
-            .show_grid(true)
-            .show_labels(false) // Hide axis labels
-            .build()
-            .unwrap();
-
-        // Build chart with quality-based color scheme
-        let line_chart = LineChartBuilder::new()
-            .smooth(true)
-            .smooth_subdivisions(2)
-            .line_width(3)
-            .line_color(self.current_quality.foreground_color())
-            .with_x_axis(x_axis)
-            .with_y_axis(y_axis)
-            .build()
-            .unwrap();
-
-        // Draw the chart with the data
-        line_chart
-            .draw(
-                &temp_series,
-                line_chart.config(),
-                self.graph_bounds,
-                display,
-            )
-            .unwrap();
+            // Draw the graph
+            self.graph.draw(display)?;
+        }
 
         Ok(())
     }
