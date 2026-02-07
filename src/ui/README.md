@@ -9,7 +9,7 @@ The Baro UI system is designed for long-running embedded firmware with these pri
 - **Composable**: Nest containers freely to build complex layouts
 - **Automatic sizing**: Elements size themselves based on content when possible
 - **Type-safe**: No trait objects - compile-time guarantees
-- **Resource-conscious**: Fixed-size allocations, no heap fragmentation
+- **Resource-conscious**: Core layout uses bounded, fixed-size buffers; some advanced widgets (e.g., graphs) use controlled heap allocations
 - **Clean code**: Readable, maintainable UI code
 
 ## Core Concepts
