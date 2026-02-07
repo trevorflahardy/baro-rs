@@ -6,7 +6,9 @@
 
 **baro-rs** is a production-grade, long-term environmental monitoring system written entirely in Rust for the ESP32-S3 platform. Designed to run continuously for months or years, it measures, logs, and visualizes environmental data with exceptional reliability and extensibility.
 
-This is **not a prototype**—it's firmware built to last, with clean architecture, robust error handling, and a modular design that welcomes expansion.
+To date, it would be very hard for you, as a user, to reproduce this project on your own. The hardware is complex, the software is non-trivial, and the design is optimized for long-term operation rather than ease of replication.
+
+Have no fear! With enough time, I hope for this project to evolve out of its breadboard phase and into a completely polished, single-PCB design with 20+ integrated sensors. At that point, it will be much easier for anyone to build (or buy) their own device, use it, and even contribute to the project.
 
 ---
 
@@ -97,7 +99,7 @@ A fully functional environmental monitoring device that:
 - [ ] Sleep mode for extended battery life
 
 ### Medium-Term (6-12 Months)
-- [ ] CO₂ sensor (SCD40/SCD41)
+- [x] CO₂ sensor (SCD40/SCD41)
 - [ ] VOC/IAQ sensor (SGP40 / BME688)
 - [ ] Advanced metrics: dew point, heat index, air quality indices
 - [ ] Configurable alerts and thresholds
@@ -127,47 +129,6 @@ A fully functional environmental monitoring device that:
 ---
 
 ## 🏗️ Architecture
-
-### Project Structure
-
-```
-baro-rs/
-├── src/
-│   ├── bin/
-│   │   └── main.rs              # Application entry point & task spawning
-│   ├── app_state/               # Global state management
-│   │   ├── hardware.rs          # Hardware initialization & abstraction
-│   │   ├── sensors_state.rs     # Sensor state & coordination
-│   │   └── mod.rs               # State types & error handling
-│   ├── sensors/                 # Sensor drivers & abstractions
-│   │   ├── sht40.rs             # SHT40 temperature/humidity
-│   │   └── mod.rs               # Sensor trait & indexed sensor system
-│   ├── storage/                 # Data persistence & rollups
-│   │   ├── sd_card.rs           # SD card interface
-│   │   ├── rollup_storage.rs    # Time-series rollup engine
-│   │   ├── accumulator.rs       # In-memory sample buffering
-│   │   └── manager.rs           # Storage coordination
-│   ├── display_manager.rs       # Display task & rendering coordination
-│   ├── pages/                   # UI screens
-│   │   ├── home.rs              # Main sensor display
-│   │   ├── trend.rs             # Historical graphs
-│   │   ├── settings.rs          # Configuration UI
-│   │   └── wifi_error.rs        # Network error handling
-│   ├── ui/                      # UI framework
-│   │   ├── core.rs              # Base UI primitives
-│   │   ├── components/          # Reusable UI components
-│   │   ├── layouts/             # Layout containers
-│   │   └── styling/             # Theme & styling system
-│   ├── widgets.rs               # Specialized display widgets
-│   ├── metrics.rs               # Derived metric calculations
-│   ├── async_i2c_bus.rs         # Async I²C bus multiplexing
-│   ├── dual_mode_pin.rs         # GPIO pin state management
-│   └── config.rs                # Configuration types
-├── AGENTS.md                    # Development philosophy & standards
-├── STORAGE.md                   # Detailed storage architecture
-├── Cargo.toml                   # Dependencies & build config
-└── rust-toolchain.toml          # Rust version pinning
-```
 
 ### Key Design Principles
 
