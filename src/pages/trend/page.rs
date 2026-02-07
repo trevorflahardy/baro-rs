@@ -1,7 +1,4 @@
-//! Trend page for displaying time-series sensor data with graphs
-//!
-//! This page provides a generic interface for visualizing any sensor's data
-//! over configurable time windows, with quality assessment and statistics.
+//! TrendPage implementation and Page trait
 
 use embedded_charts::prelude::*;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
@@ -9,7 +6,7 @@ use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X10};
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
 use embedded_graphics::{Drawable as EgDrawable, pixelcolor::Rgb565};
-use heapless::{Deque, Vec, index_set::FnvIndexSet};
+use heapless::{Vec, index_set::FnvIndexSet};
 
 use crate::metrics::QualityLevel;
 use crate::pages::Page;
@@ -24,153 +21,9 @@ use core::fmt::Write;
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
 
-// Color constants from styling
-// RGB565 format: R(5 bits), G(6 bits), B(5 bits)
-// Convert from 8-bit RGB: R>>3, G>>2, B>>3
-const COLOR_BACKGROUND: Rgb565 = Rgb565::new(18 >> 3, 23 >> 2, 24 >> 3);
-const COLOR_FOREGROUND: Rgb565 = Rgb565::new(26 >> 3, 32 >> 2, 33 >> 3);
-const _COLOR_STROKE: Rgb565 = Rgb565::new(43 >> 3, 55 >> 2, 57 >> 3);
-const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
-
-/// Maximum data points for the largest time window (limited by embedded_charts)
-const MAX_DATA_POINTS: usize = 256;
-
-/// Data point for graphing: (timestamp, value)
-type DataPoint = (u32, i32);
-
-/// Statistics for a time window
-#[derive(Debug, Clone, Copy, Default)]
-struct TrendStats {
-    /// Average value in milli-units
-    avg: i32,
-    /// Minimum value in milli-units
-    min: i32,
-    /// Maximum value in milli-units
-    max: i32,
-    /// Number of samples
-    count: usize,
-}
-
-impl TrendStats {
-    /// Convert from milli-units to float for display
-    fn to_float(value: i32) -> f32 {
-        value as f32 / 1000.0
-    }
-
-    /// Get average as float
-    fn avg_f32(&self) -> f32 {
-        Self::to_float(self.avg)
-    }
-
-    /// Get minimum as float
-    fn min_f32(&self) -> f32 {
-        Self::to_float(self.min)
-    }
-
-    /// Get maximum as float
-    fn max_f32(&self) -> f32 {
-        Self::to_float(self.max)
-    }
-}
-
-/// Ring buffer for storing time-series data points
-struct TrendDataBuffer {
-    /// Ring buffer of (timestamp, value) pairs using Deque
-    points: Deque<DataPoint, MAX_DATA_POINTS>,
-    /// Index of the sensor in the MAX_SENSORS array
-    sensor_index: usize,
-}
-
-impl TrendDataBuffer {
-    /// Create a new data buffer for a specific sensor
-    fn new(sensor_type: SensorType) -> Self {
-        Self {
-            points: Deque::new(),
-            sensor_index: sensor_type.index(),
-        }
-    }
-
-    /// Add a data point from a raw sample
-    fn push_from_raw_sample(&mut self, sample: &RawSample) {
-        let value = sample.values[self.sensor_index];
-        // If buffer is full, remove oldest
-        if self.points.is_full() {
-            self.points.pop_front();
-        }
-        let _ = self.points.push_back((sample.timestamp, value));
-    }
-
-    /// Add a data point from a rollup (using average)
-    fn push_from_rollup(&mut self, rollup: &Rollup) {
-        let value = rollup.avg[self.sensor_index];
-        // If buffer is full, remove oldest
-        if self.points.is_full() {
-            self.points.pop_front();
-        }
-        let _ = self.points.push_back((rollup.start_ts, value));
-    }
-
-    /// Bulk load multiple rollups into the buffer (for initialization)
-    /// This is more efficient than calling push_from_rollup repeatedly
-    fn load_rollups(&mut self, rollups: &[Rollup]) {
-        for rollup in rollups {
-            self.push_from_rollup(rollup);
-        }
-    }
-
-    /// Bulk load multiple raw samples into the buffer (for initialization)
-    /// This is more efficient than calling push_from_raw_sample repeatedly
-    fn load_raw_samples(&mut self, samples: &[RawSample]) {
-        for sample in samples {
-            self.push_from_raw_sample(sample);
-        }
-    }
-
-    /// Get data points within the specified time window
-    fn get_window_data(&self, window: TimeWindow, now: u32) -> Vec<DataPoint, MAX_DATA_POINTS> {
-        let window_start = now.saturating_sub(window.duration_secs());
-
-        self.points
-            .iter()
-            .filter(|(ts, _)| *ts >= window_start)
-            .copied()
-            .collect()
-    }
-
-    /// Calculate statistics for the current time window
-    fn calculate_stats(&self, window: TimeWindow, now: u32) -> TrendStats {
-        let data = self.get_window_data(window, now);
-
-        if data.is_empty() {
-            return TrendStats::default();
-        }
-
-        let mut sum = 0i64;
-        let mut min = i32::MAX;
-        let mut max = i32::MIN;
-
-        for (_, value) in data.iter() {
-            sum += *value as i64;
-            min = min.min(*value);
-            max = max.max(*value);
-        }
-
-        let count = data.len();
-        let avg = (sum / count as i64) as i32;
-
-        TrendStats {
-            avg,
-            min,
-            max,
-            count,
-        }
-    }
-
-    /// Check if there's any data in the buffer
-    fn is_empty(&self) -> bool {
-        self.points.len() == 0
-    }
-}
+use super::constants::{COLOR_BACKGROUND, COLOR_FOREGROUND, LIGHT_GRAY, MAX_DATA_POINTS};
+use super::data::TrendDataBuffer;
+use super::stats::TrendStats;
 
 /// Trend page displaying time-series graph and statistics
 pub struct TrendPage {
@@ -185,8 +38,7 @@ pub struct TrendPage {
     graph_bounds: Rectangle,
     stats_bounds: Rectangle,
 
-    // Graph repr for animation slides
-    line_chart: LineChart<Rgb565>,
+    // Graph streaming for animation slides
     line_stream: StreamingAnimator<Point2D>,
 
     // Cached state
@@ -225,15 +77,6 @@ impl TrendPage {
             Size::new(bounds.size.width, STATS_HEIGHT),
         );
 
-        // TODO: line color should be that of the current quality FG color
-        let line_chart = LineChartBuilder::new()
-            .smooth(true)
-            .smooth_subdivisions(2)
-            .line_width(2)
-            .line_color(Rgb565::WHITE)
-            .build()
-            .unwrap(); // We want this to fail at run time if it can't be built
-
         Self {
             bounds,
             sensor,
@@ -244,7 +87,6 @@ impl TrendPage {
             graph_bounds,
             stats_bounds,
             line_stream: StreamingAnimator::new(),
-            line_chart,
             stats: TrendStats::default(),
             current_quality: QualityLevel::Good,
             current_timestamp: 0,
@@ -340,7 +182,7 @@ impl TrendPage {
             self.current_quality.label(),
             crate::ui::TextSize::Medium,
         )
-        .with_alignment(embedded_graphics::text::Alignment::Right)
+        .with_alignment(embedded_graphics::text::Alignment::Center)
         .with_style(Style::new().with_foreground(WHITE));
 
         container
@@ -395,6 +237,58 @@ impl TrendPage {
             return Ok(());
         }
 
+        // Draw current reading in top right of graph area
+        if let Some((_, current_value)) = self.data_buffer.points.back() {
+            let unit = self.sensor.unit();
+            let mut reading_str = String::new();
+            let _ = write!(
+                reading_str,
+                "{:.1}{}",
+                TrendStats::to_float(*current_value),
+                unit
+            );
+
+            // Create a styled container for the current reading
+            let reading_padding = 8;
+            let reading_width = reading_str.len() as u32 * 10 + reading_padding * 2; // FONT_10X20 is ~10px wide per char
+            let reading_height = 30;
+
+            let reading_bounds = Rectangle::new(
+                Point::new(
+                    self.graph_bounds.top_left.x + self.graph_bounds.size.width as i32
+                        - reading_width as i32
+                        - 10,
+                    self.graph_bounds.top_left.y + 10,
+                ),
+                Size::new(reading_width, reading_height),
+            );
+
+            // Draw background box
+            reading_bounds
+                .into_styled(PrimitiveStyle::with_fill(COLOR_FOREGROUND))
+                .draw(display)?;
+
+            // Draw border with quality color
+            reading_bounds
+                .into_styled(
+                    PrimitiveStyle::with_stroke(self.current_quality.foreground_color(), 2),
+                )
+                .draw(display)?;
+
+            // Draw the reading text in bold font
+            let reading_text_style = MonoTextStyle::new(&FONT_10X20, WHITE);
+            Text::with_alignment(
+                &reading_str,
+                Point::new(
+                    reading_bounds.top_left.x + reading_width as i32 / 2,
+                    reading_bounds.top_left.y + 20,
+                ),
+                reading_text_style,
+                Alignment::Center,
+            )
+            .draw(display)?;
+        }
+
         // Our goal here is to push new points to the inner_graph for smooth sliding, however,
         // we do not want to rebuild the entire graph from scratch each time. Because events
         // come in chronologically, as we walk through the data points, we'll also be walking
@@ -420,14 +314,92 @@ impl TrendPage {
             temp_series.push(point).unwrap();
         }
 
-        self.line_chart
+        // Calculate bounds from the data to properly configure axes
+        let bounds = match temp_series.bounds() {
+            Ok(b) => b,
+            Err(_) => {
+                // If we can't calculate bounds, show error message
+                let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
+                Text::with_alignment(
+                    "Unable to calculate data bounds",
+                    self.graph_bounds.center(),
+                    text_style,
+                    Alignment::Center,
+                )
+                .draw(display)?;
+                return Ok(());
+            }
+        };
+
+        let ((x_min, x_max), (y_min, y_max)) = calculate_nice_ranges_from_bounds(
+            &bounds,
+            RangeCalculationConfig::default(),
+        );
+
+        // Create axes with the calculated ranges
+        let x_axis = presets::professional_x_axis(x_min, x_max)
+            .tick_count(5)
+            .show_grid(true)
+            .build()
+            .unwrap();
+
+        let y_axis = presets::professional_y_axis(y_min, y_max)
+            .tick_count(5)
+            .show_grid(true)
+            .build()
+            .unwrap();
+
+        // Build chart with configured axes
+        // TODO: line color should be that of the current quality FG color
+        let line_chart = LineChartBuilder::new()
+            .smooth(true)
+            .smooth_subdivisions(2)
+            .line_width(2)
+            .line_color(Rgb565::WHITE)
+            .with_x_axis(x_axis)
+            .with_y_axis(y_axis)
+            .build()
+            .unwrap();
+
+        // Draw the chart with the data
+        line_chart
             .draw(
                 &temp_series,
-                self.line_chart.config(),
+                line_chart.config(),
                 self.graph_bounds,
                 display,
             )
             .unwrap();
+
+        // Draw axis titles
+        let title_style = MonoTextStyle::new(&FONT_6X10, WHITE);
+
+        // Y-axis title (sensor name with unit)
+        let mut y_axis_title = String::new();
+        let _ = write!(y_axis_title, "{} ({})", self.sensor.name(), self.sensor.unit());
+
+        Text::with_alignment(
+            &y_axis_title,
+            Point::new(
+                self.graph_bounds.top_left.x + 5,
+                self.graph_bounds.top_left.y + 10,
+            ),
+            title_style,
+            Alignment::Left,
+        )
+        .draw(display)?;
+
+        // X-axis title
+        Text::with_alignment(
+            "Time",
+            Point::new(
+                self.graph_bounds.top_left.x + self.graph_bounds.size.width as i32 / 2,
+                self.graph_bounds.top_left.y + self.graph_bounds.size.height as i32 - 5,
+            ),
+            title_style,
+            Alignment::Center,
+        )
+        .draw(display)?;
 
         Ok(())
     }
