@@ -12,7 +12,7 @@ use heapless::String;
 
 use crate::ui::core::Drawable;
 
-use super::axis::{AxisConfig, XAxisConfig, draw_x_axis_labels};
+use super::axis::{AxisConfig, XAxisConfig, YAxisConfig, draw_x_axis_labels, draw_y_axis_labels};
 use super::constants::AUTO_SCALE_MARGIN_FACTOR;
 use super::grid::{GridConfig, draw_grid};
 use super::interpolation::{draw_linear_series, draw_smooth_series};
@@ -109,6 +109,12 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
     /// Set X-axis configuration
     pub fn with_x_axis(mut self, config: XAxisConfig) -> Self {
         self.axis_config.x_axis = Some(config);
+        self
+    }
+
+    /// Set Y-axis configuration
+    pub fn with_y_axis(mut self, config: YAxisConfig) -> Self {
+        self.axis_config.y_axis = Some(config);
         self
     }
 
@@ -276,6 +282,10 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Drawable for Graph<MAX_SE
 
         if let Some(ref x_axis) = self.axis_config.x_axis {
             draw_x_axis_labels(x_axis, &self.viewport, display)?;
+        }
+
+        if let Some(ref y_axis) = self.axis_config.y_axis {
+            draw_y_axis_labels(y_axis, &self.viewport, display)?;
         }
 
         self.draw_current_value(display)?;

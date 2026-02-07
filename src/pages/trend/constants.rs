@@ -9,6 +9,9 @@ pub(super) const COLOR_FOREGROUND: Rgb565 = Rgb565::new(26 >> 3, 32 >> 2, 33 >> 
 pub(super) const _COLOR_STROKE: Rgb565 = Rgb565::new(43 >> 3, 55 >> 2, 57 >> 3);
 pub(super) const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
 
+/// Very faint gray for grid lines (less visible than LIGHT_GRAY)
+pub(super) const FAINT_GRAY: Rgb565 = Rgb565::new(10, 20, 10);
+
 /// Maximum data points for the largest time window (limited by embedded_charts)
 pub(super) const MAX_DATA_POINTS: usize = 256;
 

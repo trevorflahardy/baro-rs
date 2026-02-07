@@ -16,7 +16,7 @@ use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RawSample, Rollup, RollupTier, TimeWindow};
 use crate::ui::components::graph::{
     CurrentValueDisplay, CurrentValuePosition, DataPoint, DataSeries, Graph, GridConfig,
-    InterpolationType, LabelFormatter, LineStyle, SeriesStyle, VerticalGridLines, XAxisConfig,
+    HorizontalGridLines, InterpolationType, LabelFormatter, LineStyle, SeriesStyle, XAxisConfig,
 };
 use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
 use crate::ui::{Container, Direction, Drawable, Padding, Style, WHITE};
@@ -26,7 +26,7 @@ use core::fmt::Write;
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
 
-use super::constants::{COLOR_FOREGROUND, LIGHT_GRAY, MAX_DATA_POINTS};
+use super::constants::{COLOR_FOREGROUND, FAINT_GRAY, LIGHT_GRAY, MAX_DATA_POINTS};
 use super::data::TrendDataBuffer;
 use super::stats::TrendStats;
 
@@ -86,13 +86,13 @@ impl TrendPage {
         let graph = Graph::new(graph_bounds)
             .with_background(QualityLevel::Good.background_color())
             .with_grid(GridConfig {
-                vertical_lines: Some(VerticalGridLines {
+                vertical_lines: None,
+                horizontal_lines: Some(HorizontalGridLines {
                     count: 5,
-                    color: LIGHT_GRAY,
+                    color: FAINT_GRAY,
                     width: 1,
                     style: LineStyle::Solid,
                 }),
-                horizontal_lines: None, // No horizontal lines per image design
             })
             .with_x_axis(XAxisConfig {
                 label_count: 3,
@@ -232,28 +232,15 @@ impl TrendPage {
     where
         D: DrawTarget<Color = Rgb565>,
     {
-        // Update graph background to match current quality level
-        self.graph = Graph::new(self.graph_bounds)
-            .with_background(self.current_quality.background_color())
-            .with_grid(GridConfig {
-                vertical_lines: Some(VerticalGridLines {
-                    count: 5,
-                    color: LIGHT_GRAY,
-                    width: 1,
-                    style: LineStyle::Solid,
-                }),
-                horizontal_lines: None,
-            })
-            .with_x_axis(XAxisConfig {
-                label_count: 3,
-                label_formatter: LabelFormatter::TimeOffset { now_label: "NOW" },
-                label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
-                show_axis_line: false,
-            });
-
         // Check if we have data
         if self.data_buffer.is_empty() {
-            self.graph.draw(display)?; // Draw empty graph with grid
+            // Draw empty graph background
+            self.graph_bounds
+                .into_styled(PrimitiveStyle::with_fill(
+                    self.current_quality.background_color(),
+                ))
+                .draw(display)?;
+
             let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
             Text::with_alignment(
                 "No data available",
@@ -271,7 +258,13 @@ impl TrendPage {
             .get_window_data(self.window, self.current_timestamp);
 
         if data.is_empty() {
-            self.graph.draw(display)?; // Draw empty graph with grid
+            // Draw empty graph background
+            self.graph_bounds
+                .into_styled(PrimitiveStyle::with_fill(
+                    self.current_quality.background_color(),
+                ))
+                .draw(display)?;
+
             let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
             Text::with_alignment(
                 "No data in window",
@@ -282,6 +275,25 @@ impl TrendPage {
             .draw(display)?;
             return Ok(());
         }
+
+        // Recreate graph with updated configuration
+        self.graph = Graph::new(self.graph_bounds)
+            .with_background(self.current_quality.background_color())
+            .with_grid(GridConfig {
+                vertical_lines: None,
+                horizontal_lines: Some(HorizontalGridLines {
+                    count: 5,
+                    color: FAINT_GRAY,
+                    width: 1,
+                    style: LineStyle::Solid,
+                }),
+            })
+            .with_x_axis(XAxisConfig {
+                label_count: 3,
+                label_formatter: LabelFormatter::TimeOffset { now_label: "NOW" },
+                label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
+                show_axis_line: false,
+            });
 
         // Create data series with quality-based styling
         let mut series = DataSeries::new()

@@ -60,10 +60,30 @@ impl Default for XAxisConfig {
 }
 
 /// Y-axis configuration
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct YAxisConfig {
-    /// Whether to show Y-axis (not currently used in trend page)
-    pub visible: bool,
+    /// Number of labels to display
+    pub label_count: usize,
+    /// Label formatter
+    pub label_formatter: LabelFormatter,
+    /// Text style for labels
+    pub label_style: MonoTextStyle<'static, Rgb565>,
+    /// Whether to show the axis line
+    pub show_axis_line: bool,
+}
+
+impl Default for YAxisConfig {
+    fn default() -> Self {
+        Self {
+            label_count: DEFAULT_X_AXIS_LABEL_COUNT,
+            label_formatter: LabelFormatter::Numeric {
+                precision: 1,
+                unit: "",
+            },
+            label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
+            show_axis_line: false,
+        }
+    }
 }
 
 /// Complete axis configuration
@@ -140,6 +160,61 @@ pub(super) fn draw_x_axis_labels<D: DrawTarget<Color = Rgb565>>(
             Point::new(label_x, label_y),
             config.label_style,
             alignment,
+        )
+        .draw(display)?;
+    }
+
+    Ok(())
+}
+
+/// Draw Y-axis labels
+///
+/// Renders labels along the left side of the plot area according to configuration.
+pub(super) fn draw_y_axis_labels<D: DrawTarget<Color = Rgb565>>(
+    config: &YAxisConfig,
+    viewport: &Viewport,
+    display: &mut D,
+) -> Result<(), D::Error> {
+    if config.label_count == 0 {
+        return Ok(());
+    }
+
+    let plot_area = viewport.plot_area();
+    let data_bounds = viewport.data_bounds();
+
+    // Calculate label positions
+    let spacing = plot_area.size.height / (config.label_count.saturating_sub(1).max(1)) as u32;
+    let label_x = plot_area.top_left.x - 5; // Left of plot area
+
+    for i in 0..config.label_count {
+        // Calculate data value for this position
+        let t = if config.label_count > 1 {
+            i as f32 / (config.label_count - 1) as f32
+        } else {
+            0.5
+        };
+
+        // Note: Y-axis goes from bottom (min) to top (max), so we invert t
+        let data_y = data_bounds.y_min + (data_bounds.y_max - data_bounds.y_min) * (1.0 - t);
+
+        // Format label
+        let label_text = format_label(data_y, data_bounds.y_max, &config.label_formatter);
+
+        // Calculate screen position
+        let label_y = if i == 0 {
+            plot_area.top_left.y
+        } else if i == config.label_count - 1 {
+            plot_area.top_left.y + plot_area.size.height as i32
+        } else {
+            plot_area.top_left.y + (spacing * i as u32) as i32
+        };
+
+        // Draw label (right-aligned to sit next to the plot area)
+        Text::with_alignment(
+            label_text.as_str(),
+            Point::new(label_x, label_y + 5), // +5 for vertical centering
+            config.label_style,
+            Alignment::Right,
         )
         .draw(display)?;
     }
