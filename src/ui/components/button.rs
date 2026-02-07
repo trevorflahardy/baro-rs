@@ -102,7 +102,7 @@ impl Button {
         const MIN_WIDTH: u32 = 100;
         const MIN_HEIGHT: u32 = 44;
 
-        let text_width = (label_string.len() as u32) * char_width;
+        let text_width = (label_string.chars().count() as u32) * char_width;
         let width = (text_width + 2 * HORIZONTAL_PADDING).max(MIN_WIDTH);
         let height = (char_height + 2 * VERTICAL_PADDING).max(MIN_HEIGHT);
 
