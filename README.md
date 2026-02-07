@@ -185,15 +185,6 @@ cargo build --release
 espflash flash --monitor target/xtensa-esp32s3-none-elf/release/baro-rs
 ```
 
-### Configuration
-
-Edit `src/wifi_secrets.rs` to configure Wi-Fi credentials:
-
-```rust
-pub const WIFI_SSID: &str = "YourNetworkName";
-pub const WIFI_PASSWORD: &str = "YourPassword";
-```
-
 ---
 
 ## 📚 Documentation
