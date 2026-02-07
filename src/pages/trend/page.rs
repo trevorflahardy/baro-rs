@@ -21,7 +21,7 @@ use core::fmt::Write;
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
 
-use super::constants::{COLOR_BACKGROUND, COLOR_FOREGROUND, LIGHT_GRAY, MAX_DATA_POINTS};
+use super::constants::{COLOR_FOREGROUND, LIGHT_GRAY, MAX_DATA_POINTS};
 use super::data::TrendDataBuffer;
 use super::stats::TrendStats;
 
@@ -153,18 +153,23 @@ impl TrendPage {
         )
         .draw(display)?;
 
-        // Draw quality indicator on the right
-        let _quality_style = MonoTextStyle::new(&FONT_10X20, WHITE);
+        // Draw quality indicator on the right - round pill-shaped with two-tone color
+        let quality_text = self.current_quality.label();
+        let text_width = quality_text.len() as u32 * 6; // FONT_6X10 is ~6px wide per char
+        let indicator_width = text_width + 20; // Tighter padding
+        let indicator_height = 20;
 
-        // Render quality indicator as a styled container that *owns* its text.
         let quality_bounds = Rectangle::new(
             Point::new(
-                self.header_bounds.top_left.x + self.header_bounds.size.width as i32 - 120,
-                self.header_bounds.top_left.y + 2,
+                self.header_bounds.top_left.x + self.header_bounds.size.width as i32
+                    - indicator_width as i32
+                    - 5,
+                self.header_bounds.top_left.y + 10,
             ),
-            Size::new(118, 28),
+            Size::new(indicator_width, indicator_height),
         );
 
+        // Use two-tone color scheme: darker background, brighter foreground border
         let quality_style = Style::new()
             .with_background(self.current_quality.background_color())
             .with_foreground(WHITE)
@@ -172,15 +177,16 @@ impl TrendPage {
 
         let mut container = Container::<1>::new(quality_bounds, Direction::Horizontal)
             .with_style(quality_style)
-            .with_corner_radius(5)
-            .with_padding(Padding::symmetric(3, 5))
+            .with_corner_radius(10) // More rounded
+            .with_padding(Padding::symmetric(2, 4)) // Tighter padding
             .with_alignment(crate::ui::Alignment::Center);
 
-        let text_bounds = Rectangle::new(Point::zero(), Size::new(quality_bounds.size.width, 20));
+        let text_bounds =
+            Rectangle::new(Point::zero(), Size::new(indicator_width, indicator_height));
         let text = crate::ui::components::TextComponent::new(
             text_bounds,
-            self.current_quality.label(),
-            crate::ui::TextSize::Medium,
+            quality_text,
+            crate::ui::TextSize::Small,
         )
         .with_alignment(embedded_graphics::text::Alignment::Center)
         .with_style(Style::new().with_foreground(WHITE));
@@ -202,9 +208,11 @@ impl TrendPage {
     where
         D: DrawTarget<Color = Rgb565>,
     {
-        // Clear graph area with background color
+        // Clear graph area with quality-based background color
         self.graph_bounds
-            .into_styled(PrimitiveStyle::with_fill(COLOR_BACKGROUND))
+            .into_styled(PrimitiveStyle::with_fill(
+                self.current_quality.background_color(),
+            ))
             .draw(display)?;
 
         // Check if we have data
@@ -239,52 +247,32 @@ impl TrendPage {
 
         // Draw current reading in top right of graph area
         if let Some((_, current_value)) = self.data_buffer.points.back() {
-            let unit = self.sensor.unit();
-            let mut reading_str = String::new();
-            let _ = write!(
-                reading_str,
-                "{:.1}{}",
-                TrendStats::to_float(*current_value),
-                unit
-            );
+            // Format value without unit for main display
+            let mut value_str = String::new();
+            let _ = write!(value_str, "{:.1}", TrendStats::to_float(*current_value));
 
-            // Create a styled container for the current reading
-            let reading_padding = 8;
-            let reading_width = reading_str.len() as u32 * 10 + reading_padding * 2; // FONT_10X20 is ~10px wide per char
-            let reading_height = 30;
+            // Position for the reading (top right of graph area)
+            let reading_x = self.graph_bounds.top_left.x + self.graph_bounds.size.width as i32 - 10;
+            let reading_y = self.graph_bounds.top_left.y + 30;
 
-            let reading_bounds = Rectangle::new(
-                Point::new(
-                    self.graph_bounds.top_left.x + self.graph_bounds.size.width as i32
-                        - reading_width as i32
-                        - 10,
-                    self.graph_bounds.top_left.y + 10,
-                ),
-                Size::new(reading_width, reading_height),
-            );
+            // Draw the value in large white text
+            let value_style = MonoTextStyle::new(&FONT_10X20, WHITE);
 
-            // Draw background box
-            reading_bounds
-                .into_styled(PrimitiveStyle::with_fill(COLOR_FOREGROUND))
-                .draw(display)?;
-
-            // Draw border with quality color
-            reading_bounds
-                .into_styled(
-                    PrimitiveStyle::with_stroke(self.current_quality.foreground_color(), 2),
-                )
-                .draw(display)?;
-
-            // Draw the reading text in bold font
-            let reading_text_style = MonoTextStyle::new(&FONT_10X20, WHITE);
             Text::with_alignment(
-                &reading_str,
-                Point::new(
-                    reading_bounds.top_left.x + reading_width as i32 / 2,
-                    reading_bounds.top_left.y + 20,
-                ),
-                reading_text_style,
-                Alignment::Center,
+                &value_str,
+                Point::new(reading_x, reading_y),
+                value_style,
+                Alignment::Right,
+            )
+            .draw(display)?;
+
+            // Draw the sensor type in small gray text below
+            let type_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
+            Text::with_alignment(
+                self.sensor.name().to_lowercase().as_str(),
+                Point::new(reading_x, reading_y + 15),
+                type_style,
+                Alignment::Right,
             )
             .draw(display)?;
         }
@@ -331,31 +319,30 @@ impl TrendPage {
             }
         };
 
-        let ((x_min, x_max), (y_min, y_max)) = calculate_nice_ranges_from_bounds(
-            &bounds,
-            RangeCalculationConfig::default(),
-        );
+        let ((x_min, x_max), (y_min, y_max)) =
+            calculate_nice_ranges_from_bounds(&bounds, RangeCalculationConfig::default());
 
-        // Create axes with the calculated ranges
+        // Create axes with the calculated ranges and minimal styling
         let x_axis = presets::professional_x_axis(x_min, x_max)
             .tick_count(5)
             .show_grid(true)
+            .show_labels(false) // Hide axis labels
             .build()
             .unwrap();
 
         let y_axis = presets::professional_y_axis(y_min, y_max)
             .tick_count(5)
             .show_grid(true)
+            .show_labels(false) // Hide axis labels
             .build()
             .unwrap();
 
-        // Build chart with configured axes
-        // TODO: line color should be that of the current quality FG color
+        // Build chart with quality-based color scheme
         let line_chart = LineChartBuilder::new()
             .smooth(true)
             .smooth_subdivisions(2)
-            .line_width(2)
-            .line_color(Rgb565::WHITE)
+            .line_width(3)
+            .line_color(self.current_quality.foreground_color())
             .with_x_axis(x_axis)
             .with_y_axis(y_axis)
             .build()
@@ -370,36 +357,6 @@ impl TrendPage {
                 display,
             )
             .unwrap();
-
-        // Draw axis titles
-        let title_style = MonoTextStyle::new(&FONT_6X10, WHITE);
-
-        // Y-axis title (sensor name with unit)
-        let mut y_axis_title = String::new();
-        let _ = write!(y_axis_title, "{} ({})", self.sensor.name(), self.sensor.unit());
-
-        Text::with_alignment(
-            &y_axis_title,
-            Point::new(
-                self.graph_bounds.top_left.x + 5,
-                self.graph_bounds.top_left.y + 10,
-            ),
-            title_style,
-            Alignment::Left,
-        )
-        .draw(display)?;
-
-        // X-axis title
-        Text::with_alignment(
-            "Time",
-            Point::new(
-                self.graph_bounds.top_left.x + self.graph_bounds.size.width as i32 / 2,
-                self.graph_bounds.top_left.y + self.graph_bounds.size.height as i32 - 5,
-            ),
-            title_style,
-            Alignment::Center,
-        )
-        .draw(display)?;
 
         Ok(())
     }
@@ -554,9 +511,11 @@ impl Page for TrendPage {
         &mut self,
         display: &mut D,
     ) -> Result<(), D::Error> {
-        // Clear background
+        // Clear background with quality-based color
         self.bounds
-            .into_styled(PrimitiveStyle::with_fill(COLOR_BACKGROUND))
+            .into_styled(PrimitiveStyle::with_fill(
+                self.current_quality.background_color(),
+            ))
             .draw(display)?;
 
         // Draw all sections

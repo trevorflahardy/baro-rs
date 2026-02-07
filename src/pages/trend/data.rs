@@ -62,7 +62,11 @@ impl TrendDataBuffer {
     }
 
     /// Get data points within the specified time window
-    pub(super) fn get_window_data(&self, window: TimeWindow, now: u32) -> Vec<DataPoint, MAX_DATA_POINTS> {
+    pub(super) fn get_window_data(
+        &self,
+        window: TimeWindow,
+        now: u32,
+    ) -> Vec<DataPoint, MAX_DATA_POINTS> {
         let window_start = now.saturating_sub(window.duration_secs());
 
         self.points

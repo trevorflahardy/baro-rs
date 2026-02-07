@@ -5,7 +5,6 @@ use embedded_graphics::pixelcolor::Rgb565;
 // Color constants from styling
 // RGB565 format: R(5 bits), G(6 bits), B(5 bits)
 // Convert from 8-bit RGB: R>>3, G>>2, B>>3
-pub(super) const COLOR_BACKGROUND: Rgb565 = Rgb565::new(18 >> 3, 23 >> 2, 24 >> 3);
 pub(super) const COLOR_FOREGROUND: Rgb565 = Rgb565::new(26 >> 3, 32 >> 2, 33 >> 3);
 pub(super) const _COLOR_STROKE: Rgb565 = Rgb565::new(43 >> 3, 55 >> 2, 57 >> 3);
 pub(super) const LIGHT_GRAY: Rgb565 = Rgb565::new(21, 42, 21);
