@@ -1,5 +1,6 @@
 //! TrendPage implementation and Page trait
 
+use alloc::vec::Vec;
 use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X10};
@@ -7,7 +8,7 @@ use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
-use heapless::Vec;
+use heapless::Vec as HeaplessVec;
 
 use crate::metrics::QualityLevel;
 use crate::pages::Page;
@@ -15,8 +16,8 @@ use crate::sensors::SensorType;
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RawSample, Rollup, RollupTier, TimeWindow};
 use crate::ui::components::graph::{
-    CurrentValueDisplay, CurrentValuePosition, DataPoint, DataSeries, Graph, GridConfig,
-    HorizontalGridLines, InterpolationType, LabelFormatter, LineStyle, SeriesStyle, XAxisConfig,
+    CurrentValueDisplay, CurrentValuePosition, DataPoint, DataSeries, GradientFill, Graph,
+    GridConfig, HorizontalGridLines, LabelFormatter, LineStyle, SeriesStyle, XAxisConfig,
 };
 use crate::ui::core::{Action, DirtyRegion, PageEvent, PageId, TouchEvent};
 use crate::ui::{Container, Direction, Drawable, Padding, Style, WHITE};
@@ -83,12 +84,12 @@ impl TrendPage {
         );
 
         // Create graph with default configuration matching image design
-        let graph = Graph::new(graph_bounds)
+        let mut graph = Graph::new(graph_bounds)
             .with_background(QualityLevel::Good.background_color())
             .with_grid(GridConfig {
                 vertical_lines: None,
                 horizontal_lines: Some(HorizontalGridLines {
-                    count: 5,
+                    count: 3,
                     color: FAINT_GRAY,
                     width: 1,
                     style: LineStyle::Solid,
@@ -100,6 +101,8 @@ impl TrendPage {
                 label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
                 show_axis_line: false,
             });
+
+        let _ = graph.add_series(DataSeries::new());
 
         Self {
             bounds,
@@ -276,73 +279,63 @@ impl TrendPage {
             return Ok(());
         }
 
-        // Recreate graph with updated configuration
-        self.graph = Graph::new(self.graph_bounds)
-            .with_background(self.current_quality.background_color())
-            .with_grid(GridConfig {
-                vertical_lines: None,
-                horizontal_lines: Some(HorizontalGridLines {
-                    count: 3,
-                    color: FAINT_GRAY,
-                    width: 1,
-                    style: LineStyle::Solid,
-                }),
-            })
-            .with_x_axis(XAxisConfig {
-                label_count: 3,
-                label_formatter: LabelFormatter::TimeOffset { now_label: "NOW" },
-                label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
-                show_axis_line: false,
-            });
+        self.graph
+            .set_background(self.current_quality.background_color());
+
+        if self.graph.series_count() == 0 {
+            let _ = self.graph.add_series(DataSeries::new());
+        }
 
         let window_start = self
             .current_timestamp
             .saturating_sub(self.window.duration_secs());
 
-        // Create data series with quality-based styling
-        let mut series = DataSeries::new()
-            .with_style(SeriesStyle {
-                color: self.current_quality.foreground_color(),
-                line_width: 3,
-                show_points: false,
-            })
-            .with_interpolation(InterpolationType::Smooth { tension: 0.5 });
+        let series_style = SeriesStyle {
+            color: self.current_quality.foreground_color(),
+            line_width: 3,
+            show_points: false,
+            fill: Some(GradientFill::new(
+                self.current_quality.foreground_color(),
+                self.current_quality.background_color(),
+                12,
+            )),
+        };
 
-        // Add data points to series
+        let _ = self.graph.set_series_style(0, series_style);
+
+        let mut series_points = Vec::with_capacity(data.len());
         for (ts, value) in data.iter() {
             let relative_ts = ts.saturating_sub(window_start) as f32;
             let value_f32 = TrendStats::to_float(*value);
             let point = DataPoint::new(relative_ts, value_f32);
-            let _ = series.push(point); // Ignore capacity errors
+            series_points.push(point);
         }
 
-        // Add series to graph
-        if self.graph.add_series(series).is_ok() {
-            let _ = self
-                .graph
-                .set_x_bounds(0.0, self.window.duration_secs() as f32);
+        let _ = self.graph.set_series_points(0, &series_points);
+        let _ = self
+            .graph
+            .set_x_bounds(0.0, self.window.duration_secs() as f32);
 
-            // Set current value display if we have data
-            if let Some((_, current_value)) = self.data_buffer.points.back() {
-                let value_f32 = TrendStats::to_float(*current_value);
-                let mut label = heapless::String::<8>::new();
-                let _ = write!(&mut label, "{}", self.sensor.unit());
+        // Set current value display if we have data
+        if let Some((_, current_value)) = self.data_buffer.points.back() {
+            let value_f32 = TrendStats::to_float(*current_value);
+            let mut label = String::new();
+            let _ = write!(&mut label, "{}", self.sensor.unit());
 
-                self.graph.set_current_value(CurrentValueDisplay {
-                    value: value_f32,
-                    label,
-                    position: CurrentValuePosition::TopRight {
-                        offset_x: 10,
-                        offset_y: 30,
-                    },
-                    value_style: MonoTextStyle::new(&FONT_10X20, WHITE),
-                    label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
-                });
-            }
-
-            // Draw the graph
-            self.graph.draw(display)?;
+            self.graph.set_current_value(CurrentValueDisplay {
+                value: value_f32,
+                label,
+                position: CurrentValuePosition::TopRight {
+                    offset_x: 10,
+                    offset_y: 30,
+                },
+                value_style: MonoTextStyle::new(&FONT_10X20, WHITE),
+                label_style: MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY),
+            });
         }
+
+        // Draw the graph
+        self.graph.draw(display)?;
 
         Ok(())
     }
@@ -538,13 +531,13 @@ impl Page for TrendPage {
         self.dirty = true;
     }
 
-    fn dirty_regions(&self) -> Vec<DirtyRegion, 8> {
+    fn dirty_regions(&self) -> HeaplessVec<DirtyRegion, 8> {
         if self.is_dirty() {
-            let mut regions = Vec::new();
-            regions.push(DirtyRegion::new(self.bounds)).ok();
+            let mut regions = HeaplessVec::new();
+            let _ = regions.push(DirtyRegion::new(self.bounds));
             regions
         } else {
-            Vec::new()
+            HeaplessVec::new()
         }
     }
 }

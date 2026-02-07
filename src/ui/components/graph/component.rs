@@ -8,14 +8,19 @@ use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Alignment, Text};
-use heapless::String;
+
+extern crate alloc;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use crate::ui::core::Drawable;
 
 use super::axis::{AxisConfig, XAxisConfig, YAxisConfig, draw_x_axis_labels, draw_y_axis_labels};
 use super::constants::AUTO_SCALE_MARGIN_FACTOR;
 use super::grid::{GridConfig, draw_grid};
-use super::interpolation::{draw_linear_series, draw_smooth_series};
+use super::interpolation::{
+    draw_linear_fill, draw_linear_series, draw_smooth_fill, draw_smooth_series,
+};
 use super::series::{DataPoint, DataSeries, InterpolationType, SeriesCollection};
 use super::viewport::{DataBounds, Viewport, ViewportPadding};
 use super::{GraphError, GraphResult};
@@ -44,7 +49,7 @@ pub struct CurrentValueDisplay {
     /// Value to display
     pub value: f32,
     /// Small label text (e.g., "temp", "co2")
-    pub label: String<8>,
+    pub label: String,
     /// Position on the graph
     pub position: CurrentValuePosition,
     /// Text style for the value
@@ -100,6 +105,12 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
         self
     }
 
+    /// Update background color
+    pub fn set_background(&mut self, color: Rgb565) {
+        self.background_color = color;
+        self.dirty = true;
+    }
+
     /// Set grid configuration
     pub fn with_grid(mut self, config: GridConfig) -> Self {
         self.grid_config = config;
@@ -137,6 +148,11 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
         result
     }
 
+    /// Get the number of series currently registered
+    pub fn series_count(&self) -> usize {
+        self.series_collection.len()
+    }
+
     /// Push a data point to a specific series
     ///
     /// Automatically recalculates viewport bounds.
@@ -151,6 +167,45 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
             .map_err(|_| GraphError::PointCapacityExceeded { max: MAX_POINTS })?;
 
         self.recalculate_viewport()?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Replace all points in a series and recalculate viewport once.
+    pub fn set_series_points(
+        &mut self,
+        series_idx: usize,
+        points: &[DataPoint],
+    ) -> GraphResult<()> {
+        let series = self
+            .series_collection
+            .get_mut(series_idx)
+            .ok_or(GraphError::InvalidSeriesIndex { index: series_idx })?;
+
+        series.clear();
+        for point in points.iter().copied() {
+            if series.push(point).is_err() {
+                break;
+            }
+        }
+
+        self.recalculate_viewport()?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Update the style for a series.
+    pub fn set_series_style(
+        &mut self,
+        series_idx: usize,
+        style: super::series::SeriesStyle,
+    ) -> GraphResult<()> {
+        let series = self
+            .series_collection
+            .get_mut(series_idx)
+            .ok_or(GraphError::InvalidSeriesIndex { index: series_idx })?;
+
+        series.style = style;
         self.dirty = true;
         Ok(())
     }
@@ -187,14 +242,14 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
         // Note: We use a large fixed capacity since const generic expressions
         // are not yet stable in Rust
         const MAX_TOTAL_POINTS: usize = 512;
-        let mut all_points: heapless::Vec<DataPoint, MAX_TOTAL_POINTS> = heapless::Vec::new();
+        let mut all_points: Vec<DataPoint> = Vec::with_capacity(MAX_TOTAL_POINTS);
 
         for series in self.series_collection.iter() {
             for point in series.points() {
-                if all_points.push(*point).is_err() {
-                    // If we hit capacity, stop collecting and work with what we have
+                if all_points.len() >= MAX_TOTAL_POINTS {
                     break;
                 }
+                all_points.push(*point);
             }
         }
 
@@ -225,6 +280,17 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
         for series in self.series_collection.iter() {
             if !series.is_visible() || series.points().is_empty() {
                 continue;
+            }
+
+            if let Some(fill) = &series.style().fill {
+                match series.interpolation() {
+                    InterpolationType::Linear => {
+                        draw_linear_fill(series.points(), &self.viewport, fill, display)?;
+                    }
+                    InterpolationType::Smooth { tension } => {
+                        draw_smooth_fill(series.points(), &self.viewport, fill, tension, display)?;
+                    }
+                }
             }
 
             match series.interpolation() {
@@ -266,7 +332,7 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> Graph<MAX_SERIES, MAX_POI
             };
 
             // Draw value (large)
-            let mut value_str = String::<16>::new();
+            let mut value_str = String::new();
             let _ = core::fmt::write(&mut value_str, format_args!("{:.0}", config.value));
 
             Text::with_alignment(

@@ -6,11 +6,12 @@ use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X10};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::text::{Alignment, Text};
-use heapless::String;
+extern crate alloc;
+use alloc::string::String;
 
 use crate::ui::styling::LIGHT_GRAY;
 
-use super::constants::{DEFAULT_X_AXIS_LABEL_COUNT, MAX_AXIS_LABEL_LENGTH};
+use super::constants::DEFAULT_X_AXIS_LABEL_COUNT;
 use super::viewport::Viewport;
 
 /// Label formatter for axis values
@@ -29,7 +30,7 @@ pub enum LabelFormatter {
         unit: &'static str,
     },
     /// Custom formatter using function pointer
-    Custom(fn(f32) -> String<MAX_AXIS_LABEL_LENGTH>),
+    Custom(fn(f32) -> String),
 }
 
 /// X-axis configuration
@@ -235,12 +236,7 @@ pub(super) fn draw_y_axis_labels<D: DrawTarget<Color = Rgb565>>(
 }
 
 /// Format a label value according to the formatter configuration
-fn format_label(
-    value: f32,
-    max_value: f32,
-    data_range: f32,
-    formatter: &LabelFormatter,
-) -> String<MAX_AXIS_LABEL_LENGTH> {
+fn format_label(value: f32, max_value: f32, data_range: f32, formatter: &LabelFormatter) -> String {
     match formatter {
         LabelFormatter::TimeOffset { now_label } => {
             let threshold = (data_range.abs() * 0.02).max(1.0);

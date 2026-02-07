@@ -54,7 +54,9 @@ pub mod viewport;
 pub use axis::{AxisConfig, LabelFormatter, XAxisConfig, YAxisConfig};
 pub use component::{CurrentValueDisplay, CurrentValuePosition, Graph};
 pub use grid::{GridConfig, HorizontalGridLines, LineStyle, VerticalGridLines};
-pub use series::{DataPoint, DataSeries, InterpolationType, SeriesCollection, SeriesStyle};
+pub use series::{
+    DataPoint, DataSeries, GradientFill, InterpolationType, SeriesCollection, SeriesStyle,
+};
 pub use viewport::{DataBounds, Viewport, ViewportPadding};
 
 /// Error types for graph operations

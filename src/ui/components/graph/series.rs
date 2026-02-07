@@ -4,8 +4,10 @@
 //! with associated styling and interpolation settings.
 
 use embedded_graphics::pixelcolor::Rgb565;
+
+extern crate alloc;
+use alloc::vec::Vec;
 use embedded_graphics::prelude::RgbColor;
-use heapless::Vec;
 
 use super::constants::DEFAULT_SERIES_LINE_WIDTH_PX;
 use super::{GraphError, GraphResult};
@@ -50,6 +52,8 @@ pub struct SeriesStyle {
     pub line_width: u32,
     /// Whether to draw dots at data points
     pub show_points: bool,
+    /// Optional gradient fill under the line
+    pub fill: Option<GradientFill>,
 }
 
 impl Default for SeriesStyle {
@@ -58,6 +62,29 @@ impl Default for SeriesStyle {
             color: Rgb565::WHITE,
             line_width: DEFAULT_SERIES_LINE_WIDTH_PX,
             show_points: false,
+            fill: None,
+        }
+    }
+}
+
+/// Gradient fill configuration for the area under a series
+#[derive(Debug, Clone, Copy)]
+pub struct GradientFill {
+    /// Color at the line
+    pub start_color: Rgb565,
+    /// Color at the bottom of the plot area
+    pub end_color: Rgb565,
+    /// Number of gradient bands to render
+    pub bands: u8,
+}
+
+impl GradientFill {
+    /// Create a new gradient fill
+    pub const fn new(start_color: Rgb565, end_color: Rgb565, bands: u8) -> Self {
+        Self {
+            start_color,
+            end_color,
+            bands,
         }
     }
 }
@@ -65,7 +92,7 @@ impl Default for SeriesStyle {
 /// A data series containing points, style, and interpolation settings
 pub struct DataSeries<const MAX_POINTS: usize> {
     /// Data points (x, y) pairs
-    pub(super) points: Vec<DataPoint, MAX_POINTS>,
+    pub(super) points: Vec<DataPoint>,
     /// Visual style for rendering
     pub(super) style: SeriesStyle,
     /// Interpolation method
@@ -78,7 +105,7 @@ impl<const MAX_POINTS: usize> DataSeries<MAX_POINTS> {
     /// Create an empty data series
     pub fn new() -> Self {
         Self {
-            points: Vec::new(),
+            points: Vec::with_capacity(MAX_POINTS),
             style: SeriesStyle::default(),
             interpolation: InterpolationType::Linear,
             visible: true,
@@ -107,9 +134,12 @@ impl<const MAX_POINTS: usize> DataSeries<MAX_POINTS> {
     ///
     /// Returns error if series is at capacity
     pub fn push(&mut self, point: DataPoint) -> GraphResult<()> {
-        self.points
-            .push(point)
-            .map_err(|_| GraphError::PointCapacityExceeded { max: MAX_POINTS })
+        if self.points.len() >= MAX_POINTS {
+            return Err(GraphError::PointCapacityExceeded { max: MAX_POINTS });
+        }
+
+        self.points.push(point);
+        Ok(())
     }
 
     /// Get reference to all points
@@ -147,13 +177,15 @@ impl<const MAX_POINTS: usize> Default for DataSeries<MAX_POINTS> {
 /// Collection of multiple data series
 pub struct SeriesCollection<const MAX_SERIES: usize, const MAX_POINTS: usize> {
     /// Vector of data series
-    pub(super) series: Vec<DataSeries<MAX_POINTS>, MAX_SERIES>,
+    pub(super) series: Vec<DataSeries<MAX_POINTS>>,
 }
 
 impl<const MAX_SERIES: usize, const MAX_POINTS: usize> SeriesCollection<MAX_SERIES, MAX_POINTS> {
     /// Create an empty collection
     pub fn new() -> Self {
-        Self { series: Vec::new() }
+        Self {
+            series: Vec::with_capacity(MAX_SERIES),
+        }
     }
 
     /// Add a series to the collection
@@ -161,10 +193,12 @@ impl<const MAX_SERIES: usize, const MAX_POINTS: usize> SeriesCollection<MAX_SERI
     /// Returns error if at capacity
     pub fn add(&mut self, series: DataSeries<MAX_POINTS>) -> GraphResult<usize> {
         let index = self.series.len();
-        self.series
-            .push(series)
-            .map(|_| index)
-            .map_err(|_| GraphError::SeriesCapacityExceeded { max: MAX_SERIES })
+        if index >= MAX_SERIES {
+            return Err(GraphError::SeriesCapacityExceeded { max: MAX_SERIES });
+        }
+
+        self.series.push(series);
+        Ok(index)
     }
 
     /// Get a series by index
