@@ -9,13 +9,13 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel, Receiver, Sender};
 use embassy_sync::mutex::Mutex as AsyncMutex;
-use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
+use embedded_graphics::primitives::Rectangle;
 use log::{debug, error, info};
 
 use crate::app_state::AppState;
+use crate::framebuffer::FrameBuffer;
 use crate::pages::page::{Page, PageWrapper};
 use crate::pages::{home::HomePage, settings::SettingsPage};
 use crate::sensors::SensorType;
@@ -25,7 +25,9 @@ use crate::sensors::{
 };
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RollupTier, TimeWindow};
-use crate::ui::{Action, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, PageEvent, PageId, SensorData, TouchEvent};
+use crate::ui::{
+    Action, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, PageEvent, PageId, SensorData, TouchEvent,
+};
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -56,6 +58,7 @@ where
     D: DrawTarget<Color = Rgb565>,
 {
     display: D,
+    framebuffer: FrameBuffer,
     current_page: PageWrapper,
     bounds: Rectangle,
     needs_redraw: bool,
@@ -78,6 +81,7 @@ where
 
         Self {
             display,
+            framebuffer: FrameBuffer::new(),
             current_page: PageWrapper::Home(Box::new(home_page)),
             bounds,
             needs_redraw: true,
@@ -332,18 +336,24 @@ where
         }
     }
 
-    /// Render the current page if needed
+    /// Render the current page if needed.
+    ///
+    /// Drawing targets the PSRAM framebuffer first. After the page finishes,
+    /// only the bounding rectangle of pixels that actually changed is flushed
+    /// to the hardware display over SPI — eliminating the black-flash flicker
+    /// that previously occurred when the full screen was cleared each frame.
     fn render(&mut self) -> Result<(), D::Error> {
         if self.needs_redraw {
-            debug!(" Rendering page");
-            // Clear the display
-            self.bounds
-                .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
-                .draw(&mut self.display)?;
+            debug!(" Rendering page to framebuffer");
 
-            // Draw the current page
-            let current_page = &mut self.current_page;
-            current_page.draw_page(&mut self.display)?;
+            // Clear the framebuffer (only pixels that differ will be marked dirty)
+            let _ = self.framebuffer.clear(Rgb565::BLACK);
+
+            // Draw the current page into the RAM framebuffer (infallible)
+            let _ = self.current_page.draw_page(&mut self.framebuffer);
+
+            // Flush only the changed region to the hardware display
+            self.framebuffer.flush(&mut self.display)?;
 
             self.needs_redraw = false;
         }
