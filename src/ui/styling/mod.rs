@@ -44,8 +44,8 @@ pub use colors::{
     LIGHT_GRAY, WHITE,
 };
 pub use layout::{
-    BorderRadius, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, FONT_10X20_CHAR_HEIGHT_PX,
-    FONT_6X10_CHAR_HEIGHT_PX, FONT_6X10_CHAR_WIDTH_PX, FONT_6X10_LINE_HEIGHT_PX, Padding, Spacing,
+    BorderRadius, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, FONT_6X10_CHAR_HEIGHT_PX,
+    FONT_6X10_CHAR_WIDTH_PX, FONT_6X10_LINE_HEIGHT_PX, FONT_10X20_CHAR_HEIGHT_PX, Padding, Spacing,
 };
 pub use style::{ButtonVariant, Style};
 pub use theme::Theme;
