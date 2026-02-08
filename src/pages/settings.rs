@@ -5,7 +5,7 @@ use crate::pages::constants::{
     LOG_BORDER_STROKE_WIDTH_PX, LOG_BOTTOM_MARGIN_PX, LOG_TEXT_PADDING_LEFT_PX,
     TEXT_ROW_HEIGHT_PX, TITLE_ROW_HEIGHT_PX,
 };
-use crate::pages::page_manager::Page;
+use crate::pages::page::Page;
 use crate::ui::{
     Action, Alignment, Container, Direction, Drawable, Element, FONT_6X10_LINE_HEIGHT_PX,
     PageEvent, PageId, SizeConstraint, StorageEvent, TextSize, TouchEvent,

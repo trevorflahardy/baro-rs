@@ -6,7 +6,7 @@ use embedded_graphics::{
 };
 
 use crate::pages::constants::{BUTTON_HEIGHT_PX, PAGE_HEADER_HEIGHT_PX};
-use crate::pages::page_manager::Page;
+use crate::pages::page::Page;
 use crate::ui::{
     Action, Alignment, ColorPalette, Container, Direction, Drawable, Element,
     MAX_CONTAINER_CHILDREN, MainAxisAlignment, PageId, SizeConstraint, TextComponent, TextSize,

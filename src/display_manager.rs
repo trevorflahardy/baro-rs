@@ -16,7 +16,7 @@ use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use log::{debug, error, info};
 
 use crate::app_state::AppState;
-use crate::pages::page_manager::{Page, PageWrapper};
+use crate::pages::page::{Page, PageWrapper};
 use crate::pages::{home::HomePage, settings::SettingsPage};
 use crate::sensors::SensorType;
 use crate::sensors::{
