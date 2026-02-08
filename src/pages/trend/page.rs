@@ -179,7 +179,7 @@ impl TrendPage {
             return chunk_secs.min(window_secs);
         }
 
-        let rounded_span = ((span_secs + chunk_secs - 1) / chunk_secs) * chunk_secs;
+        let rounded_span = span_secs.div_ceil(chunk_secs) * chunk_secs;
         rounded_span.clamp(chunk_secs, window_secs)
     }
 
