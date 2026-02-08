@@ -50,7 +50,10 @@ impl<'a> SensorsState<'a> {
     ) -> Result<(), SensorError> {
         let channel = SHT40IndexedAsyncI2CDeviceType::mux_channel();
         let sht40_i2c = self.mux.channel(channel).map_err(|e| {
-            error!("Failed to select mux channel {} for SHT40: {:?}", channel, e);
+            error!(
+                "Failed to select mux channel {} for SHT40: {:?}",
+                channel, e
+            );
             SensorError::I2cError {
                 sensor: "SHT40",
                 channel,
@@ -72,7 +75,10 @@ impl<'a> SensorsState<'a> {
     ) -> Result<(), SensorError> {
         let channel = SCD41IndexedAsyncI2CDeviceType::mux_channel();
         let scd41_i2c = self.mux.channel(channel).map_err(|e| {
-            error!("Failed to select mux channel {} for SCD41: {:?}", channel, e);
+            error!(
+                "Failed to select mux channel {} for SCD41: {:?}",
+                channel, e
+            );
             SensorError::I2cError {
                 sensor: "SCD41",
                 channel,

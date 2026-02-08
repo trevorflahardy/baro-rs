@@ -2,8 +2,8 @@
 //! Settings page with live sensor data and log feed.
 
 use crate::pages::constants::{
-    LOG_BORDER_STROKE_WIDTH_PX, LOG_BOTTOM_MARGIN_PX, LOG_TEXT_PADDING_LEFT_PX,
-    TEXT_ROW_HEIGHT_PX, TITLE_ROW_HEIGHT_PX,
+    LOG_BORDER_STROKE_WIDTH_PX, LOG_BOTTOM_MARGIN_PX, LOG_TEXT_PADDING_LEFT_PX, TEXT_ROW_HEIGHT_PX,
+    TITLE_ROW_HEIGHT_PX,
 };
 use crate::pages::page::Page;
 use crate::ui::{
