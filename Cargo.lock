@@ -50,6 +50,7 @@ version = "0.1.0"
 dependencies = [
  "aw9523-embedded",
  "axp2101-embedded",
+ "bh1750-embedded",
  "critical-section",
  "dotenvy",
  "embassy-executor",
@@ -90,6 +91,15 @@ name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
+
+[[package]]
+name = "bh1750-embedded"
+version = "0.1.0"
+source = "git+https://github.com/trevorflahardy/bh1750-embedded#a77e9ad46bb937ccb27367bd33d18efa26489fb4"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+]
 
 [[package]]
 name = "bitfield"
