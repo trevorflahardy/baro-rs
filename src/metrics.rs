@@ -82,6 +82,22 @@ impl QualityLevel {
                     Self::Bad
                 }
             }
+            SensorType::Lux => {
+                // Lux quality thresholds (lux)
+                // Excellent: 300-500 lux (ideal for reading/working)
+                // Good: 200-1000 lux (acceptable for most tasks)
+                // Poor: 100-2000 lux (dim or overly bright)
+                // Bad: <100 lux (too dim) or >2000 lux (too bright)
+                if (300.0..=500.0).contains(&value) {
+                    Self::Excellent
+                } else if (200.0..=1000.0).contains(&value) {
+                    Self::Good
+                } else if (100.0..=2000.0).contains(&value) {
+                    Self::Poor
+                } else {
+                    Self::Bad
+                }
+            }
         }
     }
 

@@ -1,8 +1,12 @@
+#[cfg(feature = "sensor-bh1750")]
+mod bh1750;
 #[cfg(feature = "sensor-scd41")]
 mod scd41;
 #[cfg(feature = "sensor-sht40")]
 mod sht40;
 
+#[cfg(feature = "sensor-bh1750")]
+pub use bh1750::*;
 #[cfg(feature = "sensor-scd41")]
 pub use scd41::*;
 #[cfg(feature = "sensor-sht40")]
@@ -142,6 +146,8 @@ where
 pub mod indices {
     #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
     use crate::sensors::IndexedSensor;
+    #[cfg(feature = "sensor-bh1750")]
+    use crate::sensors::bh1750::BH1750Sensor;
     #[cfg(feature = "sensor-scd41")]
     use crate::sensors::scd41::SCD41Sensor;
     #[cfg(feature = "sensor-sht40")]
@@ -170,9 +176,17 @@ pub mod indices {
     #[cfg(feature = "sensor-scd41")]
     pub type SCD41Indexed<I> = IndexedSensor<SCD41Sensor<I>, 2, 1, 1>;
 
+    /// BH1750 sensor configuration:
+    /// - Starts at index 3 (lux)
+    /// - Produces 1 value (lux)
+    /// - Connected to I2C mux channel 2
+    #[cfg(feature = "sensor-bh1750")]
+    pub type BH1750Indexed<I> = IndexedSensor<BH1750Sensor<I>, 3, 1, 2>;
+
     pub const TEMPERATURE: usize = 0;
     pub const HUMIDITY: usize = 1;
     pub const CO2: usize = 2;
+    pub const LUX: usize = 3;
 }
 
 /// Sensor type identifier for selecting which sensor data to display
@@ -184,6 +198,8 @@ pub enum SensorType {
     Humidity,
     /// CO2 sensor (SCD41 index 2)
     Co2,
+    /// Lux sensor (BH1750 index 3)
+    Lux,
 }
 
 impl SensorType {
@@ -193,6 +209,7 @@ impl SensorType {
             Self::Temperature => indices::TEMPERATURE,
             Self::Humidity => indices::HUMIDITY,
             Self::Co2 => indices::CO2,
+            Self::Lux => indices::LUX,
         }
     }
 
@@ -202,6 +219,7 @@ impl SensorType {
             Self::Temperature => "°C",
             Self::Humidity => "%",
             Self::Co2 => "ppm",
+            Self::Lux => "lux",
         }
     }
 
@@ -211,6 +229,7 @@ impl SensorType {
             Self::Temperature => "Temperature",
             Self::Humidity => "Humidity",
             Self::Co2 => "CO2",
+            Self::Lux => "Lux",
         }
     }
 
@@ -220,17 +239,24 @@ impl SensorType {
             Self::Temperature => "Temp",
             Self::Humidity => "Humid",
             Self::Co2 => "CO2",
+            Self::Lux => "Lux",
         }
     }
 }
 
+pub use indices::*;
+
 // Re-export for convenience
+#[cfg(feature = "sensor-bh1750")]
+pub use indices::BH1750Indexed;
 #[cfg(feature = "sensor-scd41")]
 pub use indices::SCD41Indexed;
 #[cfg(feature = "sensor-sht40")]
 pub use indices::SHT40Indexed;
 
-pub use indices::*;
+#[cfg(feature = "sensor-bh1750")]
+pub use bh1750::BH1750Sensor;
+
 #[cfg(feature = "sensor-scd41")]
 pub use scd41::SCD41Sensor;
 #[cfg(feature = "sensor-sht40")]
