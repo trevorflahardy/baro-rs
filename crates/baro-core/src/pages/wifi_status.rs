@@ -4,86 +4,85 @@
 //! (with a spinner-like indicator) or "Error" (with a disconnected icon and
 //! a non-functional "Connect" button placeholder).
 //!
-//! The layout is inspired by the reference design:
+//! Layout is built using the [`Container`] system for automatic centering
+//! and sizing. Icons (grid, wifi) are drawn as overlays since there is no
+//! icon Element variant.
 //!
 //! ```text
 //! ┌──────────────────────────────────────┐
-//! │  ▫  HOME AIR              ≈ (icon)  │  ← header
+//! │  ▫  HOME AIR              ≈ (icon)  │  ← header (Container)
 //! ├──────────────────────────────────────┤
 //! │                                      │
-//! │           ( n o n )   or  ...        │  ← large status text
+//! │           ( n o n )   or  ...        │  ← status text
 //! │                                      │
-//! │       No Wi-Fi Connection            │  ← title message
+//! │       No Wi-Fi Connection            │  ← title
 //! │       Data cannot be updated.        │  ← subtitle
 //! │                                      │
-//! │       [ <-> CONNECT TO WI-FI ]       │  ← action button (noop)
+//! │       [ <-> CONNECT TO WI-FI ]       │  ← button (noop)
 //! │                                      │
 //! └──────────────────────────────────────┘
 //! ```
 
-use core::cell::Cell;
-
 use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::geometry::{Point, Size};
-use embedded_graphics::mono_font::MonoTextStyle;
-use embedded_graphics::mono_font::ascii::{FONT_5X7, FONT_6X10, FONT_10X20};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{
-    Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, RoundedRectangle,
-};
-use embedded_graphics::text::{Alignment, Text};
+use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
+
+extern crate alloc;
+use alloc::boxed::Box;
 
 use crate::pages::page::Page;
 use crate::ui::core::{Action, Drawable, PageId, TouchEvent};
 use crate::ui::styling::{
-    COLOR_BACKGROUND, COLOR_FOREGROUND, COLOR_STROKE, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, WHITE,
+    COLOR_BACKGROUND, COLOR_FOREGROUND, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, WHITE,
+};
+use crate::ui::{
+    Alignment as UiAlignment, Button, ButtonVariant, ColorPalette, Container, Direction, Element,
+    MAX_CONTAINER_CHILDREN, MainAxisAlignment, Padding, SizeConstraint, Style, TextComponent,
+    TextSize,
 };
 
 // ---------------------------------------------------------------------------
 // Layout constants
 // ---------------------------------------------------------------------------
 
-/// Height of the top header bar in pixels
+/// Height of the top header bar in pixels.
 const HEADER_HEIGHT_PX: u32 = 36;
 
-/// Vertical position where the large status icon/text is drawn
-const STATUS_ICON_CENTER_Y: i32 = 105;
+/// Left padding inside the header (space for the grid icon).
+const HEADER_LEFT_PADDING_PX: u32 = 36;
 
-/// Vertical position of the title line ("No Wi-Fi Connection")
-const TITLE_Y: i32 = 130;
+/// Right padding inside the header.
+const HEADER_RIGHT_PADDING_PX: u32 = 12;
 
-/// Vertical position of the subtitle line
-const SUBTITLE_Y: i32 = 150;
+/// Gap between body content items (status text → title → subtitle).
+const BODY_CONTENT_GAP_PX: u32 = 4;
 
-/// Vertical position of the action button
-const BUTTON_CENTER_Y: i32 = 180;
+/// Height of the button element.
+const BUTTON_HEIGHT_PX: u32 = 34;
 
-/// Button size
-const BUTTON_WIDTH: u32 = 130;
-const BUTTON_HEIGHT: u32 = 25;
+/// Grid icon square size in the header.
+const GRID_ICON_SQUARE_PX: u32 = 6;
 
-/// Corner radius of the button
-const BUTTON_CORNER_RADIUS: u32 = 18;
+/// Grid icon gap between squares.
+const GRID_ICON_GAP_PX: i32 = 2;
 
-/// Corner radius of header background
-const HEADER_CORNER_RADIUS: u32 = 0;
+/// Grid icon left offset from header left edge.
+const GRID_ICON_LEFT_PX: i32 = 12;
 
 // ---------------------------------------------------------------------------
 // Colors
 // ---------------------------------------------------------------------------
 
-/// Cyan accent used for the connecting state text
-const COLOR_ACCENT_CYAN: Rgb565 = Rgb565::new(0, 50, 31); // bright cyan-ish
+/// Cyan accent used for the connecting state text.
+const COLOR_ACCENT_CYAN: Rgb565 = Rgb565::new(0, 50, 31);
 
-/// Muted gray for subtitle / secondary text
+/// Muted gray for subtitle / secondary text.
 const COLOR_TEXT_MUTED: Rgb565 = Rgb565::new(14, 28, 14);
 
-/// Light grayish text for the header title
+/// Light grayish text for the header title.
 const COLOR_HEADER_TEXT: Rgb565 = Rgb565::new(20, 40, 20);
-
-/// Reddish-pink for the wifi-bad icon
-const COLOR_WIFI_BAD: Rgb565 = Rgb565::new(28, 20, 18);
 
 // ---------------------------------------------------------------------------
 // WiFi connection state
@@ -108,7 +107,7 @@ impl WifiState {
     }
 
     /// Primary title line beneath the status text.
-    fn title(self) -> &'static str {
+    fn title_text(self) -> &'static str {
         match self {
             Self::Connecting => "Connecting to Wi-Fi",
             Self::Error => "No Wi-Fi Connection",
@@ -130,43 +129,48 @@ impl WifiState {
             Self::Error => COLOR_TEXT_MUTED,
         }
     }
-
-    /// Color for the wifi icon in the header.
-    fn icon_color(self) -> Rgb565 {
-        match self {
-            Self::Connecting => COLOR_ACCENT_CYAN,
-            Self::Error => COLOR_WIFI_BAD,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
 // WifiStatusPage
 // ---------------------------------------------------------------------------
 
+/// Full-screen bounds for the page.
+fn page_bounds() -> Rectangle {
+    Rectangle::new(
+        Point::zero(),
+        Size::new(DISPLAY_WIDTH_PX as u32, DISPLAY_HEIGHT_PX as u32),
+    )
+}
+
 /// A combined WiFi connecting / error page.
 ///
-/// The page can be constructed in either `Connecting` or `Error` state, and
-/// the state can be changed at runtime via [`set_state`](Self::set_state).
+/// Uses the [`Container`] layout system for automatic positioning and
+/// centering. Icons (grid, wifi) are drawn as overlays.
 pub struct WifiStatusPage {
-    dirty: Cell<bool>,
     state: WifiState,
+    root: Container<2>,
+    dirty: bool,
 }
 
 impl WifiStatusPage {
     /// Create the page in the given initial state.
     pub fn new(state: WifiState) -> Self {
-        Self {
-            dirty: Cell::new(true),
+        let mut page = Self {
             state,
-        }
+            root: Container::new(page_bounds(), Direction::Vertical),
+            dirty: true,
+        };
+        page.rebuild_layout();
+        page
     }
 
     /// Update the displayed state, marking the page dirty if it changed.
     pub fn set_state(&mut self, state: WifiState) {
         if self.state != state {
             self.state = state;
-            self.dirty.set(true);
+            self.rebuild_layout();
+            self.dirty = true;
         }
     }
 
@@ -175,141 +179,116 @@ impl WifiStatusPage {
         self.state
     }
 
-    // -- drawing helpers ---------------------------------------------------
+    // -- layout construction -----------------------------------------------
 
-    /// Draw the header bar ("HOME AIR" + wifi icon).
-    fn draw_header<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
-        let header_rect = Rectangle::new(
-            Point::new(0, 0),
-            Size::new(DISPLAY_WIDTH_PX as u32, HEADER_HEIGHT_PX),
+    /// Rebuild the root container tree for the current state.
+    fn rebuild_layout(&mut self) {
+        let bounds = page_bounds();
+
+        let mut root =
+            Container::<2>::new(bounds, Direction::Vertical).with_alignment(UiAlignment::Stretch);
+
+        // ── Header row ──────────────────────────────────────────────────
+        let header_text = TextComponent::auto("HOME AIR", TextSize::Medium)
+            .with_style(Style::new().with_foreground(COLOR_HEADER_TEXT));
+
+        let header = Container::<MAX_CONTAINER_CHILDREN>::new(
+            Rectangle::new(
+                Point::zero(),
+                Size::new(bounds.size.width, HEADER_HEIGHT_PX),
+            ),
+            Direction::Horizontal,
+        )
+        .with_alignment(UiAlignment::Center)
+        .with_main_axis_alignment(MainAxisAlignment::Start)
+        .with_style(Style::new().with_background(COLOR_FOREGROUND))
+        .with_padding(Padding::new(
+            0,
+            HEADER_RIGHT_PADDING_PX,
+            0,
+            HEADER_LEFT_PADDING_PX,
+        ))
+        .with_child(Element::Text(Box::new(header_text)), SizeConstraint::Fit);
+
+        let _ = root.add_child(
+            Element::container(header),
+            SizeConstraint::Fixed(HEADER_HEIGHT_PX),
         );
 
-        // Header background (rounded top corners)
-        RoundedRectangle::with_equal_corners(
-            header_rect,
-            Size::new(HEADER_CORNER_RADIUS, HEADER_CORNER_RADIUS),
-        )
-        .into_styled(PrimitiveStyle::with_fill(COLOR_FOREGROUND))
-        .draw(display)?;
+        // ── Body content (vertically centred in remaining space) ─────────
+        let mut body =
+            Container::<MAX_CONTAINER_CHILDREN>::new(Rectangle::zero(), Direction::Vertical)
+                .with_alignment(UiAlignment::Center)
+                .with_main_axis_alignment(MainAxisAlignment::Center)
+                .with_gap(BODY_CONTENT_GAP_PX);
 
-        // Grid icon (4 small squares)
-        let grid_x: i32 = 12;
-        let grid_y: i32 = 10;
-        let sq = 6u32;
-        let gap: i32 = 2;
-        let grid_color = COLOR_TEXT_MUTED;
-        let sq_style = PrimitiveStyle::with_fill(grid_color);
+        // Status text
+        let status = TextComponent::auto(self.state.status_text(), TextSize::Large)
+            .with_style(Style::new().with_foreground(self.state.accent_color()));
+        let _ = body.add_child(Element::Text(Box::new(status)), SizeConstraint::Fit);
 
-        for row in 0..2 {
-            for col in 0..2 {
+        // Title
+        let title = TextComponent::auto(self.state.title_text(), TextSize::Large)
+            .with_style(Style::new().with_foreground(WHITE));
+        let _ = body.add_child(Element::Text(Box::new(title)), SizeConstraint::Fit);
+
+        // Subtitle
+        let subtitle = TextComponent::auto(self.state.subtitle(), TextSize::Small)
+            .with_style(Style::new().with_foreground(COLOR_TEXT_MUTED));
+        let _ = body.add_child(Element::Text(Box::new(subtitle)), SizeConstraint::Fit);
+
+        // Button (only in error state)
+        if self.state == WifiState::Error {
+            // Small spacer before button
+            let _ = body.add_child(Element::spacer(Rectangle::zero()), SizeConstraint::Fixed(8));
+
+            let palette = ColorPalette {
+                surface: COLOR_FOREGROUND,
+                text_primary: COLOR_ACCENT_CYAN,
+                border: COLOR_TEXT_MUTED,
+                ..ColorPalette::default()
+            };
+
+            let btn = Button::auto("CONNECT TO WI-FI", Action::Custom(0))
+                .with_variant(ButtonVariant::Outline)
+                .with_palette(palette);
+            let _ = body.add_child(
+                Element::Button(Box::new(btn)),
+                SizeConstraint::Fixed(BUTTON_HEIGHT_PX),
+            );
+        }
+
+        let _ = root.add_child(Element::container(body), SizeConstraint::Grow(1));
+
+        self.root = root;
+    }
+
+    // -- icon overlays -----------------------------------------------------
+
+    /// Draw the 2×2 grid icon in the top-left of the header.
+    fn draw_grid_icon<D: DrawTarget<Color = Rgb565>>(
+        &self,
+        display: &mut D,
+    ) -> Result<(), D::Error> {
+        let sq_style = PrimitiveStyle::with_fill(COLOR_HEADER_TEXT);
+
+        // Vertically centre the icon block within the header.
+        let icon_block_height = GRID_ICON_SQUARE_PX * 2 + GRID_ICON_GAP_PX as u32;
+        let icon_top = (HEADER_HEIGHT_PX.saturating_sub(icon_block_height) / 2) as i32;
+
+        for row in 0..2i32 {
+            for col in 0..2i32 {
                 Rectangle::new(
                     Point::new(
-                        grid_x + col * (sq as i32 + gap),
-                        grid_y + row * (sq as i32 + gap),
+                        GRID_ICON_LEFT_PX + col * (GRID_ICON_SQUARE_PX as i32 + GRID_ICON_GAP_PX),
+                        icon_top + row * (GRID_ICON_SQUARE_PX as i32 + GRID_ICON_GAP_PX),
                     ),
-                    Size::new(sq, sq),
+                    Size::new(GRID_ICON_SQUARE_PX, GRID_ICON_SQUARE_PX),
                 )
                 .into_styled(sq_style)
                 .draw(display)?;
             }
         }
-
-        // "HOME AIR" title
-        Text::with_alignment(
-            "HOME AIR",
-            Point::new(36, (HEADER_HEIGHT_PX / 2 + 4) as i32),
-            MonoTextStyle::new(&FONT_6X10, COLOR_HEADER_TEXT),
-            Alignment::Left,
-        )
-        .draw(display)?;
-
-        Ok(())
-    }
-
-    /// Draw the large status text in the centre of the page.
-    fn draw_status_text<D: DrawTarget<Color = Rgb565>>(
-        &self,
-        display: &mut D,
-    ) -> Result<(), D::Error> {
-        let center_x = (DISPLAY_WIDTH_PX / 2) as i32;
-
-        Text::with_alignment(
-            self.state.status_text(),
-            Point::new(center_x, STATUS_ICON_CENTER_Y),
-            MonoTextStyle::new(&FONT_10X20, self.state.accent_color()),
-            Alignment::Center,
-        )
-        .draw(display)?;
-
-        Ok(())
-    }
-
-    /// Draw the title and subtitle lines.
-    fn draw_captions<D: DrawTarget<Color = Rgb565>>(
-        &self,
-        display: &mut D,
-    ) -> Result<(), D::Error> {
-        let center_x = (DISPLAY_WIDTH_PX / 2) as i32;
-
-        // Title
-        Text::with_alignment(
-            self.state.title(),
-            Point::new(center_x, TITLE_Y),
-            MonoTextStyle::new(&FONT_10X20, WHITE),
-            Alignment::Center,
-        )
-        .draw(display)?;
-
-        // Subtitle
-        Text::with_alignment(
-            self.state.subtitle(),
-            Point::new(center_x, SUBTITLE_Y),
-            MonoTextStyle::new(&FONT_6X10, COLOR_TEXT_MUTED),
-            Alignment::Center,
-        )
-        .draw(display)?;
-
-        Ok(())
-    }
-
-    /// Draw the "CONNECT TO WI-FI" button (noop for now).
-    fn draw_button<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
-        // Only show button in error state
-        if self.state != WifiState::Error {
-            return Ok(());
-        }
-
-        let center_x = (DISPLAY_WIDTH_PX / 2) as i32;
-        let btn_x = center_x - (BUTTON_WIDTH as i32 / 2);
-        let btn_y = BUTTON_CENTER_Y - (BUTTON_HEIGHT as i32 / 2);
-
-        let btn_rect = Rectangle::new(
-            Point::new(btn_x, btn_y),
-            Size::new(BUTTON_WIDTH, BUTTON_HEIGHT),
-        );
-
-        // Button outline
-        let outline_style = PrimitiveStyleBuilder::new()
-            .stroke_color(COLOR_STROKE)
-            .stroke_width(1)
-            .fill_color(COLOR_FOREGROUND)
-            .build();
-
-        RoundedRectangle::with_equal_corners(
-            btn_rect,
-            Size::new(BUTTON_CORNER_RADIUS, BUTTON_CORNER_RADIUS),
-        )
-        .into_styled(outline_style)
-        .draw(display)?;
-
-        // Button label
-        Text::with_alignment(
-            "<-> CONNECT TO WI-FI",
-            Point::new(center_x, BUTTON_CENTER_Y + 2),
-            MonoTextStyle::new(&FONT_5X7, COLOR_ACCENT_CYAN),
-            Alignment::Center,
-        )
-        .draw(display)?;
 
         Ok(())
     }
@@ -332,7 +311,7 @@ impl Page for WifiStatusPage {
     }
 
     fn on_activate(&mut self) {
-        self.dirty.set(true);
+        self.dirty = true;
     }
 
     fn handle_touch(&mut self, _event: TouchEvent) -> Option<Action> {
@@ -374,38 +353,36 @@ impl Page for WifiStatusPage {
 
 impl Drawable for WifiStatusPage {
     fn draw<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
-        if !self.dirty.get() {
+        if !self.dirty {
             return Ok(());
         }
 
         // Full-screen dark background
         display.clear(COLOR_BACKGROUND)?;
 
-        self.draw_header(display)?;
-        self.draw_status_text(display)?;
-        self.draw_captions(display)?;
-        self.draw_button(display)?;
+        // Container draws the header background, "HOME AIR" text (vertically
+        // centred), body content (centrally positioned), and button.
+        self.root.draw(display)?;
 
-        self.dirty.set(false);
+        // Overlay: grid icon in header (not representable as an Element).
+        self.draw_grid_icon(display)?;
+
         Ok(())
     }
 
     fn bounds(&self) -> Rectangle {
-        Rectangle::new(
-            Point::zero(),
-            Size::new(DISPLAY_WIDTH_PX as u32, DISPLAY_HEIGHT_PX as u32),
-        )
+        page_bounds()
     }
 
     fn is_dirty(&self) -> bool {
-        self.dirty.get()
+        self.dirty
     }
 
     fn mark_clean(&mut self) {
-        self.dirty.set(false);
+        self.dirty = false;
     }
 
     fn mark_dirty(&mut self) {
-        self.dirty.set(true);
+        self.dirty = true;
     }
 }
