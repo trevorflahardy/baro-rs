@@ -1,10 +1,8 @@
 //! Application-wide state and error types for Baro
-
-mod hardware;
-mod sensors_state;
-
-pub use hardware::*;
-pub use sensors_state::*;
+//!
+//! This module provides the core application state container and error types
+//! that are shared between the firmware and simulator. It is hardware-independent
+//! and generic over the SPI device, delay, and time source types.
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
@@ -160,7 +158,4 @@ pub enum AppError {
 
     #[error("Sensor error: {0}")]
     Sensor(#[from] crate::sensors::SensorError),
-
-    #[error("Hardware error: {0}")]
-    Hardware(#[from] hardware::HardwareError),
 }

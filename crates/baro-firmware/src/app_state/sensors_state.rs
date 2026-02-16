@@ -1,13 +1,13 @@
 //! Sensor management and state
 
-use crate::async_i2c_bus::AsyncI2cDevice;
+use baro_core::async_i2c_bus::AsyncI2cDevice;
 
 #[cfg(feature = "sensor-scd41")]
-use crate::sensors::{SCD41Indexed, SCD41Sensor};
+use baro_core::sensors::{SCD41Indexed, SCD41Sensor};
 #[cfg(feature = "sensor-sht40")]
-use crate::sensors::{SHT40Indexed, SHT40Sensor};
+use baro_core::sensors::{SHT40Indexed, SHT40Sensor};
 
-use crate::sensors::SensorError;
+use baro_core::sensors::SensorError;
 use log::error;
 
 use tca9548a_embedded::r#async::{I2cChannelAsync, Tca9548aAsync};
@@ -46,7 +46,7 @@ impl<'a> SensorsState<'a> {
     #[cfg(feature = "sensor-sht40")]
     async fn read_sht40(
         &mut self,
-        into: &mut [i32; crate::storage::MAX_SENSORS],
+        into: &mut [i32; baro_core::storage::MAX_SENSORS],
     ) -> Result<(), SensorError> {
         let channel = SHT40IndexedAsyncI2CDeviceType::mux_channel();
         let sht40_i2c = self.mux.channel(channel).map_err(|e| {
@@ -71,7 +71,7 @@ impl<'a> SensorsState<'a> {
     #[cfg(feature = "sensor-scd41")]
     async fn read_scd41(
         &mut self,
-        into: &mut [i32; crate::storage::MAX_SENSORS],
+        into: &mut [i32; baro_core::storage::MAX_SENSORS],
     ) -> Result<(), SensorError> {
         let channel = SCD41IndexedAsyncI2CDeviceType::mux_channel();
         let scd41_i2c = self.mux.channel(channel).map_err(|e| {
@@ -102,8 +102,10 @@ impl<'a> SensorsState<'a> {
     /// ensuring type-safe sensor management as the system expands.
     ///
     /// Sensors that are disabled via feature flags will have their values remain as 0.
-    pub async fn read_all(&mut self) -> Result<[i32; crate::storage::MAX_SENSORS], SensorError> {
-        let mut values = [0_i32; crate::storage::MAX_SENSORS];
+    pub async fn read_all(
+        &mut self,
+    ) -> Result<[i32; baro_core::storage::MAX_SENSORS], SensorError> {
+        let mut values = [0_i32; baro_core::storage::MAX_SENSORS];
 
         // Read SHT40 using compile-time channel info
         // The sensor type itself knows it's on channel 0

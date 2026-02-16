@@ -10,16 +10,16 @@
 // due to Future state machines. These are monitored but not denied.
 
 use alloc::boxed::Box;
-use baro_rs::app_state::{
+use baro_core::display_manager::{
+    DisplayManager, DisplayRequest, get_display_receiver, get_display_sender,
+};
+use baro_core::storage::{MAX_SENSORS, manager::StorageManager, sd_card::SdCardManager};
+use baro_core::ui::core::PageId;
+use baro_core::ui::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX};
+use baro_firmware::app_state::{
     AppError, AppRunState, AppState, GlobalStateType, ROLLUP_CHANNEL, SensorsState, TimeSyncError,
     create_i2c_bus, init_i2c_hardware, init_spi_peripherals,
 };
-use baro_rs::display_manager::{
-    DisplayManager, DisplayRequest, get_display_receiver, get_display_sender,
-};
-use baro_rs::storage::{MAX_SENSORS, manager::StorageManager, sd_card::SdCardManager};
-use baro_rs::ui::core::PageId;
-use baro_rs::ui::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX};
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{Config as EmbassyNetConfig, IpListenEndpoint, Runner, StackResources};
@@ -34,7 +34,7 @@ use static_cell::StaticCell;
 
 use log::{debug, error, info};
 
-use baro_rs::{
+use baro_firmware::{
     dual_mode_pin::{DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice},
     wifi_secrets,
 };
@@ -679,7 +679,7 @@ async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateTy
     info!("Storage event processing task started");
 
     let mut subscriber = ROLLUP_CHANNEL.subscriber().unwrap();
-    let display_sender = baro_rs::display_manager::get_display_sender();
+    let display_sender = baro_core::display_manager::get_display_sender();
 
     loop {
         let event = subscriber.next_message_pure().await;
@@ -705,7 +705,7 @@ async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateTy
 #[embassy_executor::task]
 async fn touch_polling_task(
     mut touch: FT6336U<
-        baro_rs::async_i2c_bus::AsyncI2cDevice<
+        baro_core::async_i2c_bus::AsyncI2cDevice<
             'static,
             esp_hal::i2c::master::I2c<'static, esp_hal::Async>,
         >,
@@ -725,7 +725,7 @@ async fn touch_polling_task(
                         let point = &touch_data.points[i];
 
                         // Convert touch to our TouchEvent and send to display
-                        let touch_point = baro_rs::ui::TouchPoint {
+                        let touch_point = baro_core::ui::TouchPoint {
                             x: point.x,
                             y: point.y,
                         };
@@ -735,19 +735,19 @@ async fn touch_polling_task(
                         let event = match point.status {
                             TouchStatus::Touch => {
                                 debug!("Touch task: Press at ({}, {})", point.x, point.y);
-                                baro_rs::ui::TouchEvent::Press(touch_point)
+                                baro_core::ui::TouchEvent::Press(touch_point)
                             }
                             TouchStatus::Stream => {
                                 debug!("Touch task: Drag at ({}, {})", point.x, point.y);
-                                baro_rs::ui::TouchEvent::Drag(touch_point)
+                                baro_core::ui::TouchEvent::Drag(touch_point)
                             }
                             _ => {
                                 debug!("Touch task: Other status at ({}, {})", point.x, point.y);
-                                baro_rs::ui::TouchEvent::Press(touch_point)
+                                baro_core::ui::TouchEvent::Press(touch_point)
                             } // <- Release does not ever be fired (?)
                         };
 
-                        let display_sender = baro_rs::display_manager::get_display_sender();
+                        let display_sender = baro_core::display_manager::get_display_sender();
                         debug!("Touch task: Sending touch event to display");
                         let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));
                     }

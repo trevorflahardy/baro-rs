@@ -134,6 +134,37 @@ A fully functional environmental monitoring device that:
 
 ## 🏗️ Architecture
 
+### Workspace Structure
+
+The project is organized as a Cargo workspace with three crates:
+
+```
+crates/
+├── baro-core/        # Hardware-independent core library
+│   └── src/
+│       ├── app_state.rs       # Generic application state
+│       ├── display_manager.rs # Page rendering pipeline
+│       ├── framebuffer.rs     # Framebuffer with dirty tracking
+│       ├── pages/             # UI pages (Home, Trend, Settings, …)
+│       ├── sensors/           # Sensor traits and driver wrappers
+│       ├── storage/           # Rollup engine, SD card abstraction
+│       └── ui/                # Layout system, components, styling
+├── baro-firmware/    # ESP32-S3 binary (production firmware)
+│   └── src/
+│       ├── app_state/         # Hardware init, concrete sensor state
+│       ├── dual_mode_pin.rs   # GPIO register manipulation
+│       └── bin/main.rs        # Firmware entry point
+└── baro-simulator/   # Desktop simulator (SDL2 window)
+    └── src/
+        └── main.rs            # SDL2 event loop with mock sensors
+```
+
+- **baro-core** — `#![no_std]` library containing all platform-agnostic logic.
+  Compiles on both Xtensa and standard Rust toolchains.
+- **baro-firmware** — ESP32-S3 binary that wires up real hardware peripherals.
+- **baro-simulator** — Desktop binary that renders the same pages in an SDL2
+  window with synthetic sensor data, no hardware required.
+
 ### Key Design Principles
 
 1. **Modularity First** — Each subsystem is isolated with clear boundaries
@@ -157,14 +188,62 @@ All data structures use **fixed-size records** with **version headers** for forw
 
 ---
 
-## 🛠️ Getting Started
+## �️ Desktop Simulator
+
+Develop and test UI pages without physical hardware. The simulator renders the
+same `baro-core` pages inside an SDL2 window using
+[`embedded-graphics-simulator`](https://docs.rs/embedded-graphics-simulator).
+
+### Running
+
+```bash
+# Install SDL2 (macOS)
+brew install sdl2
+
+# Run the simulator
+make sim
+# or: cargo run -p baro-simulator
+```
+
+### Key Bindings
+
+| Key | Page              |
+|-----|-------------------|
+| 1   | Home              |
+| 2   | Temperature trend |
+| 3   | Humidity trend    |
+| 4   | CO₂ trend         |
+| 5   | Settings          |
+| 6   | Wi-Fi error       |
+| Q   | Quit              |
+
+Mouse clicks are forwarded as touch events.
+
+### What It Simulates
+
+- Page rendering at 320×240 Rgb565 (scaled 2× on-screen)
+- Sinusoidal mock sensor data (temperature, humidity, CO₂)
+- Trend pages pre-loaded with synthetic history
+- Touch-based navigation between pages
+
+### What It Does Not Simulate
+
+- SD card I/O and storage persistence
+- Real Wi-Fi, SNTP, or networking
+- Embassy async runtime (uses a simple synchronous loop)
+- Power management and sleep modes
+
+---
+
+## �🛠️ Getting Started
 
 ### Prerequisites
 
-1. **Rust toolchain** (1.88+) with `xtensa` target support
+1. **Rust toolchain** (1.88+) with `xtensa` target support (ESP channel)
 2. **espflash** for flashing firmware
-3. **M5Stack CoreS3 SE** board
-4. MicroSD card (16GB recommended, FAT32 formatted)
+3. **SDL2** for the desktop simulator (`brew install sdl2`)
+4. **M5Stack CoreS3 SE** board (for firmware deployment)
+5. MicroSD card (16GB recommended, FAT32 formatted)
 
 ### Building
 
@@ -173,16 +252,37 @@ All data structures use **fixed-size records** with **version headers** for forw
 git clone https://github.com/trevorflahardy/baro-rs.git
 cd baro-rs
 
-# Check code (runs automatically in CI)
-cargo check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo fmt --all -- --check
+# --- Firmware (ESP32-S3) ---
+make fw-check          # Type-check firmware
+make fw                # Build firmware (debug)
+make fw-release        # Build firmware (release, LTO)
+make fw-clippy         # Lint firmware
 
-# Build for ESP32-S3
-cargo build --release
+# --- Simulator (desktop) ---
+make sim-check         # Type-check simulator
+make sim               # Run the desktop simulator
+make sim-clippy        # Lint simulator
 
-# Flash to device
-espflash flash --monitor target/xtensa-esp32s3-none-elf/release/baro-rs
+# --- Both ---
+make check-all         # Type-check everything
+make clippy-all        # Lint everything
+make fmt               # Format all code
+make fmt-check         # Check formatting (CI)
+
+# --- Flash to device ---
+espflash flash --monitor target/xtensa-esp32s3-none-elf/release/baro-firmware
+```
+
+Without `make`, use the underlying Cargo commands directly:
+
+```bash
+# Firmware
+cargo build --target xtensa-esp32s3-none-elf -Z build-std=alloc,core
+cargo clippy --target xtensa-esp32s3-none-elf -Z build-std=alloc,core -- -D warnings
+
+# Simulator
+cargo run -p baro-simulator
+cargo clippy -p baro-simulator -- -D warnings
 ```
 
 ---
@@ -191,7 +291,8 @@ espflash flash --monitor target/xtensa-esp32s3-none-elf/release/baro-rs
 
 - **[AGENTS.md](AGENTS.md)** — Code philosophy, style guide, and contribution requirements
 - **[STORAGE.md](STORAGE.md)** — Detailed storage architecture and data lifecycle
-- **Module docs** — Run `cargo doc --open` for inline documentation
+- **Simulator** — `make sim` to run; see the [Desktop Simulator](#-desktop-simulator) section above
+- **Module docs** — Run `cargo doc --open -p baro-core` for inline documentation
 
 ---
 
@@ -226,17 +327,17 @@ We welcome contributions that align with the project's philosophy:
 ## 🧪 Testing
 
 ```bash
-# Run clippy (all warnings treated as errors)
-cargo clippy --all-targets --all-features -- -D warnings
+# Lint everything (warnings = errors)
+make clippy-all
 
-# Format code
-cargo fmt --all
+# Format all code
+make fmt
 
-# Build for host (limited functionality)
-cargo check
+# Type-check firmware + simulator
+make check-all
 
-# Build for ESP32-S3
-cargo build --target xtensa-esp32s3-none-elf
+# Run the simulator for visual/interactive testing
+make sim
 ```
 
 ---

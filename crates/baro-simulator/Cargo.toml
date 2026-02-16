@@ -1,0 +1,24 @@
+[package]
+name = "baro-simulator"
+edition = "2024"
+rust-version = "1.88"
+version = "0.1.0"
+description = "Desktop simulator for the baro-rs environmental instrumentation UI"
+
+[[bin]]
+name = "baro-simulator"
+path = "src/main.rs"
+
+[dependencies]
+baro-core = { path = "../baro-core" }
+
+# Display simulation via SDL2
+embedded-graphics-simulator = "0.8"
+embedded-graphics = "0.8.1"
+
+# critical-section is needed by baro-core's static channels (embassy-sync)
+critical-section = { version = "1.2.0", features = ["std"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"

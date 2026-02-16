@@ -55,10 +55,10 @@ pub enum HardwareError {
     DisplayInit,
 }
 
-use crate::async_i2c_bus::AsyncI2cDevice;
 use crate::dual_mode_pin::{
     DualModePin, DualModePinAsOutput, InputModeSpiDevice, OutputModeSpiDevice,
 };
+use baro_core::async_i2c_bus::AsyncI2cDevice;
 
 pub type Tca9548SpiMultiplexer<'a> =
     Tca9548aAsync<AsyncI2cDevice<'a, esp_hal::i2c::master::I2c<'a, esp_hal::Async>>>;

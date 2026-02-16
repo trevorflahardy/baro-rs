@@ -1,12 +1,17 @@
+# ESP32-S3 target-specific settings (only applied when building for this target)
 [target.xtensa-esp32s3-none-elf]
 runner = "probe-rs run --chip esp32s3"
+rustflags = ["-C", "link-arg=-nostartfiles", "-Z", "stack-protector=all"]
+
+# Host target (macOS ARM) — point linker at Homebrew's SDL2 library
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-L/opt/homebrew/lib"]
 
 [env]
 
-[build]
-rustflags = ["-C", "link-arg=-nostartfiles", "-Z", "stack-protector=all"]
-
-target = "xtensa-esp32s3-none-elf"
-
-[unstable]
-build-std = ["alloc", "core"]
+# NOTE: No global [build] target or [unstable] build-std here.
+# This allows the simulator to compile for the host target.
+# Use the Makefile targets or explicit flags:
+#
+#   Firmware:  cargo build --target xtensa-esp32s3-none-elf -Z build-std=alloc,core
+#   Simulator: cargo run -p baro-simulator
