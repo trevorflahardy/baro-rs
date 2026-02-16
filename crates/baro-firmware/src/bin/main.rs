@@ -512,30 +512,24 @@ async fn main(spawner: Spawner) -> ! {
     #[cfg(not(any(feature = "sensor-sht40", feature = "sensor-scd41")))]
     let _sd_card_size = spi_hardware.sd_card_size;
 
-    // === Network Stack Setup (only if WiFi connected) ===
-    let (_stack_ref, time) = if wifi_connected {
-        let stack_ref = setup_network_stack(interfaces, &spawner).await;
-        let time = sync_time(stack_ref).await;
-        (Some(stack_ref), time)
-    } else {
-        (None, None)
-    };
-
-    // === Application State Setup ===
+    // === Application State Setup (does NOT require WiFi) ===
+    // Set up app state early so DisplayManager can reference it.
+    // WiFi status and time will be updated once connectivity is resolved.
     #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
-    let (app_state_ref, initial_time) = setup_app_state(sd_card, time, wifi_connected).await;
+    let (app_state_ref, _initial_time_placeholder) = setup_app_state(sd_card, None, false).await;
 
     #[cfg(not(any(feature = "sensor-sht40", feature = "sensor-scd41")))]
-    let (_app_state_ref, _initial_time) = setup_app_state(sd_card, time, wifi_connected).await;
+    let (_app_state_ref, _initial_time_placeholder) = setup_app_state(sd_card, None, false).await;
 
-    // === Spawn Background Tasks ===
+    // === Spawn Display + Touch IMMEDIATELY ===
+    // The display starts on WifiStatus(Connecting) so the user sees
+    // feedback right away, regardless of WiFi outcome.
 
     // Start touch polling task
     if spawner.spawn(touch_polling_task(touch_interface)).is_err() {
         error!("Failed to spawn touch polling task");
     }
 
-    // Start display manager task
     #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
     {
         let display_manager = DisplayManager::new(display);
@@ -558,49 +552,80 @@ async fn main(spawner: Spawner) -> ! {
         }
     }
 
-    // Navigate to appropriate page based on WiFi status
-    if !wifi_connected {
-        info!("Navigating to WiFi error page");
-        let display_sender = get_display_sender();
+    info!("Display now showing WiFi connecting page");
+
+    // === Network Stack & Time Sync (only if WiFi connected) ===
+    let display_sender = get_display_sender();
+
+    if wifi_connected {
+        let stack_ref = setup_network_stack(interfaces, &spawner).await;
+        let time = sync_time(stack_ref).await;
+        let initial_time = time.unwrap_or(0);
+
+        // Update app state with WiFi + time info
+        #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
+        {
+            let mut state = app_state_ref.lock().await;
+            state.wifi_connected = true;
+            state.time_known = time.is_some();
+            state.run_state = AppRunState::WifiConnected;
+
+            // Re-init storage with the real time if available
+            if let Some(t) = time {
+                if let Some(storage) = state.storage_manager_mut() {
+                    match storage.init(t).await {
+                        Ok(_) => info!("Storage re-initialized with synced time: {}", t),
+                        Err(e) => error!("Storage re-init failed: {:?}", e),
+                    }
+                }
+            }
+        }
+
+        // Navigate to Home page now that WiFi is up
+        info!("WiFi connected — navigating to Home page");
         display_sender
-            .send(DisplayRequest::NavigateToPage(PageId::WifiError))
+            .send(DisplayRequest::NavigateToPage(PageId::Home))
+            .await;
+
+        // Spawn sensor + storage tasks
+        #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
+        if sd_card_size > 0 {
+            info!("Starting sensor and storage tasks...");
+
+            let sensors = SensorsState::new(i2c_mux);
+
+            if spawner
+                .spawn(background_sensor_reading_task(
+                    sensors,
+                    app_state_ref,
+                    initial_time,
+                ))
+                .is_err()
+            {
+                error!("Failed to spawn sensor reading task");
+            }
+
+            if spawner
+                .spawn(storage_event_processing_task(app_state_ref))
+                .is_err()
+            {
+                error!("Failed to spawn storage event processing task");
+            }
+
+            info!("Sensor and storage tasks started");
+        } else {
+            info!("Skipping sensor tasks — SD card unavailable");
+        }
+    } else {
+        // WiFi failed — navigate to WifiStatus(Error)
+        info!("WiFi connection failed — navigating to WiFi error page");
+        display_sender
+            .send(DisplayRequest::NavigateToPage(PageId::WifiStatus))
             .await;
     }
 
-    // Only start sensor tasks if WiFi connected successfully and sensors are enabled
-    #[cfg(any(feature = "sensor-sht40", feature = "sensor-scd41"))]
-    if wifi_connected && sd_card_size > 0 {
-        info!("Starting sensor and storage tasks...");
-
-        // Create sensors state
-        let sensors = { SensorsState::new(i2c_mux) };
-
-        if spawner
-            .spawn(background_sensor_reading_task(
-                sensors,
-                app_state_ref,
-                initial_time,
-            ))
-            .is_err()
-        {
-            error!("Failed to spawn sensor reading task");
-        }
-
-        // Start storage event processing task
-        if spawner
-            .spawn(storage_event_processing_task(app_state_ref))
-            .is_err()
-        {
-            error!("Failed to spawn storage event processing task");
-        }
-
-        info!("Sensor and storage tasks started");
-    } else {
-        info!("Skipping sensor tasks - WiFi not connected or SD card unavailable");
-    }
-
     #[cfg(not(any(feature = "sensor-sht40", feature = "sensor-scd41")))]
-    info!("No sensors enabled - sensor tasks will not start");
+    info!("No sensors enabled — sensor tasks will not start");
 
     info!("All tasks spawned\n");
 

@@ -17,6 +17,7 @@ use log::{debug, error, info};
 use crate::app_state::AppState;
 use crate::framebuffer::FrameBuffer;
 use crate::pages::page::{Page, PageWrapper};
+use crate::pages::wifi_status::{WifiState, WifiStatusPage};
 use crate::pages::{home::HomePage, settings::SettingsPage};
 use crate::sensors::SensorType;
 use crate::sensors::{
@@ -75,14 +76,14 @@ where
             Size::new(DISPLAY_WIDTH_PX as u32, DISPLAY_HEIGHT_PX as u32),
         );
 
-        // Start with the home page
-        let mut home_page = HomePage::new(bounds);
-        home_page.init();
+        // Start on the WiFi connecting page — the firmware will navigate
+        // to Home once WiFi is up, or to WifiStatus(Error) on failure.
+        let wifi_page = WifiStatusPage::new(WifiState::Connecting);
 
         Self {
             display,
             framebuffer: FrameBuffer::new(),
-            current_page: PageWrapper::Home(Box::new(home_page)),
+            current_page: PageWrapper::WifiStatus(Box::new(wifi_page)),
             bounds,
             needs_redraw: true,
         }
@@ -157,9 +158,9 @@ where
 
                 self.current_page = PageWrapper::TrendPage(Box::new(page));
             }
-            PageId::WifiError => {
-                let page = crate::pages::WifiErrorPage::new();
-                self.current_page = PageWrapper::WifiError(Box::new(page));
+            PageId::WifiStatus => {
+                let page = WifiStatusPage::new(WifiState::Error);
+                self.current_page = PageWrapper::WifiStatus(Box::new(page));
             }
         }
         self.needs_redraw = true;

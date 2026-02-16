@@ -27,7 +27,8 @@ use embedded_graphics_simulator::{
 use log::info;
 
 use baro_core::pages::page::Page;
-use baro_core::pages::{HomePage, PageWrapper, SettingsPage, TrendPage, WifiErrorPage};
+use baro_core::pages::wifi_status::WifiState;
+use baro_core::pages::{HomePage, PageWrapper, SettingsPage, TrendPage, WifiStatusPage};
 use baro_core::sensors::SensorType;
 use baro_core::storage::{RawSample, TimeWindow};
 use baro_core::ui::{
@@ -172,7 +173,9 @@ fn create_page(page_id: PageId, sensor_gen: &mut MockSensorGenerator) -> PageWra
             TimeWindow::ThirtyMinutes,
             sensor_gen,
         ),
-        PageId::WifiError => PageWrapper::WifiError(Box::new(WifiErrorPage::new())),
+        PageId::WifiStatus => {
+            PageWrapper::WifiStatus(Box::new(WifiStatusPage::new(WifiState::Error)))
+        }
         // Fallback: show home for any unhandled page ID
         _ => {
             let mut page = HomePage::new(bounds);
@@ -217,7 +220,7 @@ fn keycode_to_page(keycode: Keycode) -> Option<PageId> {
         Keycode::Num3 | Keycode::Kp3 => Some(PageId::TrendHumidity),
         Keycode::Num4 | Keycode::Kp4 => Some(PageId::TrendCo2),
         Keycode::Num5 | Keycode::Kp5 => Some(PageId::Settings),
-        Keycode::Num6 | Keycode::Kp6 => Some(PageId::WifiError),
+        Keycode::Num6 | Keycode::Kp6 => Some(PageId::WifiStatus),
         _ => None,
     }
 }
@@ -233,7 +236,7 @@ fn main() {
         "Display: {}×{} (scale {}×)",
         DISPLAY_WIDTH_PX, DISPLAY_HEIGHT_PX, WINDOW_SCALE
     );
-    info!("Keys: 1=Home  2=TempTrend  3=HumTrend  4=CO₂Trend  5=Settings  6=WifiErr  Q=Quit");
+    info!("Keys: 1=Home  2=TempTrend  3=HumTrend  4=CO₂Trend  5=Settings  6=WifiStatus  Q=Quit");
 
     // SDL2 display and window
     let mut display = SimulatorDisplay::<Rgb565>::new(Size::new(

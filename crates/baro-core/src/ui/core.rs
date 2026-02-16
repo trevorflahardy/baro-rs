@@ -69,7 +69,8 @@ pub enum PageId {
     TrendTemperature,
     TrendHumidity,
     TrendCo2,
-    WifiError,
+    /// Combined WiFi status page (connecting + error states)
+    WifiStatus,
 }
 
 /// Dirty region tracking for efficient rendering

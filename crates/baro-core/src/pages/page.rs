@@ -179,7 +179,7 @@ pub enum PageWrapper {
     Home(Box<crate::pages::home::HomePage>),
     Settings(Box<crate::pages::settings::SettingsPage>),
     TrendPage(Box<crate::pages::trend::TrendPage>),
-    WifiError(Box<crate::pages::wifi_error::WifiErrorPage>),
+    WifiStatus(Box<crate::pages::wifi_status::WifiStatusPage>),
 }
 
 impl Page for PageWrapper {
@@ -188,7 +188,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => page.id(),
             PageWrapper::Settings(page) => page.id(),
             PageWrapper::TrendPage(page) => page.id(),
-            PageWrapper::WifiError(page) => page.id(),
+            PageWrapper::WifiStatus(page) => page.id(),
         }
     }
 
@@ -197,7 +197,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => page.title(),
             PageWrapper::Settings(page) => page.title(),
             PageWrapper::TrendPage(page) => page.title(),
-            PageWrapper::WifiError(page) => page.title(),
+            PageWrapper::WifiStatus(page) => page.title(),
         }
     }
 
@@ -206,7 +206,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => page.on_activate(),
             PageWrapper::Settings(page) => page.on_activate(),
             PageWrapper::TrendPage(page) => page.on_activate(),
-            PageWrapper::WifiError(page) => page.on_activate(),
+            PageWrapper::WifiStatus(page) => page.on_activate(),
         }
     }
 
@@ -215,7 +215,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => page.on_deactivate(),
             PageWrapper::Settings(page) => page.on_deactivate(),
             PageWrapper::TrendPage(page) => page.on_deactivate(),
-            PageWrapper::WifiError(page) => page.on_deactivate(),
+            PageWrapper::WifiStatus(page) => page.on_deactivate(),
         }
     }
 
@@ -224,7 +224,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => page.handle_touch(event),
             PageWrapper::Settings(page) => page.handle_touch(event),
             PageWrapper::TrendPage(page) => page.handle_touch(event),
-            PageWrapper::WifiError(page) => page.handle_touch(event),
+            PageWrapper::WifiStatus(page) => page.handle_touch(event),
         }
     }
 
@@ -233,7 +233,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => page.update(),
             PageWrapper::Settings(page) => page.update(),
             PageWrapper::TrendPage(page) => page.update(),
-            PageWrapper::WifiError(page) => page.update(),
+            PageWrapper::WifiStatus(page) => page.update(),
         }
     }
 
@@ -242,7 +242,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => page.on_event(event),
             PageWrapper::Settings(page) => page.on_event(event),
             PageWrapper::TrendPage(page) => page.on_event(event),
-            PageWrapper::WifiError(page) => page.on_event(event),
+            PageWrapper::WifiStatus(page) => page.on_event(event),
         }
     }
 
@@ -254,7 +254,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => page.draw_page(display),
             PageWrapper::Settings(page) => page.draw_page(display),
             PageWrapper::TrendPage(page) => page.draw_page(display),
-            PageWrapper::WifiError(page) => page.draw_page(display),
+            PageWrapper::WifiStatus(page) => page.draw_page(display),
         }
     }
 
@@ -263,7 +263,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => Page::bounds(page),
             PageWrapper::Settings(page) => Page::bounds(page),
             PageWrapper::TrendPage(page) => Page::bounds(page),
-            PageWrapper::WifiError(page) => Page::bounds(page),
+            PageWrapper::WifiStatus(page) => Page::bounds(page),
         }
     }
 
@@ -272,7 +272,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => Page::is_dirty(page),
             PageWrapper::Settings(page) => Page::is_dirty(page),
             PageWrapper::TrendPage(page) => Page::is_dirty(page),
-            PageWrapper::WifiError(page) => Page::is_dirty(page),
+            PageWrapper::WifiStatus(page) => Page::is_dirty(page),
         }
     }
 
@@ -281,7 +281,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => Page::mark_clean(page),
             PageWrapper::Settings(page) => Page::mark_clean(page),
             PageWrapper::TrendPage(page) => Page::mark_clean(page),
-            PageWrapper::WifiError(page) => Page::mark_clean(page),
+            PageWrapper::WifiStatus(page) => Page::mark_clean(page),
         }
     }
 
@@ -290,7 +290,7 @@ impl Page for PageWrapper {
             PageWrapper::Home(page) => Page::mark_dirty(page),
             PageWrapper::Settings(page) => Page::mark_dirty(page),
             PageWrapper::TrendPage(page) => Page::mark_dirty(page),
-            PageWrapper::WifiError(page) => Page::mark_dirty(page),
+            PageWrapper::WifiStatus(page) => Page::mark_dirty(page),
         }
     }
 }
