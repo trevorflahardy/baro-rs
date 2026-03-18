@@ -11,7 +11,9 @@
 //! | 2   | Temperature trend            |
 //! | 3   | Humidity trend               |
 //! | 4   | CO₂ trend                    |
-//! | 5   | Settings page                |
+//! | 5   | Lux trend                    |
+//! | 6   | Settings page                |
+//! | 7   | WiFi status                  |
 //! | Q   | Quit                         |
 //!
 //! Mouse clicks are forwarded as touch events.
@@ -81,6 +83,9 @@ impl MockSensorGenerator {
         // CO₂: 400–800 ppm with a longer cycle
         let co2 = 600.0 + 200.0 * (t / 300.0).sin() + 30.0 * (t / 41.0).cos();
 
+        // Lux: 200–600 lux with a medium cycle
+        let lux = 400.0 + 200.0 * (t / 240.0).sin() + 50.0 * (t / 31.0).cos();
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -90,6 +95,7 @@ impl MockSensorGenerator {
             temperature: Some(temperature as f32),
             humidity: Some(humidity as f32),
             co2: Some(co2 as f32),
+            lux: Some(lux as f32),
             timestamp,
         }
     }
@@ -115,12 +121,15 @@ impl MockSensorGenerator {
                     ((50.0 + 10.0 * (t / 180.0).sin() + 2.0 * (t / 23.0).cos()) * 1000.0) as i32;
                 let co2_mp =
                     ((600.0 + 200.0 * (t / 300.0).sin() + 30.0 * (t / 41.0).cos()) * 1000.0) as i32;
+                let lux_ml =
+                    ((400.0 + 200.0 * (t / 240.0).sin() + 50.0 * (t / 31.0).cos()) * 1000.0) as i32;
 
                 let mut sample = RawSample::default();
                 sample.timestamp = ts;
                 sample.values[baro_core::sensors::TEMPERATURE] = temp_mc;
                 sample.values[baro_core::sensors::HUMIDITY] = hum_mp;
                 sample.values[baro_core::sensors::CO2] = co2_mp;
+                sample.values[baro_core::sensors::LUX] = lux_ml;
 
                 sample
             })
@@ -173,6 +182,12 @@ fn create_page(page_id: PageId, sensor_gen: &mut MockSensorGenerator) -> PageWra
             TimeWindow::ThirtyMinutes,
             sensor_gen,
         ),
+        PageId::TrendLux => create_trend_page(
+            bounds,
+            SensorType::Lux,
+            TimeWindow::ThirtyMinutes,
+            sensor_gen,
+        ),
         PageId::WifiStatus => {
             PageWrapper::WifiStatus(Box::new(WifiStatusPage::new(WifiState::Error)))
         }
@@ -219,8 +234,9 @@ fn keycode_to_page(keycode: Keycode) -> Option<PageId> {
         Keycode::Num2 | Keycode::Kp2 => Some(PageId::TrendTemperature),
         Keycode::Num3 | Keycode::Kp3 => Some(PageId::TrendHumidity),
         Keycode::Num4 | Keycode::Kp4 => Some(PageId::TrendCo2),
-        Keycode::Num5 | Keycode::Kp5 => Some(PageId::Settings),
-        Keycode::Num6 | Keycode::Kp6 => Some(PageId::WifiStatus),
+        Keycode::Num5 | Keycode::Kp5 => Some(PageId::TrendLux),
+        Keycode::Num6 | Keycode::Kp6 => Some(PageId::Settings),
+        Keycode::Num7 | Keycode::Kp7 => Some(PageId::WifiStatus),
         _ => None,
     }
 }
@@ -236,7 +252,9 @@ fn main() {
         "Display: {}×{} (scale {}×)",
         DISPLAY_WIDTH_PX, DISPLAY_HEIGHT_PX, WINDOW_SCALE
     );
-    info!("Keys: 1=Home  2=TempTrend  3=HumTrend  4=CO₂Trend  5=Settings  6=WifiStatus  Q=Quit");
+    info!(
+        "Keys: 1=Home  2=TempTrend  3=HumTrend  4=CO₂Trend  5=LuxTrend  6=Settings  7=WifiStatus  Q=Quit"
+    );
 
     // SDL2 display and window
     let mut display = SimulatorDisplay::<Rgb565>::new(Size::new(

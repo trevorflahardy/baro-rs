@@ -21,7 +21,7 @@ use crate::pages::wifi_status::{WifiState, WifiStatusPage};
 use crate::pages::{home::HomePage, settings::SettingsPage};
 use crate::sensors::SensorType;
 use crate::sensors::{
-    CO2 as SENSOR_CO2_INDEX, HUMIDITY as SENSOR_HUMIDITY_INDEX,
+    CO2 as SENSOR_CO2_INDEX, HUMIDITY as SENSOR_HUMIDITY_INDEX, LUX as SENSOR_LUX_INDEX,
     TEMPERATURE as SENSOR_TEMPERATURE_INDEX,
 };
 use crate::storage::accumulator::RollupEvent;
@@ -158,6 +158,18 @@ where
 
                 self.current_page = PageWrapper::TrendPage(Box::new(page));
             }
+            PageId::TrendLux => {
+                debug!(" Creating TrendLux page with historical data");
+                let mut page = crate::pages::TrendPage::new(
+                    self.bounds,
+                    SensorType::Lux,
+                    TimeWindow::ThirtyMinutes,
+                );
+
+                Self::load_trend_data(app_state, &mut page, TimeWindow::ThirtyMinutes).await;
+
+                self.current_page = PageWrapper::TrendPage(Box::new(page));
+            }
             PageId::WifiStatus => {
                 let page = WifiStatusPage::new(WifiState::Error);
                 self.current_page = PageWrapper::WifiStatus(Box::new(page));
@@ -282,11 +294,13 @@ where
                 let temperature_mc = sample.values[SENSOR_TEMPERATURE_INDEX];
                 let humidity_mp = sample.values[SENSOR_HUMIDITY_INDEX];
                 let co2_mp = sample.values[SENSOR_CO2_INDEX];
+                let lux_ml = sample.values[SENSOR_LUX_INDEX];
 
                 // Convert to float values (divide by 1000)
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
                 let co2_ppm = co2_mp as f32 / 1000.0;
+                let lux_val = lux_ml as f32 / 1000.0;
 
                 debug!("{}", sample);
 
@@ -294,6 +308,7 @@ where
                     temperature: Some(temp_c),
                     humidity: Some(humidity_pct),
                     co2: Some(co2_ppm),
+                    lux: Some(lux_val),
                     timestamp: sample.timestamp as u64,
                 };
 
@@ -312,10 +327,12 @@ where
                 let temperature_mc = rollup.avg[SENSOR_TEMPERATURE_INDEX];
                 let humidity_mp = rollup.avg[SENSOR_HUMIDITY_INDEX];
                 let co2_mp = rollup.avg[SENSOR_CO2_INDEX];
+                let lux_ml = rollup.avg[SENSOR_LUX_INDEX];
 
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
                 let co2_ppm = co2_mp as f32 / 1000.0;
+                let lux_val = lux_ml as f32 / 1000.0;
 
                 debug!("{}", rollup);
 
@@ -323,6 +340,7 @@ where
                     temperature: Some(temp_c),
                     humidity: Some(humidity_pct),
                     co2: Some(co2_ppm),
+                    lux: Some(lux_val),
                     timestamp: rollup.start_ts as u64,
                 };
 

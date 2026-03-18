@@ -69,6 +69,7 @@ pub enum PageId {
     TrendTemperature,
     TrendHumidity,
     TrendCo2,
+    TrendLux,
     /// Combined WiFi status page (connecting + error states)
     WifiStatus,
 }
@@ -209,6 +210,7 @@ pub struct SensorData {
     pub temperature: Option<f32>,
     pub humidity: Option<f32>,
     pub co2: Option<f32>,
+    pub lux: Option<f32>,
     pub timestamp: u64,
 }
 

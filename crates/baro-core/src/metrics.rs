@@ -130,4 +130,51 @@ impl QualityLevel {
             Self::Bad => "Bad",
         }
     }
+
+    /// Short label for compact display (e.g. quality pills)
+    pub const fn short_label(self) -> &'static str {
+        match self {
+            Self::Excellent => "Excl",
+            Self::Good => "Good",
+            Self::Poor => "Poor",
+            Self::Bad => "Bad",
+        }
+    }
+
+    /// Sort key for ordering worst-first (Bad=0, Poor=1, Good=2, Excellent=3)
+    pub const fn sort_key(self) -> u8 {
+        match self {
+            Self::Bad => 0,
+            Self::Poor => 1,
+            Self::Good => 2,
+            Self::Excellent => 3,
+        }
+    }
+
+    /// Return the worst (most severe) quality level from a slice
+    pub fn worst(levels: &[QualityLevel]) -> QualityLevel {
+        levels
+            .iter()
+            .copied()
+            .min_by_key(|q| q.sort_key())
+            .unwrap_or(QualityLevel::Good)
+    }
+
+    /// Banner status text for the overall quality
+    pub const fn status_text(self) -> &'static str {
+        match self {
+            Self::Excellent => "ALL GOOD",
+            Self::Good => "ALL GOOD",
+            Self::Poor => "NEEDS ATTENTION",
+            Self::Bad => "CRITICAL",
+        }
+    }
+
+    /// Banner icon prefix character
+    pub const fn status_icon(self) -> &'static str {
+        match self {
+            Self::Excellent | Self::Good => "●",
+            Self::Poor | Self::Bad => "▲",
+        }
+    }
 }
