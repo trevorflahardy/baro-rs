@@ -309,6 +309,56 @@ fn keycode_to_page(keycode: Keycode) -> Option<PageId> {
 }
 
 // ---------------------------------------------------------------------------
+// Touch action handling
+// ---------------------------------------------------------------------------
+
+/// Process a touch action from the UI (shared by Press and Release handlers).
+fn handle_sim_action(
+    action: Action,
+    current_page: &mut PageWrapper,
+    sensor_gen: &mut MockSensorGenerator,
+    sensor_store: &SensorDataStore,
+    needs_redraw: &mut bool,
+) {
+    match action {
+        Action::NavigateToPage(page_id) => {
+            info!("Touch → navigate to {:?}", page_id);
+            *current_page = create_page(page_id, sensor_gen, sensor_store);
+            *needs_redraw = true;
+        }
+        Action::GoBack => {
+            let current_id = Page::id(current_page);
+            let target = match current_id {
+                PageId::DisplaySettings | PageId::Monitor => PageId::Settings,
+                _ => PageId::Home,
+            };
+            info!("Touch → go back to {:?}", target);
+            *current_page = create_page(target, sensor_gen, sensor_store);
+            *needs_redraw = true;
+        }
+        Action::UpdateHomePageMode(mode) => {
+            info!("Touch → update home page mode to {:?}", mode);
+            // SAFETY: single-threaded simulator
+            unsafe {
+                SIM_HOME_PAGE_MODE = mode;
+            }
+            *current_page = create_page(PageId::Home, sensor_gen, sensor_store);
+            *needs_redraw = true;
+        }
+        Action::UpdateTemperatureUnit(unit) => {
+            info!("Touch → update temperature unit to {:?}", unit);
+            // SAFETY: single-threaded simulator
+            unsafe {
+                SIM_TEMP_UNIT = unit;
+            }
+        }
+        other => {
+            info!("Touch → action {:?}", other);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -391,45 +441,32 @@ fn main() {
                         point.y.max(0) as u16,
                     ));
 
+                    // Send Press — actions are deferred until Release
                     if let Some(action) = Page::handle_touch(&mut current_page, touch) {
-                        match action {
-                            Action::NavigateToPage(page_id) => {
-                                info!("Touch → navigate to {:?}", page_id);
-                                current_page = create_page(page_id, &mut sensor_gen, &sensor_store);
-                                needs_redraw = true;
-                            }
-                            Action::GoBack => {
-                                // Context-aware back navigation
-                                let current_id = Page::id(&current_page);
-                                let target = match current_id {
-                                    PageId::DisplaySettings | PageId::Monitor => PageId::Settings,
-                                    _ => PageId::Home,
-                                };
-                                info!("Touch → go back to {:?}", target);
-                                current_page = create_page(target, &mut sensor_gen, &sensor_store);
-                                needs_redraw = true;
-                            }
-                            Action::UpdateHomePageMode(mode) => {
-                                info!("Touch → update home page mode to {:?}", mode);
-                                // SAFETY: single-threaded simulator
-                                unsafe {
-                                    SIM_HOME_PAGE_MODE = mode;
-                                }
-                                current_page =
-                                    create_page(PageId::Home, &mut sensor_gen, &sensor_store);
-                                needs_redraw = true;
-                            }
-                            Action::UpdateTemperatureUnit(unit) => {
-                                info!("Touch → update temperature unit to {:?}", unit);
-                                // SAFETY: single-threaded simulator
-                                unsafe {
-                                    SIM_TEMP_UNIT = unit;
-                                }
-                            }
-                            other => {
-                                info!("Touch → action {:?}", other);
-                            }
-                        }
+                        handle_sim_action(
+                            action,
+                            &mut current_page,
+                            &mut sensor_gen,
+                            &sensor_store,
+                            &mut needs_redraw,
+                        );
+                    }
+                }
+
+                SimulatorEvent::MouseButtonUp { point, .. } => {
+                    let touch = TouchEvent::Release(TouchPoint::new(
+                        point.x.max(0) as u16,
+                        point.y.max(0) as u16,
+                    ));
+
+                    if let Some(action) = Page::handle_touch(&mut current_page, touch) {
+                        handle_sim_action(
+                            action,
+                            &mut current_page,
+                            &mut sensor_gen,
+                            &sensor_store,
+                            &mut needs_redraw,
+                        );
                     }
                 }
 

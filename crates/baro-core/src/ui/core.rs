@@ -32,6 +32,8 @@ pub enum TouchEvent {
     Press(TouchPoint),
     /// Touch drag to a new point
     Drag(TouchPoint),
+    /// Touch released at a point
+    Release(TouchPoint),
 }
 
 /// Result from handling a touch event

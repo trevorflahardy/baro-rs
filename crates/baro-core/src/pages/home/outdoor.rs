@@ -24,7 +24,7 @@ use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
 use crate::sensor_store::SensorDataStore;
 use crate::sensors::SensorType;
-use crate::ui::core::{Action, Drawable, PageEvent, PageId, TouchEvent, Touchable};
+use crate::ui::core::{Action, Drawable, PageEvent, PageId, TouchEvent, TouchPoint, Touchable};
 use crate::ui::layouts::scrollable::{ScrollDirection, ScrollableContainer};
 use crate::ui::styling::{COLOR_BACKGROUND, COLOR_FOREGROUND, WHITE};
 
@@ -588,6 +588,9 @@ impl AlertOverlay {
 // HomePage
 // ---------------------------------------------------------------------------
 
+/// Minimum drag distance (in pixels) to distinguish scroll from tap
+const DRAG_THRESHOLD_PX: i32 = 8;
+
 /// Home page showing status banner and priority-sorted sensor list.
 pub struct HomePage {
     bounds: Rectangle,
@@ -600,6 +603,12 @@ pub struct HomePage {
     settings_touch_bounds: Rectangle,
     last_timestamp: u64,
     dirty: bool,
+    /// Action deferred until Release (to distinguish taps from scrolls)
+    pending_tap_action: Option<Action>,
+    /// Original press point for drag-distance calculation
+    press_origin: Option<TouchPoint>,
+    /// Whether a drag exceeding the threshold has occurred since last press
+    is_dragging: bool,
 }
 
 impl HomePage {
@@ -643,6 +652,9 @@ impl HomePage {
             settings_touch_bounds,
             last_timestamp: 0,
             dirty: true,
+            pending_tap_action: None,
+            press_origin: None,
+            is_dragging: false,
         }
     }
 
@@ -850,22 +862,27 @@ impl Page for HomePage {
             TouchEvent::Press(point) => {
                 let pt = point.to_point();
 
-                // Settings gear
+                // Settings gear — immediate action (not in scrollable area)
                 if self.settings_touch_bounds.contains(pt) {
                     return Some(Action::NavigateToPage(PageId::Settings));
                 }
 
+                // Reset drag tracking
+                self.pending_tap_action = None;
+                self.press_origin = Some(point);
+                self.is_dragging = false;
+
                 // Check if press is in the list viewport area
                 let viewport = Self::list_viewport(self.bounds);
                 if viewport.contains(pt) {
-                    // Check sensor rows (accounting for scroll)
+                    // Record which row was pressed (don't navigate yet)
                     for visual_idx in 0..self.row_count {
                         let screen_rect = self.row_screen_bounds(visual_idx);
                         if screen_rect.contains(pt) && self.is_row_visible(visual_idx) {
                             let data_idx = self.sort_order[visual_idx];
-                            return Some(Action::NavigateToPage(
-                                self.rows[data_idx].trend_page_id(),
-                            ));
+                            self.pending_tap_action =
+                                Some(Action::NavigateToPage(self.rows[data_idx].trend_page_id()));
+                            break;
                         }
                     }
 
@@ -876,12 +893,40 @@ impl Page for HomePage {
                 None
             }
             TouchEvent::Drag(point) => {
+                // Check if drag exceeds threshold to distinguish from tap
+                if !self.is_dragging
+                    && let Some(origin) = self.press_origin
+                {
+                    let dx = point.x as i32 - origin.x as i32;
+                    let dy = point.y as i32 - origin.y as i32;
+                    if dx.abs() > DRAG_THRESHOLD_PX || dy.abs() > DRAG_THRESHOLD_PX {
+                        self.is_dragging = true;
+                        self.pending_tap_action = None;
+                    }
+                }
+
                 let viewport = Self::list_viewport(self.bounds);
                 if viewport.contains(point.to_point()) || self.scroll.scroll_offset().y != 0 {
                     self.scroll.handle_touch(event);
                     self.dirty = true;
                 }
                 None
+            }
+            TouchEvent::Release(_) => {
+                self.scroll.handle_touch(event);
+
+                // If no significant drag occurred, fire the pending tap action
+                let action = if !self.is_dragging {
+                    self.pending_tap_action.take()
+                } else {
+                    None
+                };
+
+                self.pending_tap_action = None;
+                self.press_origin = None;
+                self.is_dragging = false;
+
+                action
             }
         }
     }

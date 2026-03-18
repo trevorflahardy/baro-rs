@@ -367,8 +367,8 @@ where
 
         // Touch debounce: skip this Press if the previous touch caused a
         // page state change (prevents dismiss-then-tap-through on alerts).
-        if matches!(event, TouchEvent::Press(_)) && self.skip_next_press {
-            debug!(" Skipping press (debounce)");
+        if matches!(event, TouchEvent::Press(_) | TouchEvent::Release(_)) && self.skip_next_press {
+            debug!(" Skipping press/release (debounce)");
             self.skip_next_press = false;
             return;
         }
@@ -446,7 +446,7 @@ where
         // wasn't before, or triggered navigation), arm the debounce so the
         // next press is ignored. This prevents a single physical tap from
         // triggering two separate logical actions.
-        if matches!(event, TouchEvent::Press(_)) {
+        if matches!(event, TouchEvent::Press(_) | TouchEvent::Release(_)) {
             let is_dirty_now = Page::is_dirty(&self.current_page);
             if !was_dirty && is_dirty_now {
                 self.skip_next_press = true;

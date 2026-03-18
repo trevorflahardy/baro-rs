@@ -380,6 +380,9 @@ impl Page for DisplaySettingsPage {
                 self.scroll.handle_touch(event);
                 self.dirty = true;
             }
+            TouchEvent::Release(_) => {
+                self.scroll.handle_touch(event);
+            }
         }
         None
     }
