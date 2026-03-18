@@ -571,12 +571,12 @@ async fn main(spawner: Spawner) -> ! {
             state.run_state = AppRunState::WifiConnected;
 
             // Re-init storage with the real time if available
-            if let Some(t) = time {
-                if let Some(storage) = state.storage_manager_mut() {
-                    match storage.init(t).await {
-                        Ok(_) => info!("Storage re-initialized with synced time: {}", t),
-                        Err(e) => error!("Storage re-init failed: {:?}", e),
-                    }
+            if let Some(t) = time
+                && let Some(storage) = state.storage_manager_mut()
+            {
+                match storage.init(t).await {
+                    Ok(_) => info!("Storage re-initialized with synced time: {}", t),
+                    Err(e) => error!("Storage re-init failed: {:?}", e),
                 }
             }
         }
