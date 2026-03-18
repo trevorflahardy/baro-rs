@@ -188,7 +188,7 @@ All data structures use **fixed-size records** with **version headers** for forw
 
 ---
 
-## �️ Desktop Simulator
+## Desktop Simulator
 
 Develop and test UI pages without physical hardware. The simulator renders the
 same `baro-core` pages inside an SDL2 window using
@@ -214,7 +214,7 @@ make sim
 | 3   | Humidity trend    |
 | 4   | CO₂ trend         |
 | 5   | Settings          |
-| 6   | Wi-Fi error       |
+| 6   | WiFi status       |
 | Q   | Quit              |
 
 Mouse clicks are forwarded as touch events.
@@ -235,7 +235,7 @@ Mouse clicks are forwarded as touch events.
 
 ---
 
-## �🛠️ Getting Started
+## 🛠️ Getting Started
 
 ### Prerequisites
 

@@ -23,7 +23,7 @@ make fmt             # Format all code
 make fmt-check       # Check formatting (CI)
 
 # ── Flash and monitor ────────────────────────────────────────────────
-espflash flash --monitor target/xtensa-esp32s3-none-elf/release/baro-rs
+espflash flash --monitor target/xtensa-esp32s3-none-elf/release/baro-firmware
 ```
 
 **Important:** Do NOT use bare `cargo build` / `cargo check` — the workspace has no default target. The firmware requires `--target xtensa-esp32s3-none-elf -Z build-std=alloc,core` (the Makefile handles this).

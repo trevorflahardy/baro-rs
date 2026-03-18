@@ -1,7 +1,7 @@
 //! Home page with status banner and priority-sorted sensor list
 //!
 //! Displays a status banner showing overall air quality at a glance,
-//! followed by a vertical list of sensor rows sorted worst-first.
+//! followed by a vertically scrollable list of sensor rows sorted worst-first.
 //! Tapping a sensor row navigates to its trend page; tapping the
 //! gear icon navigates to settings.
 //!
@@ -23,7 +23,8 @@ use embedded_graphics::text::{Alignment, Text};
 use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
 use crate::sensors::SensorType;
-use crate::ui::core::{Action, Drawable, PageEvent, PageId, TouchEvent};
+use crate::ui::core::{Action, Drawable, PageEvent, PageId, TouchEvent, Touchable};
+use crate::ui::layouts::scrollable::{ScrollDirection, ScrollableContainer};
 use crate::ui::styling::{COLOR_BACKGROUND, COLOR_FOREGROUND, WHITE};
 
 // ---------------------------------------------------------------------------
@@ -81,6 +82,25 @@ const QUALITY_BAR_SEG_HEIGHT: u32 = 10;
 
 /// Gap between quality bar segments
 const QUALITY_BAR_GAP: u32 = 2;
+
+// ---------------------------------------------------------------------------
+// Alert overlay constants
+// ---------------------------------------------------------------------------
+
+/// Width of the alert dialog box
+const ALERT_BOX_WIDTH: u32 = 240;
+
+/// Height of the alert dialog box
+const ALERT_BOX_HEIGHT: u32 = 120;
+
+/// Width of the dismiss button
+const ALERT_BTN_WIDTH: u32 = 80;
+
+/// Height of the dismiss button
+const ALERT_BTN_HEIGHT: u32 = 24;
+
+/// Bottom margin of the dismiss button inside the alert box
+const ALERT_BTN_BOTTOM_MARGIN: u32 = 12;
 
 // ---------------------------------------------------------------------------
 // Colors
@@ -393,7 +413,6 @@ struct AlertOverlay {
     sensor: SensorType,
     value: f32,
     quality: QualityLevel,
-    dismiss_bounds: Rectangle,
     cooldowns: [u64; MAX_HOME_SENSORS],
 }
 
@@ -404,9 +423,26 @@ impl AlertOverlay {
             sensor: SensorType::Temperature,
             value: 0.0,
             quality: QualityLevel::Bad,
-            dismiss_bounds: Rectangle::new(Point::new(120, 150), Size::new(80, 30)),
             cooldowns: [0; MAX_HOME_SENSORS],
         }
+    }
+
+    /// Compute the dismiss button bounds dynamically from the page bounds
+    fn dismiss_bounds(page_bounds: Rectangle) -> Rectangle {
+        let box_x = page_bounds.top_left.x
+            + (page_bounds.size.width.saturating_sub(ALERT_BOX_WIDTH) / 2) as i32;
+        let box_y = page_bounds.top_left.y
+            + (page_bounds.size.height.saturating_sub(ALERT_BOX_HEIGHT) / 2) as i32;
+
+        let btn_x = box_x + (ALERT_BOX_WIDTH / 2) as i32 - (ALERT_BTN_WIDTH / 2) as i32;
+        let btn_y = box_y + ALERT_BOX_HEIGHT as i32
+            - ALERT_BTN_HEIGHT as i32
+            - ALERT_BTN_BOTTOM_MARGIN as i32;
+
+        Rectangle::new(
+            Point::new(btn_x, btn_y),
+            Size::new(ALERT_BTN_WIDTH, ALERT_BTN_HEIGHT),
+        )
     }
 
     /// Check if an alert should be triggered for a sensor
@@ -459,14 +495,15 @@ impl AlertOverlay {
             .draw(display)?;
 
         // Alert box centered on screen
-        let box_width: u32 = 240;
-        let box_height: u32 = 120;
-        let box_x =
-            page_bounds.top_left.x + (page_bounds.size.width.saturating_sub(box_width) / 2) as i32;
+        let box_x = page_bounds.top_left.x
+            + (page_bounds.size.width.saturating_sub(ALERT_BOX_WIDTH) / 2) as i32;
         let box_y = page_bounds.top_left.y
-            + (page_bounds.size.height.saturating_sub(box_height) / 2) as i32;
+            + (page_bounds.size.height.saturating_sub(ALERT_BOX_HEIGHT) / 2) as i32;
 
-        let alert_rect = Rectangle::new(Point::new(box_x, box_y), Size::new(box_width, box_height));
+        let alert_rect = Rectangle::new(
+            Point::new(box_x, box_y),
+            Size::new(ALERT_BOX_WIDTH, ALERT_BOX_HEIGHT),
+        );
 
         // Alert box background
         RoundedRectangle::with_equal_corners(alert_rect, Size::new(CORNER_RADIUS, CORNER_RADIUS))
@@ -479,9 +516,9 @@ impl AlertOverlay {
             )
             .draw(display)?;
 
-        let center_x = box_x + (box_width / 2) as i32;
+        let center_x = box_x + (ALERT_BOX_WIDTH / 2) as i32;
 
-        // Title: "⚠ CO₂ LEVEL HIGH"
+        // Title: "! CO2 LEVEL HIGH"
         let mut title_buf = heapless::String::<32>::new();
         let _ = write!(title_buf, "! {} LEVEL HIGH", self.sensor.short_name());
         Text::with_alignment(
@@ -511,12 +548,7 @@ impl AlertOverlay {
         .draw(display)?;
 
         // Dismiss button
-        let btn_width: u32 = 80;
-        let btn_height: u32 = 24;
-        let btn_x = center_x - (btn_width / 2) as i32;
-        let btn_y = box_y + box_height as i32 - btn_height as i32 - 12;
-
-        let btn_rect = Rectangle::new(Point::new(btn_x, btn_y), Size::new(btn_width, btn_height));
+        let btn_rect = Self::dismiss_bounds(page_bounds);
 
         RoundedRectangle::with_equal_corners(
             btn_rect,
@@ -533,14 +565,14 @@ impl AlertOverlay {
 
         Text::with_alignment(
             "DISMISS",
-            Point::new(center_x, btn_y + 16),
+            Point::new(
+                btn_rect.top_left.x + (ALERT_BTN_WIDTH / 2) as i32,
+                btn_rect.top_left.y + 16,
+            ),
             MonoTextStyle::new(&FONT_6X10, WHITE),
             Alignment::Center,
         )
         .draw(display)?;
-
-        // Store dismiss bounds for touch handling (we update via interior state pattern)
-        // The dismiss_bounds is set in new() and stays constant since the overlay is centered
 
         Ok(())
     }
@@ -557,6 +589,7 @@ pub struct HomePage {
     rows: [SensorRow; MAX_HOME_SENSORS],
     row_count: usize,
     sort_order: [usize; MAX_HOME_SENSORS],
+    scroll: ScrollableContainer,
     alert: AlertOverlay,
     settings_touch_bounds: Rectangle,
     last_timestamp: u64,
@@ -584,12 +617,22 @@ impl HomePage {
             Size::new(SETTINGS_TOUCH_WIDTH, HEADER_HEIGHT_PX),
         );
 
+        let row_count = 4;
+        let list_viewport = Self::list_viewport(bounds);
+        let content_height = Self::content_height(row_count);
+        let scroll = ScrollableContainer::new(
+            list_viewport,
+            Size::new(list_viewport.size.width, content_height),
+            ScrollDirection::Vertical,
+        );
+
         Self {
             bounds,
             banner: StatusBanner::new(),
             rows,
-            row_count: 4,
+            row_count,
             sort_order: [0, 1, 2, 3, 4, 5, 6, 7],
+            scroll,
             alert: AlertOverlay::new(),
             settings_touch_bounds,
             last_timestamp: 0,
@@ -602,9 +645,26 @@ impl HomePage {
         self.dirty = true;
     }
 
+    /// Calculate the viewport rectangle for the scrollable sensor list
+    fn list_viewport(bounds: Rectangle) -> Rectangle {
+        let x = bounds.top_left.x + LIST_PADDING_X as i32;
+        let y = bounds.top_left.y + LIST_Y_OFFSET as i32;
+        let width = bounds.size.width.saturating_sub(LIST_PADDING_X * 2);
+        let height = bounds.size.height.saturating_sub(LIST_Y_OFFSET);
+
+        Rectangle::new(Point::new(x, y), Size::new(width, height))
+    }
+
+    /// Calculate total content height for the given number of rows
+    fn content_height(row_count: usize) -> u32 {
+        if row_count == 0 {
+            return 0;
+        }
+        (row_count as u32 * ROW_HEIGHT_PX) + ((row_count - 1) as u32 * ROW_GAP_PX)
+    }
+
     /// Recompute the sort order (worst quality first)
     fn recompute_sort_order(&mut self) {
-        // Initialize with identity
         for i in 0..self.row_count {
             self.sort_order[i] = i;
         }
@@ -622,15 +682,32 @@ impl HomePage {
         }
     }
 
-    /// Calculate the bounding rectangle for a row at the given visual position
-    fn row_bounds(&self, visual_index: usize) -> Rectangle {
-        let x = self.bounds.top_left.x + LIST_PADDING_X as i32;
-        let y = self.bounds.top_left.y
-            + LIST_Y_OFFSET as i32
-            + (visual_index as u32 * (ROW_HEIGHT_PX + ROW_GAP_PX)) as i32;
-        let width = self.bounds.size.width.saturating_sub(LIST_PADDING_X * 2);
+    /// Calculate the screen-space bounds for a row, accounting for scroll offset
+    fn row_screen_bounds(&self, visual_index: usize) -> Rectangle {
+        let viewport = Self::list_viewport(self.bounds);
+        let scroll_y = self.scroll.scroll_offset().y;
+        let width = viewport.size.width;
 
-        Rectangle::new(Point::new(x, y), Size::new(width, ROW_HEIGHT_PX))
+        let content_y = (visual_index as u32 * (ROW_HEIGHT_PX + ROW_GAP_PX)) as i32;
+        let screen_y = viewport.top_left.y + content_y - scroll_y;
+
+        Rectangle::new(
+            Point::new(viewport.top_left.x, screen_y),
+            Size::new(width, ROW_HEIGHT_PX),
+        )
+    }
+
+    /// Check if a row at the given visual index is visible in the viewport
+    fn is_row_visible(&self, visual_index: usize) -> bool {
+        let viewport = Self::list_viewport(self.bounds);
+        let screen_bounds = self.row_screen_bounds(visual_index);
+
+        let row_top = screen_bounds.top_left.y;
+        let row_bottom = row_top + ROW_HEIGHT_PX as i32;
+        let vp_top = viewport.top_left.y;
+        let vp_bottom = vp_top + viewport.size.height as i32;
+
+        row_bottom > vp_top && row_top < vp_bottom
     }
 
     fn draw_header<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
@@ -689,6 +766,19 @@ impl HomePage {
 
         Ok(())
     }
+
+    /// Draw the vertical scrollbar when content exceeds viewport
+    fn draw_scrollbar<D: DrawTarget<Color = Rgb565>>(
+        &self,
+        display: &mut D,
+    ) -> Result<(), D::Error> {
+        if !self.scroll.can_scroll_vertical() {
+            return Ok(());
+        }
+
+        // Delegate to the ScrollableContainer's draw which renders scrollbars
+        Drawable::draw(&self.scroll, display)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -709,39 +799,57 @@ impl Page for HomePage {
     }
 
     fn handle_touch(&mut self, event: TouchEvent) -> Option<Action> {
-        let point = match event {
-            TouchEvent::Press(p) => p,
-            TouchEvent::Drag(_) => return None,
-        };
-
-        let pt = point.to_point();
-
         // If alert overlay is active, only handle dismiss
         if self.alert.active {
-            if self.alert.dismiss_bounds.contains(pt) {
-                self.alert.dismiss(self.last_timestamp);
-                self.dirty = true;
-                return None;
+            if let TouchEvent::Press(point) = event {
+                let dismiss_rect = AlertOverlay::dismiss_bounds(self.bounds);
+                if dismiss_rect.contains(point.to_point()) {
+                    self.alert.dismiss(self.last_timestamp);
+                    self.dirty = true;
+                }
             }
             // Block all other touches while alert is shown
             return None;
         }
 
-        // Settings gear
-        if self.settings_touch_bounds.contains(pt) {
-            return Some(Action::NavigateToPage(PageId::Settings));
-        }
+        match event {
+            TouchEvent::Press(point) => {
+                let pt = point.to_point();
 
-        // Sensor rows — check each visual row
-        for visual_idx in 0..self.row_count {
-            let row_rect = self.row_bounds(visual_idx);
-            if row_rect.contains(pt) {
-                let data_idx = self.sort_order[visual_idx];
-                return Some(Action::NavigateToPage(self.rows[data_idx].trend_page_id()));
+                // Settings gear
+                if self.settings_touch_bounds.contains(pt) {
+                    return Some(Action::NavigateToPage(PageId::Settings));
+                }
+
+                // Check if press is in the list viewport area
+                let viewport = Self::list_viewport(self.bounds);
+                if viewport.contains(pt) {
+                    // Check sensor rows (accounting for scroll)
+                    for visual_idx in 0..self.row_count {
+                        let screen_rect = self.row_screen_bounds(visual_idx);
+                        if screen_rect.contains(pt) && self.is_row_visible(visual_idx) {
+                            let data_idx = self.sort_order[visual_idx];
+                            return Some(Action::NavigateToPage(
+                                self.rows[data_idx].trend_page_id(),
+                            ));
+                        }
+                    }
+
+                    // Start tracking drag for scrolling
+                    self.scroll.handle_touch(event);
+                }
+
+                None
+            }
+            TouchEvent::Drag(point) => {
+                let viewport = Self::list_viewport(self.bounds);
+                if viewport.contains(point.to_point()) || self.scroll.scroll_offset().y != 0 {
+                    self.scroll.handle_touch(event);
+                    self.dirty = true;
+                }
+                None
             }
         }
-
-        None
     }
 
     fn update(&mut self) {}
@@ -768,6 +876,12 @@ impl Page for HomePage {
                 self.banner.update(&self.rows, self.row_count);
                 self.alert
                     .check_trigger(&self.rows, self.row_count, data.timestamp);
+
+                // Update scroll content size in case row_count changed
+                let content_height = Self::content_height(self.row_count);
+                let viewport = Self::list_viewport(self.bounds);
+                self.scroll
+                    .set_content_size(Size::new(viewport.size.width, content_height));
 
                 self.dirty = true;
                 true
@@ -828,12 +942,18 @@ impl Drawable for HomePage {
         );
         self.banner.draw(display, banner_rect)?;
 
-        // Sensor rows (sorted)
+        // Sensor rows (sorted, with scroll offset, clipped to viewport)
         for visual_idx in 0..self.row_count {
+            if !self.is_row_visible(visual_idx) {
+                continue;
+            }
             let data_idx = self.sort_order[visual_idx];
-            let row_rect = self.row_bounds(visual_idx);
+            let row_rect = self.row_screen_bounds(visual_idx);
             self.rows[data_idx].draw(display, row_rect)?;
         }
+
+        // Scrollbar indicator
+        self.draw_scrollbar(display)?;
 
         // Alert overlay (drawn last, on top)
         self.alert.draw(display, self.bounds)?;
@@ -846,12 +966,16 @@ impl Drawable for HomePage {
     }
 
     fn is_dirty(&self) -> bool {
-        self.dirty || self.banner.dirty || self.rows.iter().any(|r| r.dirty)
+        self.dirty
+            || self.banner.dirty
+            || self.scroll.is_dirty()
+            || self.rows.iter().any(|r| r.dirty)
     }
 
     fn mark_clean(&mut self) {
         self.dirty = false;
         self.banner.dirty = false;
+        self.scroll.mark_clean();
         for row in &mut self.rows {
             row.dirty = false;
         }
@@ -860,6 +984,7 @@ impl Drawable for HomePage {
     fn mark_dirty(&mut self) {
         self.dirty = true;
         self.banner.dirty = true;
+        self.scroll.mark_dirty();
         for row in &mut self.rows {
             row.dirty = true;
         }
