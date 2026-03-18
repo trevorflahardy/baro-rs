@@ -216,8 +216,13 @@ impl WifiStatusPage {
         );
 
         // ── Body content (vertically centred in remaining space) ─────────
+        // Use full page bounds (not Rectangle::zero()) so that intermediate
+        // layout passes give children realistic widths.  The root container
+        // will override these bounds with the actual remaining space, but
+        // preferred_size() reads current bounds, so starting at zero would
+        // corrupt child widths to 0 and break centering.
         let mut body =
-            Container::<MAX_CONTAINER_CHILDREN>::new(Rectangle::zero(), Direction::Vertical)
+            Container::<MAX_CONTAINER_CHILDREN>::new(bounds, Direction::Vertical)
                 .with_alignment(UiAlignment::Center)
                 .with_main_axis_alignment(MainAxisAlignment::Center)
                 .with_gap(BODY_CONTENT_GAP_PX);
