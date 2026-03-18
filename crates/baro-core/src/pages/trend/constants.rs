@@ -38,8 +38,11 @@ pub(super) const STATS_HEIGHT_PX: u32 = 55;
 // Header Layout
 // ============================================================================
 
-/// Left padding for header title text in pixels
-pub(super) const HEADER_TITLE_PADDING_LEFT_PX: i32 = 5;
+/// Back button touch target width in pixels
+pub(super) const BACK_TOUCH_WIDTH_PX: u32 = 44;
+
+/// Left padding for header title text in pixels (after back button)
+pub(super) const HEADER_TITLE_PADDING_LEFT_PX: i32 = 28;
 
 /// Horizontal padding around quality indicator text in pixels
 pub(super) const QUALITY_INDICATOR_TEXT_PADDING_PX: u32 = 20;

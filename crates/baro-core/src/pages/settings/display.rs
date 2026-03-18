@@ -1,8 +1,8 @@
-// src/pages/display_settings.rs
-//! Display settings sub-page with home page mode selector.
+// src/pages/settings/display.rs
+//! Display settings sub-page with home page mode and temperature unit selectors.
 //!
-//! Shows a radio-button style selector for Hiking vs Home mode.
-//! Tapping an option emits `Action::UpdateHomePageMode`.
+//! Shows radio-button style selectors for Outdoor vs Home mode and Celsius vs Fahrenheit.
+//! Tapping an option emits `Action::UpdateHomePageMode` or `Action::UpdateTemperatureUnit`.
 
 use embedded_graphics::Drawable as EgDrawable;
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -14,7 +14,7 @@ use embedded_graphics::primitives::{
 };
 use embedded_graphics::text::{Alignment, Text};
 
-use crate::config::HomePageMode;
+use crate::config::{HomePageMode, TemperatureUnit};
 use crate::pages::page::Page;
 use crate::ui::Drawable;
 use crate::ui::core::{Action, PageEvent, PageId, TouchEvent};
@@ -45,8 +45,15 @@ const PADDING_X: u32 = 8;
 /// Y offset for the section label
 const SECTION_LABEL_Y_OFFSET: u32 = HEADER_HEIGHT_PX + 16;
 
-/// Y offset for the first option card
+/// Y offset for the first home page mode option card
 const OPTIONS_Y_OFFSET: u32 = SECTION_LABEL_Y_OFFSET + 20;
+
+/// Y offset for the temperature unit section label
+const TEMP_SECTION_LABEL_Y_OFFSET: u32 =
+    OPTIONS_Y_OFFSET + 2 * (OPTION_HEIGHT_PX + OPTION_GAP_PX) + 12;
+
+/// Y offset for the first temperature unit option card
+const TEMP_OPTIONS_Y_OFFSET: u32 = TEMP_SECTION_LABEL_Y_OFFSET + 20;
 
 /// Radio button outer diameter
 const RADIO_OUTER_DIAMETER: u32 = 12;
@@ -73,27 +80,43 @@ const BACK_TOUCH_WIDTH: u32 = 44;
 pub struct DisplaySettingsPage {
     bounds: Rectangle,
     selected_mode: HomePageMode,
+    selected_temp_unit: TemperatureUnit,
     dirty: bool,
 }
 
 impl DisplaySettingsPage {
-    pub fn new(bounds: Rectangle, current_mode: HomePageMode) -> Self {
+    pub fn new(
+        bounds: Rectangle,
+        current_mode: HomePageMode,
+        current_temp_unit: TemperatureUnit,
+    ) -> Self {
         Self {
             bounds,
             selected_mode: current_mode,
+            selected_temp_unit: current_temp_unit,
             dirty: true,
         }
     }
 
-    /// Calculate the bounding rectangle of an option card by index.
-    fn option_bounds(&self, index: usize) -> Rectangle {
+    /// Calculate the bounding rectangle of an option card by index and base y offset.
+    fn option_bounds_at(&self, index: usize, base_y_offset: u32) -> Rectangle {
         let x = self.bounds.top_left.x + PADDING_X as i32;
         let y = self.bounds.top_left.y
-            + OPTIONS_Y_OFFSET as i32
+            + base_y_offset as i32
             + (index as u32 * (OPTION_HEIGHT_PX + OPTION_GAP_PX)) as i32;
         let width = self.bounds.size.width.saturating_sub(PADDING_X * 2);
 
         Rectangle::new(Point::new(x, y), Size::new(width, OPTION_HEIGHT_PX))
+    }
+
+    /// Home page mode option bounds.
+    fn mode_option_bounds(&self, index: usize) -> Rectangle {
+        self.option_bounds_at(index, OPTIONS_Y_OFFSET)
+    }
+
+    /// Temperature unit option bounds.
+    fn temp_option_bounds(&self, index: usize) -> Rectangle {
+        self.option_bounds_at(index, TEMP_OPTIONS_Y_OFFSET)
     }
 
     /// Back button touch bounds (top-left of header)
@@ -136,17 +159,14 @@ impl DisplaySettingsPage {
         Ok(())
     }
 
-    fn draw_option<D: DrawTarget<Color = Rgb565>>(
+    fn draw_option_card<D: DrawTarget<Color = Rgb565>>(
         &self,
         display: &mut D,
-        index: usize,
-        mode: HomePageMode,
+        bounds: Rectangle,
+        is_selected: bool,
         label: &str,
         subtitle: &str,
     ) -> Result<(), D::Error> {
-        let bounds = self.option_bounds(index);
-        let is_selected = self.selected_mode == mode;
-
         // Card background — accent tint when selected
         let bg_color = if is_selected {
             COLOR_ACCENT
@@ -205,12 +225,17 @@ impl DisplaySettingsPage {
         )
         .draw(display)?;
 
-        // Subtitle
+        // Subtitle — use lighter color on selected (accent) background for contrast
+        let subtitle_color = if is_selected {
+            COLOR_HEADER_TEXT
+        } else {
+            COLOR_MUTED_TEXT
+        };
         let subtitle_y = label_y + 14;
         Text::with_alignment(
             subtitle,
             Point::new(label_x, subtitle_y),
-            MonoTextStyle::new(&FONT_6X10, COLOR_MUTED_TEXT),
+            MonoTextStyle::new(&FONT_6X10, subtitle_color),
             Alignment::Left,
         )
         .draw(display)?;
@@ -245,18 +270,38 @@ impl Page for DisplaySettingsPage {
                 return Some(Action::GoBack);
             }
 
-            // Hiking option (index 0)
-            if self.option_bounds(0).contains(pt) && self.selected_mode != HomePageMode::Outdoor {
+            // Home page mode: Outdoor (index 0)
+            if self.mode_option_bounds(0).contains(pt)
+                && self.selected_mode != HomePageMode::Outdoor
+            {
                 self.selected_mode = HomePageMode::Outdoor;
                 self.dirty = true;
                 return Some(Action::UpdateHomePageMode(HomePageMode::Outdoor));
             }
 
-            // Home option (index 1)
-            if self.option_bounds(1).contains(pt) && self.selected_mode != HomePageMode::Home {
+            // Home page mode: Home (index 1)
+            if self.mode_option_bounds(1).contains(pt) && self.selected_mode != HomePageMode::Home {
                 self.selected_mode = HomePageMode::Home;
                 self.dirty = true;
                 return Some(Action::UpdateHomePageMode(HomePageMode::Home));
+            }
+
+            // Temperature unit: Celsius (index 0)
+            if self.temp_option_bounds(0).contains(pt)
+                && self.selected_temp_unit != TemperatureUnit::Celsius
+            {
+                self.selected_temp_unit = TemperatureUnit::Celsius;
+                self.dirty = true;
+                return Some(Action::UpdateTemperatureUnit(TemperatureUnit::Celsius));
+            }
+
+            // Temperature unit: Fahrenheit (index 1)
+            if self.temp_option_bounds(1).contains(pt)
+                && self.selected_temp_unit != TemperatureUnit::Fahrenheit
+            {
+                self.selected_temp_unit = TemperatureUnit::Fahrenheit;
+                self.dirty = true;
+                return Some(Action::UpdateTemperatureUnit(TemperatureUnit::Fahrenheit));
             }
         }
         None
@@ -318,15 +363,49 @@ impl Drawable for DisplaySettingsPage {
         )
         .draw(display)?;
 
-        // Option cards
-        self.draw_option(
+        // Home page mode option cards
+        self.draw_option_card(
             display,
-            0,
-            HomePageMode::Outdoor,
+            self.mode_option_bounds(0),
+            self.selected_mode == HomePageMode::Outdoor,
             "Outdoor",
             "Status dashboard",
         )?;
-        self.draw_option(display, 1, HomePageMode::Home, "Home", "Mini-graph grid")?;
+        self.draw_option_card(
+            display,
+            self.mode_option_bounds(1),
+            self.selected_mode == HomePageMode::Home,
+            "Home",
+            "Mini-graph grid",
+        )?;
+
+        // Temperature unit section label
+        Text::with_alignment(
+            "Temperature Unit",
+            Point::new(
+                self.bounds.top_left.x + PADDING_X as i32 + 4,
+                self.bounds.top_left.y + TEMP_SECTION_LABEL_Y_OFFSET as i32,
+            ),
+            MonoTextStyle::new(&FONT_6X10, WHITE),
+            Alignment::Left,
+        )
+        .draw(display)?;
+
+        // Temperature unit option cards
+        self.draw_option_card(
+            display,
+            self.temp_option_bounds(0),
+            self.selected_temp_unit == TemperatureUnit::Celsius,
+            "Celsius",
+            "Metric (C)",
+        )?;
+        self.draw_option_card(
+            display,
+            self.temp_option_bounds(1),
+            self.selected_temp_unit == TemperatureUnit::Fahrenheit,
+            "Fahrenheit",
+            "Imperial (F)",
+        )?;
 
         Ok(())
     }

@@ -23,8 +23,43 @@ pub enum HomePageMode {
     Home,
 }
 
+/// Temperature display unit
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TemperatureUnit {
+    #[default]
+    Celsius,
+    Fahrenheit,
+}
+
+impl TemperatureUnit {
+    /// Convert a Celsius value to this unit
+    pub fn convert(self, celsius: f32) -> f32 {
+        match self {
+            Self::Celsius => celsius,
+            Self::Fahrenheit => celsius * 9.0 / 5.0 + 32.0,
+        }
+    }
+
+    /// Display suffix
+    pub const fn suffix(self) -> &'static str {
+        match self {
+            Self::Celsius => "C",
+            Self::Fahrenheit => "F",
+        }
+    }
+
+    /// Unit label with degree symbol
+    pub const fn unit_label(self) -> &'static str {
+        match self {
+            Self::Celsius => "°C",
+            Self::Fahrenheit => "°F",
+        }
+    }
+}
+
 /// Device-level configuration that persists to SD card
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DeviceConfig {
     pub home_page_mode: HomePageMode,
+    pub temperature_unit: TemperatureUnit,
 }

@@ -15,14 +15,14 @@ use embedded_graphics::primitives::Rectangle;
 use log::{debug, error, info};
 
 use crate::app_state::AppState;
-use crate::config::HomePageMode;
+use crate::config::{HomePageMode, TemperatureUnit};
 use crate::framebuffer::FrameBuffer;
 use crate::metrics::QualityLevel;
-use crate::pages::display_settings::DisplaySettingsPage;
 use crate::pages::home::grid::HomeGridPage;
 use crate::pages::home::outdoor::HomePage;
 use crate::pages::monitor::MonitorPage;
 use crate::pages::page::{Page, PageWrapper};
+use crate::pages::settings::DisplaySettingsPage;
 use crate::pages::settings::SettingsPage;
 use crate::pages::wifi_status::{WifiState, WifiStatusPage};
 use crate::sensors::SensorType;
@@ -82,6 +82,8 @@ where
     needs_redraw: bool,
     /// Current home page mode (loaded from device config)
     home_page_mode: HomePageMode,
+    /// Current temperature display unit (loaded from device config)
+    temperature_unit: TemperatureUnit,
     /// Whether auto-cycling is currently active (Home grid mode)
     auto_cycle_enabled: bool,
     /// Timestamp of the last auto-cycle page switch
@@ -116,6 +118,7 @@ where
             bounds,
             needs_redraw: true,
             home_page_mode: HomePageMode::default(),
+            temperature_unit: TemperatureUnit::default(),
             auto_cycle_enabled: false,
             auto_cycle_last_switch: 0,
             auto_cycle_index: 0,
@@ -168,7 +171,11 @@ where
                 self.auto_cycle_enabled = false;
             }
             PageId::DisplaySettings => {
-                let page = DisplaySettingsPage::new(self.bounds, self.home_page_mode);
+                let page = DisplaySettingsPage::new(
+                    self.bounds,
+                    self.home_page_mode,
+                    self.temperature_unit,
+                );
                 self.current_page = PageWrapper::DisplaySettings(Box::new(page));
                 self.auto_cycle_enabled = false;
             }
@@ -342,8 +349,26 @@ where
                     self.navigate_to(page_id, app_state).await;
                 }
                 Action::GoBack => {
-                    // Navigate back to Settings (the parent of sub-settings pages)
-                    self.navigate_to(PageId::Settings, app_state).await;
+                    // Context-aware back navigation
+                    let current_id = Page::id(&self.current_page);
+                    match current_id {
+                        // Sub-settings pages go back to Settings
+                        PageId::DisplaySettings | PageId::Monitor => {
+                            self.navigate_to(PageId::Settings, app_state).await;
+                        }
+                        // Trend pages go back to Home
+                        PageId::TrendTemperature
+                        | PageId::TrendHumidity
+                        | PageId::TrendCo2
+                        | PageId::TrendLux
+                        | PageId::TrendPage => {
+                            self.navigate_to(PageId::Home, app_state).await;
+                        }
+                        // Default: go to Home
+                        _ => {
+                            self.navigate_to(PageId::Home, app_state).await;
+                        }
+                    }
                 }
                 Action::UpdateHomePageMode(mode) => {
                     info!(" Updating home page mode to {:?}", mode);
@@ -357,6 +382,16 @@ where
 
                     // Navigate to the correct home page
                     self.navigate_to(PageId::Home, app_state).await;
+                }
+                Action::UpdateTemperatureUnit(unit) => {
+                    info!(" Updating temperature unit to {:?}", unit);
+                    self.temperature_unit = unit;
+
+                    // Update device config in app state
+                    {
+                        let mut state = app_state.lock().await;
+                        state.device_config.temperature_unit = unit;
+                    }
                 }
                 _ => {
                     debug!(" Unhandled action: {:?}", action);
@@ -383,6 +418,11 @@ where
     /// Set the home page mode (called during boot after loading config)
     pub fn set_home_page_mode(&mut self, mode: HomePageMode) {
         self.home_page_mode = mode;
+    }
+
+    /// Set the temperature display unit (called during boot after loading config)
+    pub fn set_temperature_unit(&mut self, unit: TemperatureUnit) {
+        self.temperature_unit = unit;
     }
 
     /// Update the current page with new data

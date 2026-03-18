@@ -30,11 +30,11 @@ use embedded_graphics_simulator::{
 };
 use log::info;
 
-use baro_core::config::HomePageMode;
-use baro_core::pages::display_settings::DisplaySettingsPage;
+use baro_core::config::{HomePageMode, TemperatureUnit};
 use baro_core::pages::home::grid::HomeGridPage;
 use baro_core::pages::monitor::MonitorPage;
 use baro_core::pages::page::Page;
+use baro_core::pages::settings::DisplaySettingsPage;
 use baro_core::pages::wifi_status::WifiState;
 use baro_core::pages::{HomePage, PageWrapper, SettingsPage, TrendPage, WifiStatusPage};
 use baro_core::sensors::SensorType;
@@ -158,6 +158,9 @@ fn screen_bounds() -> Rectangle {
 /// Current home page mode for the simulator (mutable state).
 static mut SIM_HOME_PAGE_MODE: HomePageMode = HomePageMode::Outdoor;
 
+/// Current temperature unit for the simulator (mutable state).
+static mut SIM_TEMP_UNIT: TemperatureUnit = TemperatureUnit::Celsius;
+
 /// Create a new page of the given kind, optionally pre-loaded with history.
 fn create_page(page_id: PageId, sensor_gen: &mut MockSensorGenerator) -> PageWrapper {
     let bounds = screen_bounds();
@@ -185,7 +188,10 @@ fn create_page(page_id: PageId, sensor_gen: &mut MockSensorGenerator) -> PageWra
         PageId::DisplaySettings => {
             // SAFETY: single-threaded simulator
             let mode = unsafe { SIM_HOME_PAGE_MODE };
-            PageWrapper::DisplaySettings(Box::new(DisplaySettingsPage::new(bounds, mode)))
+            let temp_unit = unsafe { SIM_TEMP_UNIT };
+            PageWrapper::DisplaySettings(Box::new(DisplaySettingsPage::new(
+                bounds, mode, temp_unit,
+            )))
         }
         PageId::Monitor => {
             let mut page = MonitorPage::new(bounds);
@@ -349,8 +355,14 @@ fn main() {
                                 needs_redraw = true;
                             }
                             Action::GoBack => {
-                                info!("Touch → go back to Settings");
-                                current_page = create_page(PageId::Settings, &mut sensor_gen);
+                                // Context-aware back navigation
+                                let current_id = Page::id(&current_page);
+                                let target = match current_id {
+                                    PageId::DisplaySettings | PageId::Monitor => PageId::Settings,
+                                    _ => PageId::Home,
+                                };
+                                info!("Touch → go back to {:?}", target);
+                                current_page = create_page(target, &mut sensor_gen);
                                 needs_redraw = true;
                             }
                             Action::UpdateHomePageMode(mode) => {
@@ -361,6 +373,13 @@ fn main() {
                                 }
                                 current_page = create_page(PageId::Home, &mut sensor_gen);
                                 needs_redraw = true;
+                            }
+                            Action::UpdateTemperatureUnit(unit) => {
+                                info!("Touch → update temperature unit to {:?}", unit);
+                                // SAFETY: single-threaded simulator
+                                unsafe {
+                                    SIM_TEMP_UNIT = unit;
+                                }
                             }
                             other => {
                                 info!("Touch → action {:?}", other);

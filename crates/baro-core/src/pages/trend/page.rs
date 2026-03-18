@@ -30,9 +30,9 @@ use alloc::{boxed::Box, string::String};
 use crate::ui::{FONT_6X10_CHAR_HEIGHT_PX, FONT_6X10_CHAR_WIDTH_PX};
 
 use super::constants::{
-    COLOR_FOREGROUND, CURRENT_VALUE_OFFSET_X_PX, CURRENT_VALUE_OFFSET_Y_PX, FAINT_GRAY,
-    GRADIENT_FILL_HEIGHT_PX, GRADIENT_FILL_OPACITY, HEADER_HEIGHT_PX, HEADER_TITLE_PADDING_LEFT_PX,
-    LIGHT_GRAY, MAX_DATA_POINTS, QUALITY_INDICATOR_BORDER_WIDTH_PX,
+    BACK_TOUCH_WIDTH_PX, COLOR_FOREGROUND, CURRENT_VALUE_OFFSET_X_PX, CURRENT_VALUE_OFFSET_Y_PX,
+    FAINT_GRAY, GRADIENT_FILL_HEIGHT_PX, GRADIENT_FILL_OPACITY, HEADER_HEIGHT_PX,
+    HEADER_TITLE_PADDING_LEFT_PX, LIGHT_GRAY, MAX_DATA_POINTS, QUALITY_INDICATOR_BORDER_WIDTH_PX,
     QUALITY_INDICATOR_CORNER_RADIUS_PX, QUALITY_INDICATOR_HEIGHT_PX,
     QUALITY_INDICATOR_MARGIN_RIGHT_PX, QUALITY_INDICATOR_PADDING_HORIZONTAL_PX,
     QUALITY_INDICATOR_PADDING_VERTICAL_PX, QUALITY_INDICATOR_TEXT_PADDING_PX, SERIES_LINE_WIDTH_PX,
@@ -183,7 +183,15 @@ impl TrendPage {
         rounded_span.clamp(chunk_secs, window_secs)
     }
 
-    /// Draw the header with title and quality indicator
+    /// Back button touch bounds (top-left of header).
+    fn back_touch_bounds(&self) -> Rectangle {
+        Rectangle::new(
+            self.header_bounds.top_left,
+            Size::new(BACK_TOUCH_WIDTH_PX, HEADER_HEIGHT_PX),
+        )
+    }
+
+    /// Draw the header with back button, title and quality indicator
     fn draw_header<D>(&self, display: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Rgb565>,
@@ -195,13 +203,22 @@ impl TrendPage {
 
         let text_style = MonoTextStyle::new(&FONT_6X10, WHITE);
 
-        // Draw sensor name and time window
-        let mut title = String::new();
-        let _ = write!(title, "{} - {}", self.sensor.name(), self.window.label());
-
         // Center text vertically in header
         let title_y = self.header_bounds.top_left.y
             + (HEADER_HEIGHT_PX as i32 - FONT_6X10_CHAR_HEIGHT_PX as i32) / 2;
+
+        // Back arrow
+        Text::with_alignment(
+            "<",
+            Point::new(self.header_bounds.top_left.x + 12, title_y),
+            text_style,
+            Alignment::Left,
+        )
+        .draw(display)?;
+
+        // Draw sensor name and time window
+        let mut title = String::new();
+        let _ = write!(title, "{} - {}", self.sensor.name(), self.window.label());
 
         Text::with_alignment(
             &title,
@@ -532,9 +549,12 @@ impl Page for TrendPage {
         }
     }
 
-    fn handle_touch(&mut self, _event: TouchEvent) -> Option<Action> {
-        // For now, no touch interactions
-        // Future: could add pan/zoom, time window selection, etc.
+    fn handle_touch(&mut self, event: TouchEvent) -> Option<Action> {
+        if let TouchEvent::Press(point) = event
+            && self.back_touch_bounds().contains(point.to_point())
+        {
+            return Some(Action::GoBack);
+        }
         None
     }
 

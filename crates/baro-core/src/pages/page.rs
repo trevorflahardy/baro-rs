@@ -179,7 +179,7 @@ pub enum PageWrapper {
     Home(Box<crate::pages::home::outdoor::HomePage>),
     HomeGrid(Box<crate::pages::home::grid::HomeGridPage>),
     Settings(Box<crate::pages::settings::SettingsPage>),
-    DisplaySettings(Box<crate::pages::display_settings::DisplaySettingsPage>),
+    DisplaySettings(Box<crate::pages::settings::DisplaySettingsPage>),
     Monitor(Box<crate::pages::monitor::MonitorPage>),
     TrendPage(Box<crate::pages::trend::TrendPage>),
     WifiStatus(Box<crate::pages::wifi_status::WifiStatusPage>),

@@ -4,7 +4,7 @@
 extern crate alloc;
 use alloc::boxed::Box;
 
-use crate::config::HomePageMode;
+use crate::config::{HomePageMode, TemperatureUnit};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 
@@ -58,8 +58,10 @@ pub enum Action {
     RefreshData,
     /// Custom action with ID
     Custom(u16),
-    /// Update the home page mode (Hiking vs Home)
+    /// Update the home page mode (Outdoor vs Home)
     UpdateHomePageMode(HomePageMode),
+    /// Update the temperature display unit (Celsius vs Fahrenheit)
+    UpdateTemperatureUnit(TemperatureUnit),
 }
 
 /// Page identifier for navigation

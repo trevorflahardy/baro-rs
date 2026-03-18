@@ -1,4 +1,4 @@
-// src/pages/settings.rs
+// src/pages/settings/list.rs
 //! Settings page — a scrollable list of category rows.
 //!
 //! Each row navigates to a sub-settings page. Currently implemented:
