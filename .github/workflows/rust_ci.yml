@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - master
     paths-ignore:
       - "**/README.md"
   pull_request:
@@ -14,19 +15,32 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  rust-checks:
-    name: Rust Checks
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Setup Rust
+        uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32s3
+          ldproxy: false
+      - name: Check formatting
+        run: make fmt-check
+
+  firmware:
+    name: Firmware
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         action:
-          - command: build
-            args: --release
-          - command: fmt
-            args: --all -- --check
-          - command: clippy
-            args: --all-features --workspace -- -D warnings
+          - name: Build
+            target: fw-release
+          - name: Clippy
+            target: fw-clippy
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -38,8 +52,31 @@ jobs:
           ldproxy: false
       - name: Enable caching
         uses: Swatinem/rust-cache@v2
-      - name: Run command
+      - name: ${{ matrix.action.name }}
         env:
           WIFI_SSID: ${{ secrets.WIFI_SSID }}
           WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
-        run: cargo ${{ matrix.action.command }} ${{ matrix.action.args }}
+        run: make ${{ matrix.action.target }}
+
+  simulator:
+    name: Simulator
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        action:
+          - name: Check
+            target: sim-check
+          - name: Clippy
+            target: sim-clippy
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Enable caching
+        uses: Swatinem/rust-cache@v2
+      - name: ${{ matrix.action.name }}
+        run: make ${{ matrix.action.target }}
