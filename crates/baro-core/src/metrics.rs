@@ -84,15 +84,19 @@ impl QualityLevel {
             }
             SensorType::Lux => {
                 // Lux quality thresholds (lux)
-                // Excellent: 300-500 lux (ideal for reading/working)
-                // Good: 200-1000 lux (acceptable for most tasks)
-                // Poor: 100-2000 lux (dim or overly bright)
-                // Bad: <100 lux (too dim) or >2000 lux (too bright)
-                if (300.0..=500.0).contains(&value) {
+                // Based on typical indoor/outdoor illuminance levels:
+                //   Dark hallway at night: 50-100, Living room: 100-300,
+                //   Office workspace: 300-500, Overcast outdoors: 1,000-5,000,
+                //   Direct midday sun: 80,000-120,000
+                // Excellent: 300-750 lux (ideal for reading/working)
+                // Good: 100-5,000 lux (normal indoor to bright overcast)
+                // Poor: 25-10,000 lux (dim room or very bright outdoors)
+                // Bad: <25 lux (near darkness) or >10,000 lux (direct sun exposure)
+                if (300.0..=750.0).contains(&value) {
                     Self::Excellent
-                } else if (200.0..=1000.0).contains(&value) {
+                } else if (100.0..=5_000.0).contains(&value) {
                     Self::Good
-                } else if (100.0..=2000.0).contains(&value) {
+                } else if (25.0..=10_000.0).contains(&value) {
                     Self::Poor
                 } else {
                     Self::Bad
