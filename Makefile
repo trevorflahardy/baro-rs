@@ -7,6 +7,17 @@
 ESP_TARGET  := xtensa-esp32s3-none-elf
 BUILD_STD   := -Z build-std=alloc,core
 
+# ----------------------------------------------------------------------------
+# Running on the actual ESP32-S3
+# ----------------------------------------------------------------------------
+.PHONY: run, run-release
+
+run: ## Runs the firmware on the ESP32-S3 (debug)
+	cargo run --target $(ESP_TARGET) $(BUILD_STD)
+
+run-release: ## Runs the firmware on the ESP32-S3
+	cargo run --target $(ESP_TARGET) $(BUILD_STD) --release
+
 # ---------------------------------------------------------------------------
 # Firmware (ESP32-S3)
 # ---------------------------------------------------------------------------
