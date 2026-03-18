@@ -17,7 +17,8 @@ use embedded_graphics::text::{Alignment, Text};
 use crate::config::{HomePageMode, TemperatureUnit};
 use crate::pages::page::Page;
 use crate::ui::Drawable;
-use crate::ui::core::{Action, PageEvent, PageId, TouchEvent};
+use crate::ui::core::{Action, PageEvent, PageId, TouchEvent, Touchable};
+use crate::ui::layouts::{ScrollDirection, ScrollableContainer};
 use crate::ui::styling::{COLOR_BACKGROUND, COLOR_FOREGROUND, WHITE};
 
 // ---------------------------------------------------------------------------
@@ -34,26 +35,22 @@ const CORNER_RADIUS: u32 = 12;
 const PILL_CORNER_RADIUS: u32 = 6;
 
 /// Height of each option card
-const OPTION_HEIGHT_PX: u32 = 44;
+const OPTION_HEIGHT_PX: u32 = 36;
 
 /// Vertical gap between option cards
-const OPTION_GAP_PX: u32 = 4;
+const OPTION_GAP_PX: u32 = 2;
 
 /// Horizontal padding
 const PADDING_X: u32 = 8;
 
-/// Y offset for the section label
-const SECTION_LABEL_Y_OFFSET: u32 = HEADER_HEIGHT_PX + 16;
+/// Vertical padding at top of scroll content
+const CONTENT_PADDING_TOP: u32 = 8;
 
-/// Y offset for the first home page mode option card
-const OPTIONS_Y_OFFSET: u32 = SECTION_LABEL_Y_OFFSET + 20;
+/// Section label height (label text + gap before first card)
+const SECTION_LABEL_HEIGHT: u32 = 14;
 
-/// Y offset for the temperature unit section label
-const TEMP_SECTION_LABEL_Y_OFFSET: u32 =
-    OPTIONS_Y_OFFSET + 2 * (OPTION_HEIGHT_PX + OPTION_GAP_PX) + 12;
-
-/// Y offset for the first temperature unit option card
-const TEMP_OPTIONS_Y_OFFSET: u32 = TEMP_SECTION_LABEL_Y_OFFSET + 20;
+/// Gap between sections
+const SECTION_GAP: u32 = 8;
 
 /// Radio button outer diameter
 const RADIO_OUTER_DIAMETER: u32 = 12;
@@ -74,11 +71,41 @@ const COLOR_ACCENT: Rgb565 = Rgb565::new(8, 40, 12);
 const BACK_TOUCH_WIDTH: u32 = 44;
 
 // ---------------------------------------------------------------------------
+// Section layout helpers
+// ---------------------------------------------------------------------------
+
+/// Y offset in content space for the "Home Page Style" section label.
+const fn mode_section_label_y() -> u32 {
+    CONTENT_PADDING_TOP
+}
+
+/// Y offset in content space for the first mode option card.
+const fn mode_options_y() -> u32 {
+    mode_section_label_y() + SECTION_LABEL_HEIGHT
+}
+
+/// Y offset in content space for the "Temperature Unit" section label.
+const fn temp_section_label_y() -> u32 {
+    mode_options_y() + 2 * (OPTION_HEIGHT_PX + OPTION_GAP_PX) + SECTION_GAP
+}
+
+/// Y offset in content space for the first temperature unit option card.
+const fn temp_options_y() -> u32 {
+    temp_section_label_y() + SECTION_LABEL_HEIGHT
+}
+
+/// Total content height for scrolling.
+const fn total_content_height() -> u32 {
+    temp_options_y() + 2 * (OPTION_HEIGHT_PX + OPTION_GAP_PX) + SECTION_GAP
+}
+
+// ---------------------------------------------------------------------------
 // DisplaySettingsPage
 // ---------------------------------------------------------------------------
 
 pub struct DisplaySettingsPage {
     bounds: Rectangle,
+    scroll: ScrollableContainer,
     selected_mode: HomePageMode,
     selected_temp_unit: TemperatureUnit,
     dirty: bool,
@@ -90,33 +117,63 @@ impl DisplaySettingsPage {
         current_mode: HomePageMode,
         current_temp_unit: TemperatureUnit,
     ) -> Self {
+        let scroll_viewport = Self::scroll_viewport(bounds);
+        let scroll = ScrollableContainer::new(
+            scroll_viewport,
+            Size::new(scroll_viewport.size.width, total_content_height()),
+            ScrollDirection::Vertical,
+        );
+
         Self {
             bounds,
+            scroll,
             selected_mode: current_mode,
             selected_temp_unit: current_temp_unit,
             dirty: true,
         }
     }
 
-    /// Calculate the bounding rectangle of an option card by index and base y offset.
-    fn option_bounds_at(&self, index: usize, base_y_offset: u32) -> Rectangle {
-        let x = self.bounds.top_left.x + PADDING_X as i32;
-        let y = self.bounds.top_left.y
-            + base_y_offset as i32
-            + (index as u32 * (OPTION_HEIGHT_PX + OPTION_GAP_PX)) as i32;
-        let width = self.bounds.size.width.saturating_sub(PADDING_X * 2);
+    /// The scrollable viewport below the header.
+    fn scroll_viewport(bounds: Rectangle) -> Rectangle {
+        Rectangle::new(
+            Point::new(
+                bounds.top_left.x,
+                bounds.top_left.y + HEADER_HEIGHT_PX as i32,
+            ),
+            Size::new(
+                bounds.size.width,
+                bounds.size.height.saturating_sub(HEADER_HEIGHT_PX),
+            ),
+        )
+    }
 
+    /// Calculate the screen-space bounds of an option card.
+    fn option_screen_bounds(&self, index: usize, base_content_y: u32) -> Rectangle {
+        let viewport = self.scroll.viewport();
+        let scroll_y = self.scroll.scroll_offset().y;
+        let x = viewport.top_left.x + PADDING_X as i32;
+        let content_y =
+            base_content_y as i32 + (index as u32 * (OPTION_HEIGHT_PX + OPTION_GAP_PX)) as i32;
+        let y = viewport.top_left.y + content_y - scroll_y;
+        let width = viewport.size.width.saturating_sub(PADDING_X * 2);
         Rectangle::new(Point::new(x, y), Size::new(width, OPTION_HEIGHT_PX))
     }
 
-    /// Home page mode option bounds.
-    fn mode_option_bounds(&self, index: usize) -> Rectangle {
-        self.option_bounds_at(index, OPTIONS_Y_OFFSET)
+    /// Home page mode option screen bounds.
+    fn mode_option_screen_bounds(&self, index: usize) -> Rectangle {
+        self.option_screen_bounds(index, mode_options_y())
     }
 
-    /// Temperature unit option bounds.
-    fn temp_option_bounds(&self, index: usize) -> Rectangle {
-        self.option_bounds_at(index, TEMP_OPTIONS_Y_OFFSET)
+    /// Temperature unit option screen bounds.
+    fn temp_option_screen_bounds(&self, index: usize) -> Rectangle {
+        self.option_screen_bounds(index, temp_options_y())
+    }
+
+    /// Section label screen Y position.
+    fn section_label_screen_y(&self, content_y: u32) -> i32 {
+        let viewport = self.scroll.viewport();
+        let scroll_y = self.scroll.scroll_offset().y;
+        viewport.top_left.y + content_y as i32 - scroll_y
     }
 
     /// Back button touch bounds (top-left of header)
@@ -167,6 +224,15 @@ impl DisplaySettingsPage {
         label: &str,
         subtitle: &str,
     ) -> Result<(), D::Error> {
+        // Skip if entirely outside viewport
+        let viewport = self.scroll.viewport();
+        let card_bottom = bounds.top_left.y + OPTION_HEIGHT_PX as i32;
+        let vp_top = viewport.top_left.y;
+        let vp_bottom = vp_top + viewport.size.height as i32;
+        if card_bottom <= vp_top || bounds.top_left.y >= vp_bottom {
+            return Ok(());
+        }
+
         // Card background — accent tint when selected
         let bg_color = if is_selected {
             COLOR_ACCENT
@@ -216,7 +282,7 @@ impl DisplaySettingsPage {
 
         // Label text
         let label_x = radio_x + (RADIO_OUTER_DIAMETER / 2) as i32 + 10;
-        let label_y = bounds.top_left.y + 18;
+        let label_y = bounds.top_left.y + 14;
         Text::with_alignment(
             label,
             Point::new(label_x, label_y),
@@ -231,7 +297,7 @@ impl DisplaySettingsPage {
         } else {
             COLOR_MUTED_TEXT
         };
-        let subtitle_y = label_y + 14;
+        let subtitle_y = label_y + 12;
         Text::with_alignment(
             subtitle,
             Point::new(label_x, subtitle_y),
@@ -262,46 +328,57 @@ impl Page for DisplaySettingsPage {
     }
 
     fn handle_touch(&mut self, event: TouchEvent) -> Option<Action> {
-        if let TouchEvent::Press(point) = event {
-            let pt = point.to_point();
+        match event {
+            TouchEvent::Press(point) => {
+                let pt = point.to_point();
 
-            // Back button
-            if self.back_touch_bounds().contains(pt) {
-                return Some(Action::GoBack);
+                // Back button (in header, not scrollable)
+                if self.back_touch_bounds().contains(pt) {
+                    return Some(Action::GoBack);
+                }
+
+                // Home page mode: Outdoor (index 0)
+                if self.mode_option_screen_bounds(0).contains(pt)
+                    && self.selected_mode != HomePageMode::Outdoor
+                {
+                    self.selected_mode = HomePageMode::Outdoor;
+                    self.dirty = true;
+                    return Some(Action::UpdateHomePageMode(HomePageMode::Outdoor));
+                }
+
+                // Home page mode: Home (index 1)
+                if self.mode_option_screen_bounds(1).contains(pt)
+                    && self.selected_mode != HomePageMode::Home
+                {
+                    self.selected_mode = HomePageMode::Home;
+                    self.dirty = true;
+                    return Some(Action::UpdateHomePageMode(HomePageMode::Home));
+                }
+
+                // Temperature unit: Celsius (index 0)
+                if self.temp_option_screen_bounds(0).contains(pt)
+                    && self.selected_temp_unit != TemperatureUnit::Celsius
+                {
+                    self.selected_temp_unit = TemperatureUnit::Celsius;
+                    self.dirty = true;
+                    return Some(Action::UpdateTemperatureUnit(TemperatureUnit::Celsius));
+                }
+
+                // Temperature unit: Fahrenheit (index 1)
+                if self.temp_option_screen_bounds(1).contains(pt)
+                    && self.selected_temp_unit != TemperatureUnit::Fahrenheit
+                {
+                    self.selected_temp_unit = TemperatureUnit::Fahrenheit;
+                    self.dirty = true;
+                    return Some(Action::UpdateTemperatureUnit(TemperatureUnit::Fahrenheit));
+                }
+
+                // Start tracking for potential drag
+                self.scroll.handle_touch(event);
             }
-
-            // Home page mode: Outdoor (index 0)
-            if self.mode_option_bounds(0).contains(pt)
-                && self.selected_mode != HomePageMode::Outdoor
-            {
-                self.selected_mode = HomePageMode::Outdoor;
+            TouchEvent::Drag(_) => {
+                self.scroll.handle_touch(event);
                 self.dirty = true;
-                return Some(Action::UpdateHomePageMode(HomePageMode::Outdoor));
-            }
-
-            // Home page mode: Home (index 1)
-            if self.mode_option_bounds(1).contains(pt) && self.selected_mode != HomePageMode::Home {
-                self.selected_mode = HomePageMode::Home;
-                self.dirty = true;
-                return Some(Action::UpdateHomePageMode(HomePageMode::Home));
-            }
-
-            // Temperature unit: Celsius (index 0)
-            if self.temp_option_bounds(0).contains(pt)
-                && self.selected_temp_unit != TemperatureUnit::Celsius
-            {
-                self.selected_temp_unit = TemperatureUnit::Celsius;
-                self.dirty = true;
-                return Some(Action::UpdateTemperatureUnit(TemperatureUnit::Celsius));
-            }
-
-            // Temperature unit: Fahrenheit (index 1)
-            if self.temp_option_bounds(1).contains(pt)
-                && self.selected_temp_unit != TemperatureUnit::Fahrenheit
-            {
-                self.selected_temp_unit = TemperatureUnit::Fahrenheit;
-                self.dirty = true;
-                return Some(Action::UpdateTemperatureUnit(TemperatureUnit::Fahrenheit));
             }
         }
         None
@@ -351,13 +428,11 @@ impl Drawable for DisplaySettingsPage {
 
         self.draw_header(display)?;
 
-        // Section label
+        // "Home Page Style" section label
+        let label_x = self.bounds.top_left.x + PADDING_X as i32 + 4;
         Text::with_alignment(
             "Home Page Style",
-            Point::new(
-                self.bounds.top_left.x + PADDING_X as i32 + 4,
-                self.bounds.top_left.y + SECTION_LABEL_Y_OFFSET as i32,
-            ),
+            Point::new(label_x, self.section_label_screen_y(mode_section_label_y())),
             MonoTextStyle::new(&FONT_6X10, WHITE),
             Alignment::Left,
         )
@@ -366,26 +441,23 @@ impl Drawable for DisplaySettingsPage {
         // Home page mode option cards
         self.draw_option_card(
             display,
-            self.mode_option_bounds(0),
+            self.mode_option_screen_bounds(0),
             self.selected_mode == HomePageMode::Outdoor,
             "Outdoor",
             "Status dashboard",
         )?;
         self.draw_option_card(
             display,
-            self.mode_option_bounds(1),
+            self.mode_option_screen_bounds(1),
             self.selected_mode == HomePageMode::Home,
             "Home",
             "Mini-graph grid",
         )?;
 
-        // Temperature unit section label
+        // "Temperature Unit" section label
         Text::with_alignment(
             "Temperature Unit",
-            Point::new(
-                self.bounds.top_left.x + PADDING_X as i32 + 4,
-                self.bounds.top_left.y + TEMP_SECTION_LABEL_Y_OFFSET as i32,
-            ),
+            Point::new(label_x, self.section_label_screen_y(temp_section_label_y())),
             MonoTextStyle::new(&FONT_6X10, WHITE),
             Alignment::Left,
         )
@@ -394,18 +466,21 @@ impl Drawable for DisplaySettingsPage {
         // Temperature unit option cards
         self.draw_option_card(
             display,
-            self.temp_option_bounds(0),
+            self.temp_option_screen_bounds(0),
             self.selected_temp_unit == TemperatureUnit::Celsius,
             "Celsius",
             "Metric (C)",
         )?;
         self.draw_option_card(
             display,
-            self.temp_option_bounds(1),
+            self.temp_option_screen_bounds(1),
             self.selected_temp_unit == TemperatureUnit::Fahrenheit,
             "Fahrenheit",
             "Imperial (F)",
         )?;
+
+        // Draw scrollbar indicators
+        self.scroll.draw(display)?;
 
         Ok(())
     }

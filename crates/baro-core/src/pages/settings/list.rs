@@ -15,7 +15,8 @@ use embedded_graphics::text::{Alignment, Text};
 
 use crate::pages::page::Page;
 use crate::ui::Drawable;
-use crate::ui::core::{Action, PageEvent, PageId, TouchEvent};
+use crate::ui::core::{Action, PageEvent, PageId, TouchEvent, Touchable};
+use crate::ui::layouts::{ScrollDirection, ScrollableContainer};
 use crate::ui::styling::{COLOR_BACKGROUND, COLOR_FOREGROUND, WHITE};
 
 // ---------------------------------------------------------------------------
@@ -37,8 +38,8 @@ const ROW_GAP_PX: u32 = 2;
 /// Horizontal padding for the list area
 const LIST_PADDING_X: u32 = 8;
 
-/// Y offset where the category list begins (below header + gap)
-const LIST_Y_OFFSET: u32 = HEADER_HEIGHT_PX + 4;
+/// Vertical padding at top of scroll content
+const LIST_PADDING_TOP: u32 = 4;
 
 /// Pill corner radius for rows
 const PILL_CORNER_RADIUS: u32 = 6;
@@ -63,7 +64,7 @@ struct SettingsCategory {
 const CATEGORIES: &[SettingsCategory] = &[
     SettingsCategory {
         label: "Display",
-        subtitle: "Home page style",
+        subtitle: "Home page style, units",
         target: PageId::DisplaySettings,
     },
     SettingsCategory {
@@ -80,13 +81,23 @@ const CATEGORIES: &[SettingsCategory] = &[
 /// Settings page displaying a vertical list of tappable category rows.
 pub struct SettingsPage {
     bounds: Rectangle,
+    scroll: ScrollableContainer,
     dirty: bool,
 }
 
 impl SettingsPage {
     pub fn new(bounds: Rectangle) -> Self {
+        let scroll_viewport = Self::scroll_viewport(bounds);
+        let content_height = Self::content_height(CATEGORIES.len());
+        let scroll = ScrollableContainer::new(
+            scroll_viewport,
+            Size::new(scroll_viewport.size.width, content_height),
+            ScrollDirection::Vertical,
+        );
+
         Self {
             bounds,
+            scroll,
             dirty: true,
         }
     }
@@ -96,15 +107,49 @@ impl SettingsPage {
         self.dirty = true;
     }
 
-    /// Calculate the bounding rectangle of a category row by index.
-    fn row_bounds(&self, index: usize) -> Rectangle {
-        let x = self.bounds.top_left.x + LIST_PADDING_X as i32;
-        let y = self.bounds.top_left.y
-            + LIST_Y_OFFSET as i32
-            + (index as u32 * (ROW_HEIGHT_PX + ROW_GAP_PX)) as i32;
-        let width = self.bounds.size.width.saturating_sub(LIST_PADDING_X * 2);
+    /// The scrollable viewport below the header.
+    fn scroll_viewport(bounds: Rectangle) -> Rectangle {
+        Rectangle::new(
+            Point::new(
+                bounds.top_left.x,
+                bounds.top_left.y + HEADER_HEIGHT_PX as i32,
+            ),
+            Size::new(
+                bounds.size.width,
+                bounds.size.height.saturating_sub(HEADER_HEIGHT_PX),
+            ),
+        )
+    }
 
+    /// Total content height for the given number of rows.
+    fn content_height(count: usize) -> u32 {
+        LIST_PADDING_TOP + count as u32 * (ROW_HEIGHT_PX + ROW_GAP_PX)
+    }
+
+    /// Calculate the bounding rectangle of a category row by index (in content space).
+    fn row_content_y(&self, index: usize) -> i32 {
+        LIST_PADDING_TOP as i32 + (index as u32 * (ROW_HEIGHT_PX + ROW_GAP_PX)) as i32
+    }
+
+    /// Row bounds on screen, adjusted for scroll offset.
+    fn row_screen_bounds(&self, index: usize) -> Rectangle {
+        let viewport = self.scroll.viewport();
+        let scroll_y = self.scroll.scroll_offset().y;
+        let x = viewport.top_left.x + LIST_PADDING_X as i32;
+        let y = viewport.top_left.y + self.row_content_y(index) - scroll_y;
+        let width = viewport.size.width.saturating_sub(LIST_PADDING_X * 2);
         Rectangle::new(Point::new(x, y), Size::new(width, ROW_HEIGHT_PX))
+    }
+
+    /// Check if a row is at least partially visible in the viewport.
+    fn is_row_visible(&self, index: usize) -> bool {
+        let bounds = self.row_screen_bounds(index);
+        let viewport = self.scroll.viewport();
+        let row_top = bounds.top_left.y;
+        let row_bottom = row_top + ROW_HEIGHT_PX as i32;
+        let vp_top = viewport.top_left.y;
+        let vp_bottom = vp_top + viewport.size.height as i32;
+        row_bottom > vp_top && row_top < vp_bottom
     }
 
     fn draw_header<D: DrawTarget<Color = Rgb565>>(&self, display: &mut D) -> Result<(), D::Error> {
@@ -137,7 +182,11 @@ impl SettingsPage {
         index: usize,
         category: &SettingsCategory,
     ) -> Result<(), D::Error> {
-        let bounds = self.row_bounds(index);
+        if !self.is_row_visible(index) {
+            return Ok(());
+        }
+
+        let bounds = self.row_screen_bounds(index);
 
         // Row background
         RoundedRectangle::with_equal_corners(
@@ -199,15 +248,23 @@ impl Page for SettingsPage {
     }
 
     fn handle_touch(&mut self, event: TouchEvent) -> Option<Action> {
-        if let TouchEvent::Press(point) = event {
-            let pt = point.to_point();
+        match event {
+            TouchEvent::Press(point) => {
+                let pt = point.to_point();
 
-            // Check each category row
-            for (i, category) in CATEGORIES.iter().enumerate() {
-                let row_rect = self.row_bounds(i);
-                if row_rect.contains(pt) {
-                    return Some(Action::NavigateToPage(category.target));
+                // Check each category row (using screen bounds)
+                for (i, category) in CATEGORIES.iter().enumerate() {
+                    if self.row_screen_bounds(i).contains(pt) {
+                        return Some(Action::NavigateToPage(category.target));
+                    }
                 }
+
+                // Start tracking for potential drag
+                self.scroll.handle_touch(event);
+            }
+            TouchEvent::Drag(_) => {
+                self.scroll.handle_touch(event);
+                self.dirty = true;
             }
         }
         None
@@ -260,6 +317,9 @@ impl Drawable for SettingsPage {
         for (i, category) in CATEGORIES.iter().enumerate() {
             self.draw_row(display, i, category)?;
         }
+
+        // Draw scrollbar indicators
+        self.scroll.draw(display)?;
 
         Ok(())
     }

@@ -112,6 +112,11 @@ impl ScrollableContainer {
         self.scroll_offset
     }
 
+    /// Get the viewport rectangle.
+    pub fn viewport(&self) -> Rectangle {
+        self.viewport
+    }
+
     /// Scroll by a relative delta amount.
     ///
     /// Positive delta scrolls right/down, negative scrolls left/up.
