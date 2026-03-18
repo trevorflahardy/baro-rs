@@ -15,10 +15,16 @@ use embedded_graphics::primitives::Rectangle;
 use log::{debug, error, info};
 
 use crate::app_state::AppState;
+use crate::config::HomePageMode;
 use crate::framebuffer::FrameBuffer;
+use crate::metrics::QualityLevel;
+use crate::pages::display_settings::DisplaySettingsPage;
+use crate::pages::home::grid::HomeGridPage;
+use crate::pages::home::outdoor::HomePage;
+use crate::pages::monitor::MonitorPage;
 use crate::pages::page::{Page, PageWrapper};
+use crate::pages::settings::SettingsPage;
 use crate::pages::wifi_status::{WifiState, WifiStatusPage};
-use crate::pages::{home::HomePage, settings::SettingsPage};
 use crate::sensors::SensorType;
 use crate::sensors::{
     CO2 as SENSOR_CO2_INDEX, HUMIDITY as SENSOR_HUMIDITY_INDEX, LUX as SENSOR_LUX_INDEX,
@@ -35,6 +41,17 @@ use alloc::boxed::Box;
 
 /// Channel capacity for page change requests
 const PAGE_CHANGE_CAPACITY: usize = 4;
+
+/// Auto-cycle interval in seconds (Home grid mode only)
+const AUTO_CYCLE_INTERVAL_SECS: u64 = 15;
+
+/// Sensors to cycle through in auto-cycle mode
+const AUTO_CYCLE_PAGES: [PageId; 4] = [
+    PageId::TrendTemperature,
+    PageId::TrendHumidity,
+    PageId::TrendCo2,
+    PageId::TrendLux,
+];
 
 /// Request to change the current page or update the display
 #[derive(Debug, Clone)]
@@ -63,6 +80,18 @@ where
     current_page: PageWrapper,
     bounds: Rectangle,
     needs_redraw: bool,
+    /// Current home page mode (loaded from device config)
+    home_page_mode: HomePageMode,
+    /// Whether auto-cycling is currently active (Home grid mode)
+    auto_cycle_enabled: bool,
+    /// Timestamp of the last auto-cycle page switch
+    auto_cycle_last_switch: u64,
+    /// Index into AUTO_CYCLE_PAGES for the next page to show
+    auto_cycle_index: usize,
+    /// Last known sensor quality (true = all sensors Good/Excellent)
+    all_sensors_healthy: bool,
+    /// Last known timestamp from sensor data
+    last_sensor_timestamp: u64,
 }
 
 impl<D> DisplayManager<D>
@@ -86,6 +115,12 @@ where
             current_page: PageWrapper::WifiStatus(Box::new(wifi_page)),
             bounds,
             needs_redraw: true,
+            home_page_mode: HomePageMode::default(),
+            auto_cycle_enabled: false,
+            auto_cycle_last_switch: 0,
+            auto_cycle_index: 0,
+            all_sensors_healthy: true,
+            last_sensor_timestamp: 0,
         }
     }
 
@@ -102,21 +137,51 @@ where
         debug!(" Navigating to page: {:?}", page_id);
         match page_id {
             PageId::Home => {
-                let mut page = HomePage::new(self.bounds);
-                page.init();
-                self.current_page = PageWrapper::Home(Box::new(page));
+                // Navigate to the correct home page based on current mode
+                match self.home_page_mode {
+                    HomePageMode::Outdoor => {
+                        let mut page = HomePage::new(self.bounds);
+                        page.init();
+                        self.current_page = PageWrapper::Home(Box::new(page));
+                        self.auto_cycle_enabled = false;
+                    }
+                    HomePageMode::Home => {
+                        let page = HomeGridPage::new(self.bounds);
+                        self.current_page = PageWrapper::HomeGrid(Box::new(page));
+                        self.auto_cycle_enabled = true;
+                        self.auto_cycle_last_switch = self.last_sensor_timestamp;
+                        self.auto_cycle_index = 0;
+                    }
+                }
+            }
+            PageId::HomeGrid => {
+                let page = HomeGridPage::new(self.bounds);
+                self.current_page = PageWrapper::HomeGrid(Box::new(page));
+                self.auto_cycle_enabled = true;
+                self.auto_cycle_last_switch = self.last_sensor_timestamp;
+                self.auto_cycle_index = 0;
             }
             PageId::Settings => {
                 let mut page = SettingsPage::new(self.bounds);
                 page.init();
                 self.current_page = PageWrapper::Settings(Box::new(page));
+                self.auto_cycle_enabled = false;
+            }
+            PageId::DisplaySettings => {
+                let page = DisplaySettingsPage::new(self.bounds, self.home_page_mode);
+                self.current_page = PageWrapper::DisplaySettings(Box::new(page));
+                self.auto_cycle_enabled = false;
+            }
+            PageId::Monitor => {
+                let mut page = MonitorPage::new(self.bounds);
+                page.init();
+                self.current_page = PageWrapper::Monitor(Box::new(page));
+                self.auto_cycle_enabled = false;
             }
             PageId::Graphs => {
-                // TODO: Create graphs page when implemented
                 debug!(" Graphs page not yet implemented");
             }
             PageId::TrendPage => {
-                // Generic trend page requires parameters
                 debug!(" TrendPage requires sensor/window parameters");
             }
             PageId::TrendTemperature => {
@@ -264,11 +329,34 @@ where
         TD: embedded_sdmmc::TimeSource,
     {
         debug!(" Received touch event: {:?}", event);
+        // Any manual touch interaction disables auto-cycle
+        // (it will re-enable when navigating back to HomeGrid)
+        if self.auto_cycle_enabled {
+            self.auto_cycle_enabled = false;
+        }
+
         if let Some(action) = Page::handle_touch(&mut self.current_page, event) {
             debug!(" Touch resulted in action: {:?}", action);
             match action {
                 Action::NavigateToPage(page_id) => {
                     self.navigate_to(page_id, app_state).await;
+                }
+                Action::GoBack => {
+                    // Navigate back to Settings (the parent of sub-settings pages)
+                    self.navigate_to(PageId::Settings, app_state).await;
+                }
+                Action::UpdateHomePageMode(mode) => {
+                    info!(" Updating home page mode to {:?}", mode);
+                    self.home_page_mode = mode;
+
+                    // Update device config in app state
+                    {
+                        let mut state = app_state.lock().await;
+                        state.device_config.home_page_mode = mode;
+                    }
+
+                    // Navigate to the correct home page
+                    self.navigate_to(PageId::Home, app_state).await;
                 }
                 _ => {
                     debug!(" Unhandled action: {:?}", action);
@@ -277,6 +365,24 @@ where
         } else {
             debug!(" Touch event not handled by page");
         }
+    }
+
+    /// Check if all sensor values indicate Good or Excellent quality.
+    fn check_all_healthy(temp: f32, humidity: f32, co2: f32, lux: f32) -> bool {
+        let qualities = [
+            QualityLevel::assess(SensorType::Temperature, temp),
+            QualityLevel::assess(SensorType::Humidity, humidity),
+            QualityLevel::assess(SensorType::Co2, co2),
+            QualityLevel::assess(SensorType::Lux, lux),
+        ];
+        qualities
+            .iter()
+            .all(|q| matches!(q, QualityLevel::Good | QualityLevel::Excellent))
+    }
+
+    /// Set the home page mode (called during boot after loading config)
+    pub fn set_home_page_mode(&mut self, mode: HomePageMode) {
+        self.home_page_mode = mode;
     }
 
     /// Update the current page with new data
@@ -303,6 +409,11 @@ where
                 let lux_val = lux_ml as f32 / 1000.0;
 
                 debug!("{}", sample);
+
+                // Track health for auto-cycle
+                self.all_sensors_healthy =
+                    Self::check_all_healthy(temp_c, humidity_pct, co2_ppm, lux_val);
+                self.last_sensor_timestamp = sample.timestamp as u64;
 
                 let sensor_data = SensorData {
                     temperature: Some(temp_c),
@@ -407,6 +518,31 @@ where
             DisplayRequest::UpdateData(event) => {
                 debug!(" -> UpdateData: {:?}", event);
                 self.update_data(event);
+            }
+        }
+
+        // Auto-cycle logic (Home grid mode only)
+        if self.auto_cycle_enabled
+            && self.last_sensor_timestamp > 0
+            && self
+                .last_sensor_timestamp
+                .saturating_sub(self.auto_cycle_last_switch)
+                >= AUTO_CYCLE_INTERVAL_SECS
+        {
+            if self.all_sensors_healthy {
+                // Cycle to next trend page
+                let target = AUTO_CYCLE_PAGES[self.auto_cycle_index % AUTO_CYCLE_PAGES.len()];
+                self.auto_cycle_index = (self.auto_cycle_index + 1) % AUTO_CYCLE_PAGES.len();
+                self.auto_cycle_last_switch = self.last_sensor_timestamp;
+                debug!(" Auto-cycle: navigating to {:?}", target);
+                self.navigate_to(target, app_state).await;
+                // Keep auto_cycle_enabled true so we continue cycling
+                self.auto_cycle_enabled = true;
+            } else {
+                // A sensor is unhealthy — return to HomeGrid
+                debug!(" Auto-cycle: sensor unhealthy, returning to HomeGrid");
+                self.auto_cycle_last_switch = self.last_sensor_timestamp;
+                self.navigate_to(PageId::HomeGrid, app_state).await;
             }
         }
 

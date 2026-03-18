@@ -55,6 +55,7 @@ pub mod layouts;
 pub mod styling;
 
 // Re-export commonly used items.
+pub use crate::config::HomePageMode;
 pub use components::{Button, MultiLineText, TextComponent, TextSize};
 pub use core::{
     Action, DirtyRegion, Drawable, Interactive, PageEvent, PageId, SensorData, StorageEvent,

@@ -5,7 +5,12 @@ use crate::{config::Config, storage::Rollup};
 use log::{debug, error};
 use thiserror_no_std::Error;
 
-type ConfigBuffer = [u8; core::mem::size_of::<Config>()];
+/// Buffer size for serialized config data.
+/// Must be large enough to hold the postcard-serialized `Config` struct.
+/// We use a generous fixed size since `size_of::<Config>()` measures the
+/// in-memory representation (with references), not the serialized form.
+const CONFIG_BUFFER_SIZE: usize = 128;
+type ConfigBuffer = [u8; CONFIG_BUFFER_SIZE];
 
 pub const CONFIG_FILE: &str = "config.bin";
 pub const ROLLUP_FILE_1H: &str = "roll_1h.bin";
@@ -52,7 +57,7 @@ where
     #[allow(dead_code)]
     fn read_config(&self) -> Result<ConfigBuffer, SdCardManagerError> {
         self.file_operation(CONFIG_FILE, Mode::ReadOnly, move |file| {
-            let mut buffer = ConfigBuffer::default();
+            let mut buffer = [0u8; CONFIG_BUFFER_SIZE];
             file.read(&mut buffer)
                 .map_err(SdCardManagerError::SdmmcError)?;
 
@@ -88,7 +93,7 @@ where
         operation(&mut config);
 
         // We need to save this back to the SD card.
-        let mut buffer = ConfigBuffer::default();
+        let mut buffer = [0u8; CONFIG_BUFFER_SIZE];
         let serialized = postcard::to_slice(&config, &mut buffer)
             .map_err(SdCardManagerError::PostcardParseError)?;
 

@@ -7,13 +7,15 @@
 //!
 //! | Key | Action                       |
 //! |-----|------------------------------|
-//! | 1   | Home page                    |
+//! | 1   | Home page (mode-aware)       |
 //! | 2   | Temperature trend            |
 //! | 3   | Humidity trend               |
 //! | 4   | CO₂ trend                    |
 //! | 5   | Lux trend                    |
 //! | 6   | Settings page                |
 //! | 7   | WiFi status                  |
+//! | 8   | Home Grid page               |
+//! | 9   | Monitor page                 |
 //! | Q   | Quit                         |
 //!
 //! Mouse clicks are forwarded as touch events.
@@ -28,6 +30,10 @@ use embedded_graphics_simulator::{
 };
 use log::info;
 
+use baro_core::config::HomePageMode;
+use baro_core::pages::display_settings::DisplaySettingsPage;
+use baro_core::pages::home::grid::HomeGridPage;
+use baro_core::pages::monitor::MonitorPage;
 use baro_core::pages::page::Page;
 use baro_core::pages::wifi_status::WifiState;
 use baro_core::pages::{HomePage, PageWrapper, SettingsPage, TrendPage, WifiStatusPage};
@@ -149,20 +155,42 @@ fn screen_bounds() -> Rectangle {
     )
 }
 
+/// Current home page mode for the simulator (mutable state).
+static mut SIM_HOME_PAGE_MODE: HomePageMode = HomePageMode::Outdoor;
+
 /// Create a new page of the given kind, optionally pre-loaded with history.
 fn create_page(page_id: PageId, sensor_gen: &mut MockSensorGenerator) -> PageWrapper {
     let bounds = screen_bounds();
 
     match page_id {
         PageId::Home => {
-            let mut page = HomePage::new(bounds);
-            page.init();
-            PageWrapper::Home(Box::new(page))
+            // Navigate to the correct home page based on current mode
+            // SAFETY: single-threaded simulator, no data races
+            let mode = unsafe { SIM_HOME_PAGE_MODE };
+            match mode {
+                HomePageMode::Outdoor => {
+                    let mut page = HomePage::new(bounds);
+                    page.init();
+                    PageWrapper::Home(Box::new(page))
+                }
+                HomePageMode::Home => PageWrapper::HomeGrid(Box::new(HomeGridPage::new(bounds))),
+            }
         }
+        PageId::HomeGrid => PageWrapper::HomeGrid(Box::new(HomeGridPage::new(bounds))),
         PageId::Settings => {
             let mut page = SettingsPage::new(bounds);
             page.init();
             PageWrapper::Settings(Box::new(page))
+        }
+        PageId::DisplaySettings => {
+            // SAFETY: single-threaded simulator
+            let mode = unsafe { SIM_HOME_PAGE_MODE };
+            PageWrapper::DisplaySettings(Box::new(DisplaySettingsPage::new(bounds, mode)))
+        }
+        PageId::Monitor => {
+            let mut page = MonitorPage::new(bounds);
+            page.init();
+            PageWrapper::Monitor(Box::new(page))
         }
         PageId::TrendTemperature => create_trend_page(
             bounds,
@@ -237,6 +265,8 @@ fn keycode_to_page(keycode: Keycode) -> Option<PageId> {
         Keycode::Num5 | Keycode::Kp5 => Some(PageId::TrendLux),
         Keycode::Num6 | Keycode::Kp6 => Some(PageId::Settings),
         Keycode::Num7 | Keycode::Kp7 => Some(PageId::WifiStatus),
+        Keycode::Num8 | Keycode::Kp8 => Some(PageId::HomeGrid),
+        Keycode::Num9 | Keycode::Kp9 => Some(PageId::Monitor),
         _ => None,
     }
 }
@@ -253,7 +283,7 @@ fn main() {
         DISPLAY_WIDTH_PX, DISPLAY_HEIGHT_PX, WINDOW_SCALE
     );
     info!(
-        "Keys: 1=Home  2=TempTrend  3=HumTrend  4=CO₂Trend  5=LuxTrend  6=Settings  7=WifiStatus  Q=Quit"
+        "Keys: 1=Home  2=TempTrend  3=HumTrend  4=CO2Trend  5=LuxTrend  6=Settings  7=WiFi  8=HomeGrid  9=Monitor  Q=Quit"
     );
 
     // SDL2 display and window
@@ -316,6 +346,20 @@ fn main() {
                             Action::NavigateToPage(page_id) => {
                                 info!("Touch → navigate to {:?}", page_id);
                                 current_page = create_page(page_id, &mut sensor_gen);
+                                needs_redraw = true;
+                            }
+                            Action::GoBack => {
+                                info!("Touch → go back to Settings");
+                                current_page = create_page(PageId::Settings, &mut sensor_gen);
+                                needs_redraw = true;
+                            }
+                            Action::UpdateHomePageMode(mode) => {
+                                info!("Touch → update home page mode to {:?}", mode);
+                                // SAFETY: single-threaded simulator
+                                unsafe {
+                                    SIM_HOME_PAGE_MODE = mode;
+                                }
+                                current_page = create_page(PageId::Home, &mut sensor_gen);
                                 needs_redraw = true;
                             }
                             other => {

@@ -4,6 +4,7 @@
 extern crate alloc;
 use alloc::boxed::Box;
 
+use crate::config::HomePageMode;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 
@@ -57,13 +58,21 @@ pub enum Action {
     RefreshData,
     /// Custom action with ID
     Custom(u16),
+    /// Update the home page mode (Hiking vs Home)
+    UpdateHomePageMode(HomePageMode),
 }
 
 /// Page identifier for navigation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PageId {
     Home,
+    /// 2x2 mini-graph grid home page (stationary indoor mode)
+    HomeGrid,
     Settings,
+    /// Display settings sub-page (home page mode selector)
+    DisplaySettings,
+    /// Monitor page (live sensor feed + storage log, formerly Settings)
+    Monitor,
     Graphs,
     TrendPage,
     TrendTemperature,

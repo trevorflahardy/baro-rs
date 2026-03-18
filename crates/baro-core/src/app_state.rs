@@ -9,6 +9,7 @@ use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_sync::pubsub::PubSubChannel;
 use thiserror_no_std::Error;
 
+use crate::config::DeviceConfig;
 use crate::storage::{
     accumulator::{
         EVENT_CHANNEL_CAPACITY, EVENT_PUBLISHERS, EVENT_SUBSCRIBERS, RollupAccumulator, RollupEvent,
@@ -50,6 +51,7 @@ where
     pub run_state: AppRunState,
     pub time_known: bool,
     pub wifi_connected: bool,
+    pub device_config: DeviceConfig,
     pub accumulator: Option<RollupAccumulator<'a>>,
     pub storage_manager: Option<StorageManager<S, D, T>>,
 }
@@ -77,6 +79,7 @@ where
             run_state: AppRunState::Uninitialized,
             time_known: false,
             wifi_connected: false,
+            device_config: DeviceConfig::default(),
             accumulator: None,
             storage_manager: None,
         }

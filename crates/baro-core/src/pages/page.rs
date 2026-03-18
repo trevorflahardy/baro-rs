@@ -176,121 +176,79 @@ impl<T: Page> Page for Box<T> {
 /// When adding a new page to the application, add a variant here and
 /// implement the delegation in the [`Page`] impl below.
 pub enum PageWrapper {
-    Home(Box<crate::pages::home::HomePage>),
+    Home(Box<crate::pages::home::outdoor::HomePage>),
+    HomeGrid(Box<crate::pages::home::grid::HomeGridPage>),
     Settings(Box<crate::pages::settings::SettingsPage>),
+    DisplaySettings(Box<crate::pages::display_settings::DisplaySettingsPage>),
+    Monitor(Box<crate::pages::monitor::MonitorPage>),
     TrendPage(Box<crate::pages::trend::TrendPage>),
     WifiStatus(Box<crate::pages::wifi_status::WifiStatusPage>),
 }
 
+/// Helper macro to delegate a `Page` method call through every `PageWrapper` variant.
+macro_rules! delegate_page {
+    ($self:ident, $method:ident $(, $arg:expr)*) => {
+        match $self {
+            PageWrapper::Home(page) => page.$method($($arg),*),
+            PageWrapper::HomeGrid(page) => page.$method($($arg),*),
+            PageWrapper::Settings(page) => page.$method($($arg),*),
+            PageWrapper::DisplaySettings(page) => page.$method($($arg),*),
+            PageWrapper::Monitor(page) => page.$method($($arg),*),
+            PageWrapper::TrendPage(page) => page.$method($($arg),*),
+            PageWrapper::WifiStatus(page) => page.$method($($arg),*),
+        }
+    };
+}
+
 impl Page for PageWrapper {
     fn id(&self) -> PageId {
-        match self {
-            PageWrapper::Home(page) => page.id(),
-            PageWrapper::Settings(page) => page.id(),
-            PageWrapper::TrendPage(page) => page.id(),
-            PageWrapper::WifiStatus(page) => page.id(),
-        }
+        delegate_page!(self, id)
     }
 
     fn title(&self) -> &str {
-        match self {
-            PageWrapper::Home(page) => page.title(),
-            PageWrapper::Settings(page) => page.title(),
-            PageWrapper::TrendPage(page) => page.title(),
-            PageWrapper::WifiStatus(page) => page.title(),
-        }
+        delegate_page!(self, title)
     }
 
     fn on_activate(&mut self) {
-        match self {
-            PageWrapper::Home(page) => page.on_activate(),
-            PageWrapper::Settings(page) => page.on_activate(),
-            PageWrapper::TrendPage(page) => page.on_activate(),
-            PageWrapper::WifiStatus(page) => page.on_activate(),
-        }
+        delegate_page!(self, on_activate)
     }
 
     fn on_deactivate(&mut self) {
-        match self {
-            PageWrapper::Home(page) => page.on_deactivate(),
-            PageWrapper::Settings(page) => page.on_deactivate(),
-            PageWrapper::TrendPage(page) => page.on_deactivate(),
-            PageWrapper::WifiStatus(page) => page.on_deactivate(),
-        }
+        delegate_page!(self, on_deactivate)
     }
 
     fn handle_touch(&mut self, event: TouchEvent) -> Option<Action> {
-        match self {
-            PageWrapper::Home(page) => page.handle_touch(event),
-            PageWrapper::Settings(page) => page.handle_touch(event),
-            PageWrapper::TrendPage(page) => page.handle_touch(event),
-            PageWrapper::WifiStatus(page) => page.handle_touch(event),
-        }
+        delegate_page!(self, handle_touch, event)
     }
 
     fn update(&mut self) {
-        match self {
-            PageWrapper::Home(page) => page.update(),
-            PageWrapper::Settings(page) => page.update(),
-            PageWrapper::TrendPage(page) => page.update(),
-            PageWrapper::WifiStatus(page) => page.update(),
-        }
+        delegate_page!(self, update)
     }
 
     fn on_event(&mut self, event: &crate::ui::core::PageEvent) -> bool {
-        match self {
-            PageWrapper::Home(page) => page.on_event(event),
-            PageWrapper::Settings(page) => page.on_event(event),
-            PageWrapper::TrendPage(page) => page.on_event(event),
-            PageWrapper::WifiStatus(page) => page.on_event(event),
-        }
+        delegate_page!(self, on_event, event)
     }
 
     fn draw_page<D: DrawTarget<Color = embedded_graphics::pixelcolor::Rgb565>>(
         &mut self,
         display: &mut D,
     ) -> Result<(), D::Error> {
-        match self {
-            PageWrapper::Home(page) => page.draw_page(display),
-            PageWrapper::Settings(page) => page.draw_page(display),
-            PageWrapper::TrendPage(page) => page.draw_page(display),
-            PageWrapper::WifiStatus(page) => page.draw_page(display),
-        }
+        delegate_page!(self, draw_page, display)
     }
 
     fn bounds(&self) -> Rectangle {
-        match self {
-            PageWrapper::Home(page) => Page::bounds(page),
-            PageWrapper::Settings(page) => Page::bounds(page),
-            PageWrapper::TrendPage(page) => Page::bounds(page),
-            PageWrapper::WifiStatus(page) => Page::bounds(page),
-        }
+        delegate_page!(self, bounds)
     }
 
     fn is_dirty(&self) -> bool {
-        match self {
-            PageWrapper::Home(page) => Page::is_dirty(page),
-            PageWrapper::Settings(page) => Page::is_dirty(page),
-            PageWrapper::TrendPage(page) => Page::is_dirty(page),
-            PageWrapper::WifiStatus(page) => Page::is_dirty(page),
-        }
+        delegate_page!(self, is_dirty)
     }
 
     fn mark_clean(&mut self) {
-        match self {
-            PageWrapper::Home(page) => Page::mark_clean(page),
-            PageWrapper::Settings(page) => Page::mark_clean(page),
-            PageWrapper::TrendPage(page) => Page::mark_clean(page),
-            PageWrapper::WifiStatus(page) => Page::mark_clean(page),
-        }
+        delegate_page!(self, mark_clean)
     }
 
     fn mark_dirty(&mut self) {
-        match self {
-            PageWrapper::Home(page) => Page::mark_dirty(page),
-            PageWrapper::Settings(page) => Page::mark_dirty(page),
-            PageWrapper::TrendPage(page) => Page::mark_dirty(page),
-            PageWrapper::WifiStatus(page) => Page::mark_dirty(page),
-        }
+        delegate_page!(self, mark_dirty)
     }
 }
