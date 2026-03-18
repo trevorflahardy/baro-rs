@@ -4,7 +4,7 @@ use super::Sensor;
 use bmp388_embedded::r#async::Bmp388Async;
 use bmp388_embedded::{Address, Measurement, Oversampling};
 use embedded_hal_async::i2c::I2c;
-use log::{error, info};
+use log::{debug, error};
 
 pub struct BMP388Readings {
     /// Pressure in milli-Pascals (Pa × 1000) for i32 storage precision
@@ -19,63 +19,17 @@ impl SensorReadings<1> for BMP388Readings {
 
 /// BMP388 sensor wrapper.
 ///
-/// Unlike other sensors, `Bmp388Async::new()` is async and fallible, so we
-/// store the raw I2C device and lazily construct the driver on the first read.
+/// Unlike other sensors, `Bmp388Async::new()` is async and fallible, so the
+/// driver is constructed and configured on each `read()` call. This matches
+/// the firmware pattern where a fresh `BMP388Sensor` is created per read
+/// cycle (the I2C mux channel is re-selected each time).
 pub struct BMP388Sensor<I> {
-    inner: BMP388Inner<I>,
-}
-
-enum BMP388Inner<I> {
-    /// Not yet initialized — holds the I2C device until first read.
-    Uninit(Option<I>),
-    /// Initialized driver ready for measurements.
-    Ready(Bmp388Async<I, embassy_time::Delay>),
+    i2c: Option<I>,
 }
 
 impl<I: I2c> BMP388Sensor<I> {
     pub fn new(i2c: I) -> Self {
-        Self {
-            inner: BMP388Inner::Uninit(Some(i2c)),
-        }
-    }
-
-    /// Ensure the driver is initialized, returning a mutable reference to it.
-    async fn driver(&mut self) -> Result<&mut Bmp388Async<I, embassy_time::Delay>, SensorError> {
-        if let BMP388Inner::Uninit(ref mut i2c_opt) = self.inner {
-            let i2c = i2c_opt.take().ok_or(SensorError::InitializationFailed {
-                sensor: "BMP388",
-                details: "I2C device already consumed during init",
-            })?;
-
-            let mut sensor = Bmp388Async::new(i2c, embassy_time::Delay, Address::Primary)
-                .await
-                .map_err(|e| {
-                    error!("BMP388 initialization failed: {:?}", e);
-                    SensorError::InitializationFailed {
-                        sensor: "BMP388",
-                        details: "Failed to initialize BMP388 async driver",
-                    }
-                })?;
-
-            // Configure oversampling once: X8 for pressure, X2 for temperature
-            sensor
-                .set_oversampling(Oversampling::X8, Oversampling::X2)
-                .await
-                .map_err(|e| {
-                    error!("BMP388 set_oversampling failed: {:?}", e);
-                    SensorError::InitializationFailed {
-                        sensor: "BMP388",
-                        details: "Failed to set oversampling configuration",
-                    }
-                })?;
-
-            self.inner = BMP388Inner::Ready(sensor);
-        }
-
-        match self.inner {
-            BMP388Inner::Ready(ref mut sensor) => Ok(sensor),
-            BMP388Inner::Uninit(_) => unreachable!(),
-        }
+        Self { i2c: Some(i2c) }
     }
 }
 
@@ -83,7 +37,33 @@ impl<I: I2c> Sensor<1> for BMP388Sensor<I> {
     type Readings = BMP388Readings;
 
     async fn read(&mut self) -> Result<BMP388Readings, SensorError> {
-        let sensor = self.driver().await?;
+        let i2c = self.i2c.take().ok_or(SensorError::ReadFailed {
+            sensor: "BMP388",
+            operation: "read",
+            details: "I2C device already consumed; create a new BMP388Sensor per read cycle",
+        })?;
+
+        let mut sensor = Bmp388Async::new(i2c, embassy_time::Delay, Address::Primary)
+            .await
+            .map_err(|e| {
+                error!("BMP388 initialization failed: {:?}", e);
+                SensorError::InitializationFailed {
+                    sensor: "BMP388",
+                    details: "Failed to initialize BMP388 async driver",
+                }
+            })?;
+
+        // Configure oversampling: X8 for pressure, X2 for temperature
+        sensor
+            .set_oversampling(Oversampling::X8, Oversampling::X2)
+            .await
+            .map_err(|e| {
+                error!("BMP388 set_oversampling failed: {:?}", e);
+                SensorError::InitializationFailed {
+                    sensor: "BMP388",
+                    details: "Failed to set oversampling configuration",
+                }
+            })?;
 
         sensor
             .forced_measurement()

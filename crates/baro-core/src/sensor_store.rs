@@ -67,7 +67,7 @@ impl SensorDataStore {
         self.latest.as_ref()
     }
 
-    /// Get sparkline ring buffer data for a sensor index (0–3).
+    /// Get sparkline ring buffer data for a sensor index (0–4).
     ///
     /// Returns `(buffer, count, head)` matching the layout used by
     /// `HomeGridPage::SensorCard`.

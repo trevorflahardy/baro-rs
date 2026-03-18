@@ -151,6 +151,7 @@ pub mod indices {
     #[cfg(any(
         feature = "sensor-sht40",
         feature = "sensor-scd41",
+        feature = "sensor-bh1750",
         feature = "sensor-bmp388"
     ))]
     use crate::sensors::IndexedSensor;
