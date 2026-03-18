@@ -179,9 +179,9 @@ pub mod indices {
     /// BH1750 sensor configuration:
     /// - Starts at index 3 (lux)
     /// - Produces 1 value (lux)
-    /// - Connected to I2C mux channel 2
+    /// - Connected to I2C mux channel 3
     #[cfg(feature = "sensor-bh1750")]
-    pub type BH1750Indexed<I> = IndexedSensor<BH1750Sensor<I>, 3, 1, 2>;
+    pub type BH1750Indexed<I> = IndexedSensor<BH1750Sensor<I>, 3, 1, 3>;
 
     pub const TEMPERATURE: usize = 0;
     pub const HUMIDITY: usize = 1;
