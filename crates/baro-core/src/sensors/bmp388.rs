@@ -92,7 +92,7 @@ impl<I: I2c> Sensor<1> for BMP388Sensor<I> {
                 // The BMP388 returns pressure in Pascals as f64.
                 // We store as milli-Pascals (Pa × 1000) in i32 for precision.
                 let milli_pa = (data.pressure * 1000.0) as i32;
-                info!(
+                debug!(
                     "BMP388: Measured pressure = {:.2} Pa (stored as {} mPa)",
                     data.pressure, milli_pa
                 );
