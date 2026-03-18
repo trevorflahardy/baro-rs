@@ -44,6 +44,7 @@ These are the non-obvious rules from AGENTS.md that are easy to violate:
 - **Clippy warnings are errors** — fix or explicitly justify any exception
 - **`rustfmt` is mandatory** — do not fight it
 - **Clarity over cleverness** — this firmware runs for years unattended; prefer simple, readable code
+- **Always verify before returning** — after completing any task, run `make fmt-check` and `make sim-clippy` (or `make clippy-all` if firmware toolchain is available). Debug and fix any failures before reporting completion.
 
 See [AGENTS.md](AGENTS.md) for the full philosophy.
 
@@ -91,6 +92,7 @@ Sensors use const generics to guarantee correct array indexing at compile time. 
 type SHT40Indexed<I>  = IndexedSensor<SHT40Sensor<I>,  0, 2, 0>;  // temp+humidity at [0..2], mux ch 0
 type SCD41Indexed<I>  = IndexedSensor<SCD41Sensor<I>,  2, 1, 1>;  // CO2 at [2],             mux ch 1
 type BH1750Indexed<I> = IndexedSensor<BH1750Sensor<I>, 3, 1, 2>;  // lux at [3],             mux ch 2
+type BMP388Indexed<I> = IndexedSensor<BMP388Sensor<I>, 4, 1, 3>;  // pressure at [4],        mux ch 3
 ```
 
 Named index constants in `sensors::indices`:
@@ -100,11 +102,13 @@ Named index constants in `sensors::indices`:
 | `HUMIDITY`    | 1     | SHT40  | 0          |
 | `CO2`         | 2     | SCD41  | 1          |
 | `LUX`         | 3     | BH1750 | 2          |
+| `PRESSURE`    | 4     | BMP388 | 3          |
 
 Sensors are feature-gated (all enabled by default):
 - `sensor-sht40` → `sht4x` crate
 - `sensor-scd41` → `scd41-embedded` (git, async)
 - `sensor-bh1750` → `bh1750-embedded` (git, async)
+- `sensor-bmp388` → `bmp388-embedded` (git, async)
 
 ### UI Framework
 

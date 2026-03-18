@@ -29,7 +29,7 @@ use crate::sensor_store::SensorDataStore;
 use crate::sensors::SensorType;
 use crate::sensors::{
     CO2 as SENSOR_CO2_INDEX, HUMIDITY as SENSOR_HUMIDITY_INDEX, LUX as SENSOR_LUX_INDEX,
-    TEMPERATURE as SENSOR_TEMPERATURE_INDEX,
+    PRESSURE as SENSOR_PRESSURE_INDEX, TEMPERATURE as SENSOR_TEMPERATURE_INDEX,
 };
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RollupTier, TimeWindow};
@@ -47,11 +47,12 @@ const PAGE_CHANGE_CAPACITY: usize = 4;
 const AUTO_CYCLE_INTERVAL_SECS: u64 = 15;
 
 /// Sensors to cycle through in auto-cycle mode
-const AUTO_CYCLE_PAGES: [PageId; 4] = [
+const AUTO_CYCLE_PAGES: [PageId; 5] = [
     PageId::TrendTemperature,
     PageId::TrendHumidity,
     PageId::TrendCo2,
     PageId::TrendLux,
+    PageId::TrendPressure,
 ];
 
 /// Request to change the current page or update the display
@@ -257,6 +258,18 @@ where
 
                 self.current_page = PageWrapper::TrendPage(Box::new(page));
             }
+            PageId::TrendPressure => {
+                debug!(" Creating TrendPressure page with historical data");
+                let mut page = crate::pages::TrendPage::new(
+                    self.bounds,
+                    SensorType::Pressure,
+                    TimeWindow::OneHour,
+                );
+
+                Self::load_trend_data(app_state, &mut page, TimeWindow::OneHour).await;
+
+                self.current_page = PageWrapper::TrendPage(Box::new(page));
+            }
             PageId::WifiStatus => {
                 let page = WifiStatusPage::new(WifiState::Error);
                 self.current_page = PageWrapper::WifiStatus(Box::new(page));
@@ -388,6 +401,7 @@ where
                         | PageId::TrendHumidity
                         | PageId::TrendCo2
                         | PageId::TrendLux
+                        | PageId::TrendPressure
                         | PageId::TrendPage => {
                             self.navigate_to(PageId::Home, app_state).await;
                         }
@@ -479,12 +493,15 @@ where
                 let humidity_mp = sample.values[SENSOR_HUMIDITY_INDEX];
                 let co2_mp = sample.values[SENSOR_CO2_INDEX];
                 let lux_ml = sample.values[SENSOR_LUX_INDEX];
+                let pressure_mpa = sample.values[SENSOR_PRESSURE_INDEX];
 
                 // Convert to float values (divide by 1000)
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
                 let co2_ppm = co2_mp as f32 / 1000.0;
                 let lux_val = lux_ml as f32 / 1000.0;
+                // Pressure: stored as milli-Pa, display as hPa (1 hPa = 100 Pa)
+                let pressure_hpa = pressure_mpa as f32 / 100_000.0;
 
                 debug!("{}", sample);
 
@@ -498,6 +515,7 @@ where
                     humidity: Some(humidity_pct),
                     co2: Some(co2_ppm),
                     lux: Some(lux_val),
+                    pressure: Some(pressure_hpa),
                     timestamp: sample.timestamp as u64,
                 };
 
@@ -521,11 +539,13 @@ where
                 let humidity_mp = rollup.avg[SENSOR_HUMIDITY_INDEX];
                 let co2_mp = rollup.avg[SENSOR_CO2_INDEX];
                 let lux_ml = rollup.avg[SENSOR_LUX_INDEX];
+                let pressure_mpa = rollup.avg[SENSOR_PRESSURE_INDEX];
 
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
                 let co2_ppm = co2_mp as f32 / 1000.0;
                 let lux_val = lux_ml as f32 / 1000.0;
+                let pressure_hpa = pressure_mpa as f32 / 100_000.0;
 
                 debug!("{}", rollup);
 
@@ -534,6 +554,7 @@ where
                     humidity: Some(humidity_pct),
                     co2: Some(co2_ppm),
                     lux: Some(lux_val),
+                    pressure: Some(pressure_hpa),
                     timestamp: rollup.start_ts as u64,
                 };
 

@@ -120,11 +120,12 @@ const COLOR_OVERLAY: Rgb565 = Rgb565::new(5, 10, 5);
 // Default sensor assignment
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SENSORS: [SensorType; 4] = [
+const DEFAULT_SENSORS: [SensorType; 5] = [
     SensorType::Temperature,
     SensorType::Humidity,
     SensorType::Co2,
     SensorType::Lux,
+    SensorType::Pressure,
 ];
 
 // ---------------------------------------------------------------------------
@@ -165,6 +166,7 @@ impl SensorRow {
             SensorType::Humidity => PageId::TrendHumidity,
             SensorType::Co2 => PageId::TrendCo2,
             SensorType::Lux => PageId::TrendLux,
+            SensorType::Pressure => PageId::TrendPressure,
         }
     }
 
@@ -250,6 +252,9 @@ impl SensorRow {
                 }
                 SensorType::Co2 | SensorType::Lux => {
                     write!(buf, "{:.0} {}", val, self.sensor.unit())
+                }
+                SensorType::Pressure => {
+                    write!(buf, "{:.1} {}", val, self.sensor.unit())
                 }
             };
 
@@ -533,7 +538,7 @@ impl AlertOverlay {
         // Value
         let mut val_buf = heapless::String::<16>::new();
         let _ = match self.sensor {
-            SensorType::Temperature | SensorType::Humidity => {
+            SensorType::Temperature | SensorType::Humidity | SensorType::Pressure => {
                 write!(val_buf, "{:.1} {}", self.value, self.sensor.unit())
             }
             SensorType::Co2 | SensorType::Lux => {
@@ -604,8 +609,8 @@ impl HomePage {
             SensorRow::new(DEFAULT_SENSORS[1]),
             SensorRow::new(DEFAULT_SENSORS[2]),
             SensorRow::new(DEFAULT_SENSORS[3]),
+            SensorRow::new(DEFAULT_SENSORS[4]),
             SensorRow::new(SensorType::Temperature), // unused slots
-            SensorRow::new(SensorType::Temperature),
             SensorRow::new(SensorType::Temperature),
             SensorRow::new(SensorType::Temperature),
         ];
@@ -618,7 +623,7 @@ impl HomePage {
             Size::new(SETTINGS_TOUCH_WIDTH, HEADER_HEIGHT_PX),
         );
 
-        let row_count = 4;
+        let row_count = 5;
         let list_viewport = Self::list_viewport(bounds);
         let content_height = Self::content_height(row_count);
         let scroll = ScrollableContainer::new(
@@ -664,6 +669,9 @@ impl HomePage {
             }
             if let Some(lux) = data.lux {
                 self.rows[3].update_value(lux);
+            }
+            if let Some(pressure) = data.pressure {
+                self.rows[4].update_value(pressure);
             }
             self.recompute_sort_order();
             self.banner.update(&self.rows, self.row_count);
@@ -896,6 +904,9 @@ impl Page for HomePage {
                 }
                 if let Some(lux) = data.lux {
                     self.rows[3].update_value(lux);
+                }
+                if let Some(pressure) = data.pressure {
+                    self.rows[4].update_value(pressure);
                 }
 
                 self.recompute_sort_order();

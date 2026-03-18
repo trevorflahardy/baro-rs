@@ -138,6 +138,7 @@ impl SensorCard {
             SensorType::Humidity => PageId::TrendHumidity,
             SensorType::Co2 => PageId::TrendCo2,
             SensorType::Lux => PageId::TrendLux,
+            SensorType::Pressure => PageId::TrendPressure,
         }
     }
 
@@ -178,7 +179,7 @@ impl SensorCard {
         if let Some(val) = self.latest_value {
             let mut buf = heapless::String::<16>::new();
             let _ = match self.sensor {
-                SensorType::Temperature | SensorType::Humidity => {
+                SensorType::Temperature | SensorType::Humidity | SensorType::Pressure => {
                     write!(buf, "{:.1}", val)
                 }
                 SensorType::Co2 | SensorType::Lux => {

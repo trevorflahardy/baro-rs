@@ -30,9 +30,13 @@ scd41-embedded = { git = "https://github.com/trevorflahardy/scd41-embedded", fea
 bh1750-embedded = { git = "https://github.com/trevorflahardy/bh1750-embedded", features = [
     "async",
 ], optional = true }
+bmp388-embedded = { git = "https://github.com/trevorflahardy/bmp388-embedded", features = [
+    "async",
+], optional = true }
 
 [features]
-default = ["sensor-sht40", "sensor-scd41", "sensor-bh1750"]
+default = ["sensor-sht40", "sensor-scd41", "sensor-bh1750", "sensor-bmp388"]
 sensor-sht40 = ["dep:sht4x"]
 sensor-scd41 = ["dep:scd41-embedded"]
 sensor-bh1750 = ["dep:bh1750-embedded"]
+sensor-bmp388 = ["dep:bmp388-embedded"]

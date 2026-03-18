@@ -7,6 +7,7 @@
 //!
 //! | Key | Action                       |
 //! |-----|------------------------------|
+//! | 0   | Pressure trend               |
 //! | 1   | Home page (mode-aware)       |
 //! | 2   | Temperature trend            |
 //! | 3   | Humidity trend               |
@@ -93,6 +94,9 @@ impl MockSensorGenerator {
         // Lux: 200–600 lux with a medium cycle
         let lux = 400.0 + 200.0 * (t / 240.0).sin() + 50.0 * (t / 31.0).cos();
 
+        // Pressure: 1010–1020 hPa with slow drift (typical barometric variation)
+        let pressure = 1013.25 + 5.0 * (t / 600.0).sin() + 2.0 * (t / 97.0).cos();
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -103,6 +107,7 @@ impl MockSensorGenerator {
             humidity: Some(humidity as f32),
             co2: Some(co2 as f32),
             lux: Some(lux as f32),
+            pressure: Some(pressure as f32),
             timestamp,
         }
     }
@@ -130,6 +135,9 @@ impl MockSensorGenerator {
                     ((600.0 + 200.0 * (t / 300.0).sin() + 30.0 * (t / 41.0).cos()) * 1000.0) as i32;
                 let lux_ml =
                     ((400.0 + 200.0 * (t / 240.0).sin() + 50.0 * (t / 31.0).cos()) * 1000.0) as i32;
+                // Pressure in milli-Pascals: hPa × 100 (Pa/hPa) × 1000 (mPa/Pa)
+                let pressure_mpa = ((1013.25 + 5.0 * (t / 600.0).sin() + 2.0 * (t / 97.0).cos())
+                    * 100_000.0) as i32;
 
                 let mut sample = RawSample::default();
                 sample.timestamp = ts;
@@ -137,6 +145,7 @@ impl MockSensorGenerator {
                 sample.values[baro_core::sensors::HUMIDITY] = hum_mp;
                 sample.values[baro_core::sensors::CO2] = co2_mp;
                 sample.values[baro_core::sensors::LUX] = lux_ml;
+                sample.values[baro_core::sensors::PRESSURE] = pressure_mpa;
 
                 sample
             })
@@ -237,6 +246,12 @@ fn create_page(
             TimeWindow::ThirtyMinutes,
             sensor_gen,
         ),
+        PageId::TrendPressure => create_trend_page(
+            bounds,
+            SensorType::Pressure,
+            TimeWindow::OneHour,
+            sensor_gen,
+        ),
         PageId::WifiStatus => {
             PageWrapper::WifiStatus(Box::new(WifiStatusPage::new(WifiState::Error)))
         }
@@ -279,6 +294,7 @@ fn create_trend_page(
 /// Map an SDL keycode to a page navigation request.
 fn keycode_to_page(keycode: Keycode) -> Option<PageId> {
     match keycode {
+        Keycode::Num0 | Keycode::Kp0 => Some(PageId::TrendPressure),
         Keycode::Num1 | Keycode::Kp1 => Some(PageId::Home),
         Keycode::Num2 | Keycode::Kp2 => Some(PageId::TrendTemperature),
         Keycode::Num3 | Keycode::Kp3 => Some(PageId::TrendHumidity),
@@ -304,7 +320,7 @@ fn main() {
         DISPLAY_WIDTH_PX, DISPLAY_HEIGHT_PX, WINDOW_SCALE
     );
     info!(
-        "Keys: 1=Home  2=TempTrend  3=HumTrend  4=CO2Trend  5=LuxTrend  6=Settings  7=WiFi  8=HomeGrid  9=Monitor  Q=Quit"
+        "Keys: 0=PresTrend  1=Home  2=TempTrend  3=HumTrend  4=CO2Trend  5=LuxTrend  6=Settings  7=WiFi  8=HomeGrid  9=Monitor  Q=Quit"
     );
 
     // SDL2 display and window

@@ -221,11 +221,10 @@ impl WifiStatusPage {
         // will override these bounds with the actual remaining space, but
         // preferred_size() reads current bounds, so starting at zero would
         // corrupt child widths to 0 and break centering.
-        let mut body =
-            Container::<MAX_CONTAINER_CHILDREN>::new(bounds, Direction::Vertical)
-                .with_alignment(UiAlignment::Center)
-                .with_main_axis_alignment(MainAxisAlignment::Center)
-                .with_gap(BODY_CONTENT_GAP_PX);
+        let mut body = Container::<MAX_CONTAINER_CHILDREN>::new(bounds, Direction::Vertical)
+            .with_alignment(UiAlignment::Center)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_gap(BODY_CONTENT_GAP_PX);
 
         // Status text
         let status = TextComponent::auto(self.state.status_text(), TextSize::Large)

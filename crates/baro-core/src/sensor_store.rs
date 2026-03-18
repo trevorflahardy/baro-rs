@@ -9,8 +9,8 @@ use crate::ui::core::SensorData;
 /// Number of sparkline data points retained per sensor.
 pub const SPARKLINE_CAPACITY: usize = 30;
 
-/// Number of sensors tracked (Temperature, Humidity, CO2, Lux).
-const SENSOR_COUNT: usize = 4;
+/// Number of sensors tracked (Temperature, Humidity, CO2, Lux, Pressure).
+const SENSOR_COUNT: usize = 5;
 
 /// Centralized store for sensor data that outlives individual page instances.
 ///
@@ -56,6 +56,9 @@ impl SensorDataStore {
         }
         if let Some(lux) = data.lux {
             self.push_sparkline(3, lux);
+        }
+        if let Some(pressure) = data.pressure {
+            self.push_sparkline(4, pressure);
         }
     }
 
