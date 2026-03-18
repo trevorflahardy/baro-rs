@@ -37,6 +37,7 @@ use baro_core::pages::page::Page;
 use baro_core::pages::settings::DisplaySettingsPage;
 use baro_core::pages::wifi_status::WifiState;
 use baro_core::pages::{HomePage, PageWrapper, SettingsPage, TrendPage, WifiStatusPage};
+use baro_core::sensor_store::SensorDataStore;
 use baro_core::sensors::SensorType;
 use baro_core::storage::{RawSample, TimeWindow};
 use baro_core::ui::{
@@ -162,7 +163,11 @@ static mut SIM_HOME_PAGE_MODE: HomePageMode = HomePageMode::Outdoor;
 static mut SIM_TEMP_UNIT: TemperatureUnit = TemperatureUnit::Celsius;
 
 /// Create a new page of the given kind, optionally pre-loaded with history.
-fn create_page(page_id: PageId, sensor_gen: &mut MockSensorGenerator) -> PageWrapper {
+fn create_page(
+    page_id: PageId,
+    sensor_gen: &mut MockSensorGenerator,
+    sensor_store: &SensorDataStore,
+) -> PageWrapper {
     let bounds = screen_bounds();
 
     match page_id {
@@ -174,12 +179,21 @@ fn create_page(page_id: PageId, sensor_gen: &mut MockSensorGenerator) -> PageWra
                 HomePageMode::Outdoor => {
                     let mut page = HomePage::new(bounds);
                     page.init();
+                    page.load_from_store(sensor_store);
                     PageWrapper::Home(Box::new(page))
                 }
-                HomePageMode::Home => PageWrapper::HomeGrid(Box::new(HomeGridPage::new(bounds))),
+                HomePageMode::Home => {
+                    let mut page = HomeGridPage::new(bounds);
+                    page.load_from_store(sensor_store);
+                    PageWrapper::HomeGrid(Box::new(page))
+                }
             }
         }
-        PageId::HomeGrid => PageWrapper::HomeGrid(Box::new(HomeGridPage::new(bounds))),
+        PageId::HomeGrid => {
+            let mut page = HomeGridPage::new(bounds);
+            page.load_from_store(sensor_store);
+            PageWrapper::HomeGrid(Box::new(page))
+        }
         PageId::Settings => {
             let mut page = SettingsPage::new(bounds);
             page.init();
@@ -304,11 +318,18 @@ fn main() {
     // Sensor data generator
     let mut sensor_gen = MockSensorGenerator::new();
 
+    // Centralized sensor data store — survives page navigation
+    let mut sensor_store = SensorDataStore::new();
+
     // Start on the home page
-    let mut current_page = create_page(PageId::Home, &mut sensor_gen);
+    let mut current_page = create_page(PageId::Home, &mut sensor_gen, &sensor_store);
 
     // Timing
     let mut last_sample = Instant::now();
+
+    /// Minimum interval between successive mouse presses (touch debounce).
+    const TOUCH_DEBOUNCE: Duration = Duration::from_millis(250);
+    let mut last_press_time = Instant::now() - TOUCH_DEBOUNCE;
 
     // The SDL window is lazily initialized on the first `update()` call.
     // We must call `update()` once before `events()` or it will panic.
@@ -336,12 +357,18 @@ fn main() {
 
                     if let Some(target) = keycode_to_page(keycode) {
                         info!("Navigating to {:?}", target);
-                        current_page = create_page(target, &mut sensor_gen);
+                        current_page = create_page(target, &mut sensor_gen, &sensor_store);
                         needs_redraw = true;
                     }
                 }
 
                 SimulatorEvent::MouseButtonDown { point, .. } => {
+                    // Touch debounce: skip rapid successive presses
+                    if last_press_time.elapsed() < TOUCH_DEBOUNCE {
+                        continue;
+                    }
+                    last_press_time = Instant::now();
+
                     let touch = TouchEvent::Press(TouchPoint::new(
                         point.x.max(0) as u16,
                         point.y.max(0) as u16,
@@ -351,7 +378,7 @@ fn main() {
                         match action {
                             Action::NavigateToPage(page_id) => {
                                 info!("Touch → navigate to {:?}", page_id);
-                                current_page = create_page(page_id, &mut sensor_gen);
+                                current_page = create_page(page_id, &mut sensor_gen, &sensor_store);
                                 needs_redraw = true;
                             }
                             Action::GoBack => {
@@ -362,7 +389,7 @@ fn main() {
                                     _ => PageId::Home,
                                 };
                                 info!("Touch → go back to {:?}", target);
-                                current_page = create_page(target, &mut sensor_gen);
+                                current_page = create_page(target, &mut sensor_gen, &sensor_store);
                                 needs_redraw = true;
                             }
                             Action::UpdateHomePageMode(mode) => {
@@ -371,7 +398,8 @@ fn main() {
                                 unsafe {
                                     SIM_HOME_PAGE_MODE = mode;
                                 }
-                                current_page = create_page(PageId::Home, &mut sensor_gen);
+                                current_page =
+                                    create_page(PageId::Home, &mut sensor_gen, &sensor_store);
                                 needs_redraw = true;
                             }
                             Action::UpdateTemperatureUnit(unit) => {
@@ -395,6 +423,10 @@ fn main() {
         // --- Mock sensor data ---------------------------------------------
         if last_sample.elapsed() >= MOCK_SAMPLE_INTERVAL {
             let data = sensor_gen.next_sample(MOCK_SAMPLE_INTERVAL.as_secs_f64());
+
+            // Persist into the centralized store
+            sensor_store.push(&data);
+
             let event = PageEvent::SensorUpdate(data);
 
             if Page::on_event(&mut current_page, &event) {

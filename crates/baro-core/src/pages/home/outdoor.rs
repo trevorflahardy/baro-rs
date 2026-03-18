@@ -22,6 +22,7 @@ use embedded_graphics::text::{Alignment, Text};
 
 use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
+use crate::sensor_store::SensorDataStore;
 use crate::sensors::SensorType;
 use crate::ui::core::{Action, Drawable, PageEvent, PageId, TouchEvent, Touchable};
 use crate::ui::layouts::scrollable::{ScrollDirection, ScrollableContainer};
@@ -643,6 +644,31 @@ impl HomePage {
     /// Kept for API compatibility.
     pub fn init(&mut self) {
         self.dirty = true;
+    }
+
+    /// Initialize the page from the centralized sensor data store.
+    ///
+    /// Restores latest sensor values so rows, banner, and alert state
+    /// are populated immediately instead of waiting for the next sample.
+    pub fn load_from_store(&mut self, store: &SensorDataStore) {
+        if let Some(data) = store.latest() {
+            self.last_timestamp = data.timestamp;
+            if let Some(temp) = data.temperature {
+                self.rows[0].update_value(temp);
+            }
+            if let Some(hum) = data.humidity {
+                self.rows[1].update_value(hum);
+            }
+            if let Some(co2) = data.co2 {
+                self.rows[2].update_value(co2);
+            }
+            if let Some(lux) = data.lux {
+                self.rows[3].update_value(lux);
+            }
+            self.recompute_sort_order();
+            self.banner.update(&self.rows, self.row_count);
+            self.dirty = true;
+        }
     }
 
     /// Calculate the viewport rectangle for the scrollable sensor list

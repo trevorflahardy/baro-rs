@@ -17,6 +17,7 @@ use embedded_graphics::text::{Alignment, Text};
 
 use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
+use crate::sensor_store::SensorDataStore;
 use crate::sensors::SensorType;
 use crate::ui::Drawable;
 use crate::ui::core::{Action, PageEvent, PageId, TouchEvent};
@@ -363,6 +364,38 @@ impl HomeGridPage {
             settings_touch_bounds,
             dirty: true,
         }
+    }
+
+    /// Initialize the page from the centralized sensor data store.
+    ///
+    /// Restores latest sensor values and sparkline ring buffers so the page
+    /// does not start blank after a navigation round-trip.
+    pub fn load_from_store(&mut self, store: &SensorDataStore) {
+        // Restore latest values
+        if let Some(data) = store.latest() {
+            if let Some(temp) = data.temperature {
+                self.cards[0].update_value(temp);
+            }
+            if let Some(hum) = data.humidity {
+                self.cards[1].update_value(hum);
+            }
+            if let Some(co2) = data.co2 {
+                self.cards[2].update_value(co2);
+            }
+            if let Some(lux) = data.lux {
+                self.cards[3].update_value(lux);
+            }
+        }
+
+        // Restore sparkline ring buffers
+        for i in 0..GRID_SENSOR_COUNT {
+            let (buf, count, head) = store.sparkline(i);
+            self.cards[i].sparkline = *buf;
+            self.cards[i].sparkline_count = count;
+            self.cards[i].sparkline_head = head;
+        }
+
+        self.dirty = true;
     }
 
     /// Calculate the bounding rectangle for a card at grid position (row, col).

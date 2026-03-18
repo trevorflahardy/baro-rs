@@ -35,6 +35,9 @@ const ROW_HEIGHT_PX: u32 = 40;
 /// Vertical gap between rows
 const ROW_GAP_PX: u32 = 2;
 
+/// Touch target width for the back button
+const BACK_TOUCH_WIDTH: u32 = 44;
+
 /// Horizontal padding for the list area
 const LIST_PADDING_X: u32 = 8;
 
@@ -162,12 +165,21 @@ impl SettingsPage {
             .into_styled(PrimitiveStyle::with_fill(COLOR_FOREGROUND))
             .draw(display)?;
 
+        let text_y = self.bounds.top_left.y + (HEADER_HEIGHT_PX / 2 + 4) as i32;
+
+        // Back arrow (top-left)
+        Text::with_alignment(
+            "<",
+            Point::new(self.bounds.top_left.x + 12, text_y),
+            MonoTextStyle::new(&FONT_6X10, WHITE),
+            Alignment::Left,
+        )
+        .draw(display)?;
+
+        // Title
         Text::with_alignment(
             "SETTINGS",
-            Point::new(
-                self.bounds.top_left.x + 12,
-                self.bounds.top_left.y + (HEADER_HEIGHT_PX / 2 + 4) as i32,
-            ),
+            Point::new(self.bounds.top_left.x + 30, text_y),
             MonoTextStyle::new(&FONT_6X10, COLOR_HEADER_TEXT),
             Alignment::Left,
         )
@@ -251,6 +263,15 @@ impl Page for SettingsPage {
         match event {
             TouchEvent::Press(point) => {
                 let pt = point.to_point();
+
+                // Back button (top-left of header)
+                let back_rect = Rectangle::new(
+                    self.bounds.top_left,
+                    Size::new(BACK_TOUCH_WIDTH, HEADER_HEIGHT_PX),
+                );
+                if back_rect.contains(pt) {
+                    return Some(Action::GoBack);
+                }
 
                 // Check each category row (using screen bounds)
                 for (i, category) in CATEGORIES.iter().enumerate() {

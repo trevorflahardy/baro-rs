@@ -18,6 +18,7 @@ pub mod display_manager;
 pub mod framebuffer;
 pub mod metrics;
 pub mod pages;
+pub mod sensor_store;
 pub mod sensors;
 pub mod storage;
 pub mod ui;

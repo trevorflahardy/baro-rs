@@ -25,6 +25,7 @@ use crate::pages::page::{Page, PageWrapper};
 use crate::pages::settings::DisplaySettingsPage;
 use crate::pages::settings::SettingsPage;
 use crate::pages::wifi_status::{WifiState, WifiStatusPage};
+use crate::sensor_store::SensorDataStore;
 use crate::sensors::SensorType;
 use crate::sensors::{
     CO2 as SENSOR_CO2_INDEX, HUMIDITY as SENSOR_HUMIDITY_INDEX, LUX as SENSOR_LUX_INDEX,
@@ -94,6 +95,14 @@ where
     all_sensors_healthy: bool,
     /// Last known timestamp from sensor data
     last_sensor_timestamp: u64,
+    /// Centralized sensor data store — survives page navigation
+    sensor_store: SensorDataStore,
+    /// Touch debounce: skip the next Press event when true.
+    ///
+    /// Set after a touch that caused a page state change (dirty transition)
+    /// to prevent a single physical press from triggering two logical actions
+    /// (e.g. dismiss alert → tap underlying element).
+    skip_next_press: bool,
 }
 
 impl<D> DisplayManager<D>
@@ -124,6 +133,8 @@ where
             auto_cycle_index: 0,
             all_sensors_healthy: true,
             last_sensor_timestamp: 0,
+            sensor_store: SensorDataStore::new(),
+            skip_next_press: false,
         }
     }
 
@@ -145,11 +156,13 @@ where
                     HomePageMode::Outdoor => {
                         let mut page = HomePage::new(self.bounds);
                         page.init();
+                        page.load_from_store(&self.sensor_store);
                         self.current_page = PageWrapper::Home(Box::new(page));
                         self.auto_cycle_enabled = false;
                     }
                     HomePageMode::Home => {
-                        let page = HomeGridPage::new(self.bounds);
+                        let mut page = HomeGridPage::new(self.bounds);
+                        page.load_from_store(&self.sensor_store);
                         self.current_page = PageWrapper::HomeGrid(Box::new(page));
                         self.auto_cycle_enabled = true;
                         self.auto_cycle_last_switch = self.last_sensor_timestamp;
@@ -158,7 +171,8 @@ where
                 }
             }
             PageId::HomeGrid => {
-                let page = HomeGridPage::new(self.bounds);
+                let mut page = HomeGridPage::new(self.bounds);
+                page.load_from_store(&self.sensor_store);
                 self.current_page = PageWrapper::HomeGrid(Box::new(page));
                 self.auto_cycle_enabled = true;
                 self.auto_cycle_last_switch = self.last_sensor_timestamp;
@@ -336,11 +350,23 @@ where
         TD: embedded_sdmmc::TimeSource,
     {
         debug!(" Received touch event: {:?}", event);
+
+        // Touch debounce: skip this Press if the previous touch caused a
+        // page state change (prevents dismiss-then-tap-through on alerts).
+        if matches!(event, TouchEvent::Press(_)) && self.skip_next_press {
+            debug!(" Skipping press (debounce)");
+            self.skip_next_press = false;
+            return;
+        }
+
         // Any manual touch interaction disables auto-cycle
         // (it will re-enable when navigating back to HomeGrid)
         if self.auto_cycle_enabled {
             self.auto_cycle_enabled = false;
         }
+
+        // Snapshot dirty state before touch so we can detect state changes
+        let was_dirty = Page::is_dirty(&self.current_page);
 
         if let Some(action) = Page::handle_touch(&mut self.current_page, event) {
             debug!(" Touch resulted in action: {:?}", action);
@@ -399,6 +425,17 @@ where
             }
         } else {
             debug!(" Touch event not handled by page");
+        }
+
+        // If this press caused the page to change state (became dirty when it
+        // wasn't before, or triggered navigation), arm the debounce so the
+        // next press is ignored. This prevents a single physical tap from
+        // triggering two separate logical actions.
+        if matches!(event, TouchEvent::Press(_)) {
+            let is_dirty_now = Page::is_dirty(&self.current_page);
+            if !was_dirty && is_dirty_now {
+                self.skip_next_press = true;
+            }
         }
     }
 
@@ -463,6 +500,10 @@ where
                     timestamp: sample.timestamp as u64,
                 };
 
+                // Persist into the centralized store so future page
+                // navigations start with current data.
+                self.sensor_store.push(&sensor_data);
+
                 let page_event = PageEvent::SensorUpdate(sensor_data);
                 let needs_redraw = Page::on_event(&mut self.current_page, &page_event);
 
@@ -494,6 +535,9 @@ where
                     lux: Some(lux_val),
                     timestamp: rollup.start_ts as u64,
                 };
+
+                // Persist into the centralized store
+                self.sensor_store.push(&sensor_data);
 
                 let page_event = PageEvent::SensorUpdate(sensor_data);
                 let needs_redraw = Page::on_event(&mut self.current_page, &page_event);

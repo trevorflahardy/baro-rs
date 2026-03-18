@@ -216,7 +216,7 @@ pub enum PageEvent {
 }
 
 /// Sensor data for event system
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct SensorData {
     pub temperature: Option<f32>,
     pub humidity: Option<f32>,
