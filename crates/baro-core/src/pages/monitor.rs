@@ -18,6 +18,7 @@ use embedded_graphics::text::{Alignment, Text};
 use heapless::{String as HeaplessString, Vec};
 
 use crate::pages::page::Page;
+use crate::sensor_store::SensorDataStore;
 use crate::ui::Drawable;
 use crate::ui::core::{Action, PageEvent, PageId, StorageEvent, TouchEvent};
 use crate::ui::styling::{COLOR_BACKGROUND, COLOR_FOREGROUND, WHITE};
@@ -104,6 +105,18 @@ impl MonitorPage {
     /// Kept for API compatibility.
     pub fn init(&mut self) {
         self.dirty = true;
+    }
+
+    /// Initialize sensor values from the centralized data store so the
+    /// page shows current readings immediately instead of starting blank.
+    pub fn load_from_store(&mut self, store: &SensorDataStore) {
+        if let Some(data) = store.latest() {
+            self.last_temperature = data.temperature;
+            self.last_humidity = data.humidity;
+            self.last_co2 = data.co2;
+            self.last_lux = data.lux;
+            self.dirty = true;
+        }
     }
 
     fn back_touch_bounds(&self) -> Rectangle {

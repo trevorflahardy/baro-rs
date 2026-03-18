@@ -63,6 +63,9 @@ const SPARKLINE_PADDING_X: u32 = 6;
 /// Sparkline bottom margin within card
 const SPARKLINE_BOTTOM_MARGIN: u32 = 4;
 
+/// Number of gradient bands below the sparkline
+const SPARKLINE_GRADIENT_BANDS: u32 = 4;
+
 /// Header text color (muted)
 const COLOR_HEADER_TEXT: Rgb565 = Rgb565::new(20, 40, 20);
 
@@ -208,7 +211,7 @@ impl SensorCard {
         Ok(())
     }
 
-    /// Draw a simple sparkline at the bottom of the card
+    /// Draw a sparkline with gradient fill at the bottom of the card.
     fn draw_sparkline<D: DrawTarget<Color = Rgb565>>(
         &self,
         display: &mut D,
@@ -225,7 +228,6 @@ impl SensorCard {
             .saturating_sub(SPARKLINE_PADDING_X * 2) as i32;
         let spark_y_bottom = card_bounds.top_left.y + card_bounds.size.height as i32
             - SPARKLINE_BOTTOM_MARGIN as i32;
-        let _spark_y_top = spark_y_bottom - SPARKLINE_HEIGHT_PX as i32;
 
         // Collect valid values in order (oldest first)
         let mut values: heapless::Vec<f32, SPARKLINE_MAX_POINTS> = heapless::Vec::new();
@@ -260,9 +262,60 @@ impl SensorCard {
         let range = if range < 0.001 { 1.0 } else { range };
 
         let line_color = self.quality.foreground_color();
+        let bg_color = COLOR_FOREGROUND; // card background
 
-        // Draw line segments between consecutive points
+        // Pre-compute gradient band colors (line_color → bg_color)
+        let line_r = ((line_color.into_storage() >> 11) & 0x1F) as u32;
+        let line_g = ((line_color.into_storage() >> 5) & 0x3F) as u32;
+        let line_b = (line_color.into_storage() & 0x1F) as u32;
+        let bg_r = ((bg_color.into_storage() >> 11) & 0x1F) as u32;
+        let bg_g = ((bg_color.into_storage() >> 5) & 0x3F) as u32;
+        let bg_b = (bg_color.into_storage() & 0x1F) as u32;
+
+        // Draw gradient fill below the line, column by column
         let point_count = values.len();
+        for px in 0..spark_width {
+            // Interpolate the Y value at this x position
+            let frac = px as f32 / (spark_width - 1).max(1) as f32;
+            let data_pos = frac * (point_count - 1) as f32;
+            let idx_left = (data_pos as usize).min(point_count - 2);
+            let t = data_pos - idx_left as f32;
+            let val = values[idx_left] * (1.0 - t) + values[idx_left + 1] * t;
+
+            let line_y =
+                spark_y_bottom - ((val - min_val) / range * SPARKLINE_HEIGHT_PX as f32) as i32;
+            let fill_height = (spark_y_bottom - line_y).max(0);
+
+            if fill_height <= 0 {
+                continue;
+            }
+
+            let x = spark_x + px;
+            let bands = SPARKLINE_GRADIENT_BANDS.min(fill_height as u32).max(1);
+            let band_h = fill_height as u32 / bands;
+
+            for band in 0..bands {
+                // t_band: 0 at line → 1 at bottom
+                let t_band = (band * 256) / bands;
+                let r = line_r + ((bg_r as i32 - line_r as i32) * t_band as i32 / 256) as u32;
+                let g = line_g + ((bg_g as i32 - line_g as i32) * t_band as i32 / 256) as u32;
+                let b = line_b + ((bg_b as i32 - line_b as i32) * t_band as i32 / 256) as u32;
+                let color = Rgb565::new(r as u8, g as u8, b as u8);
+
+                let by = line_y + (band * band_h) as i32;
+                let bh = if band == bands - 1 {
+                    (spark_y_bottom - by) as u32
+                } else {
+                    band_h
+                };
+
+                Rectangle::new(Point::new(x, by), Size::new(1, bh))
+                    .into_styled(PrimitiveStyle::with_fill(color))
+                    .draw(display)?;
+            }
+        }
+
+        // Draw line segments on top of gradient
         for i in 0..(point_count - 1) {
             let x1 = spark_x + (i as i32 * spark_width) / (point_count as i32 - 1);
             let x2 = spark_x + ((i + 1) as i32 * spark_width) / (point_count as i32 - 1);
@@ -272,7 +325,6 @@ impl SensorCard {
             let y2 = spark_y_bottom
                 - ((values[i + 1] - min_val) / range * SPARKLINE_HEIGHT_PX as f32) as i32;
 
-            // Simple line drawing using Bresenham-style pixel plotting
             draw_line(display, x1, y1, x2, y2, line_color)?;
         }
 

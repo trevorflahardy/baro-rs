@@ -196,6 +196,7 @@ where
             PageId::Monitor => {
                 let mut page = MonitorPage::new(self.bounds);
                 page.init();
+                page.load_from_store(&self.sensor_store);
                 self.current_page = PageWrapper::Monitor(Box::new(page));
                 self.auto_cycle_enabled = false;
             }

@@ -210,6 +210,7 @@ fn create_page(
         PageId::Monitor => {
             let mut page = MonitorPage::new(bounds);
             page.init();
+            page.load_from_store(sensor_store);
             PageWrapper::Monitor(Box::new(page))
         }
         PageId::TrendTemperature => create_trend_page(
