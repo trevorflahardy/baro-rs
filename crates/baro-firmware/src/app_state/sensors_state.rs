@@ -4,6 +4,8 @@ use baro_core::async_i2c_bus::AsyncI2cDevice;
 
 #[cfg(feature = "sensor-bh1750")]
 use baro_core::sensors::{BH1750Indexed, BH1750Sensor};
+#[cfg(feature = "sensor-bmp388")]
+use baro_core::sensors::{BMP388Indexed, BMP388Sensor};
 #[cfg(feature = "sensor-scd41")]
 use baro_core::sensors::{SCD41Indexed, SCD41Sensor};
 #[cfg(feature = "sensor-sht40")]
@@ -24,6 +26,9 @@ type SHT40IndexedAsyncI2CDeviceType<'a> = SHT40Indexed<I2CChannelAsyncDeviceType
 
 #[cfg(feature = "sensor-bh1750")]
 type BH1750IndexedAsyncI2CDeviceType<'a> = BH1750Indexed<I2CChannelAsyncDeviceType<'a>>;
+
+#[cfg(feature = "sensor-bmp388")]
+type BMP388IndexedAsyncI2CDeviceType<'a> = BMP388Indexed<I2CChannelAsyncDeviceType<'a>>;
 
 #[cfg(feature = "sensor-scd41")]
 type SCD41IndexedAsyncI2CDeviceType<'a> = SCD41Indexed<I2CChannelAsyncDeviceType<'a>>;
@@ -98,6 +103,34 @@ impl<'a> SensorsState<'a> {
         })
     }
 
+    #[cfg(feature = "sensor-bmp388")]
+    async fn read_bmp388(
+        &mut self,
+        into: &mut [i32; baro_core::storage::MAX_SENSORS],
+    ) -> Result<(), SensorError> {
+        let channel = BMP388IndexedAsyncI2CDeviceType::mux_channel();
+        let bmp388_i2c = self.mux.channel(channel).map_err(|e| {
+            error!(
+                "Failed to select mux channel {} for BMP388: {:?}",
+                channel, e
+            );
+            SensorError::I2cError {
+                sensor: "BMP388",
+                channel,
+                details: "Failed to select mux channel",
+            }
+        })?;
+        let mut bmp388 = BMP388Indexed::from(BMP388Sensor::new(bmp388_i2c));
+
+        bmp388.read_into(into).await.map_err(|e| {
+            error!(
+                "Failed to read BMP388 on I2C mux channel {}: {}",
+                channel, e
+            );
+            e
+        })
+    }
+
     #[cfg(feature = "sensor-bh1750")]
     async fn read_bh1750(
         &mut self,
@@ -154,6 +187,11 @@ impl<'a> SensorsState<'a> {
         // The sensor type itself knows it's on channel 2
         #[cfg(feature = "sensor-bh1750")]
         self.read_bh1750(&mut values).await?;
+
+        // Read BMP388 using compile-time channel info
+        // The sensor type itself knows it's on channel 3
+        #[cfg(feature = "sensor-bmp388")]
+        self.read_bmp388(&mut values).await?;
 
         Ok(values)
     }

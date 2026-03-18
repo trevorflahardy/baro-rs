@@ -102,6 +102,25 @@ impl QualityLevel {
                     Self::Bad
                 }
             }
+            SensorType::Pressure => {
+                // Pressure quality thresholds (hPa)
+                // Standard sea-level pressure is 1013.25 hPa.
+                // Excellent: 1013 ± 10 hPa (near standard atmosphere)
+                // Good: 1013 ± 30 hPa (normal barometric variation)
+                // Poor: 1013 ± 50 hPa (significant weather system)
+                // Bad: outside ± 50 hPa (extreme or sensor error)
+                const STANDARD_PRESSURE_HPA: f32 = 1013.25;
+                let deviation = (value - STANDARD_PRESSURE_HPA).abs();
+                if deviation <= 10.0 {
+                    Self::Excellent
+                } else if deviation <= 30.0 {
+                    Self::Good
+                } else if deviation <= 50.0 {
+                    Self::Poor
+                } else {
+                    Self::Bad
+                }
+            }
         }
     }
 

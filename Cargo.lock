@@ -120,6 +120,7 @@ name = "baro-core"
 version = "0.1.0"
 dependencies = [
  "bh1750-embedded",
+ "bmp388-embedded",
  "critical-section",
  "embassy-sync 0.7.2",
  "embassy-time",
@@ -145,6 +146,7 @@ dependencies = [
  "axp2101-embedded",
  "baro-core",
  "bh1750-embedded",
+ "bmp388-embedded",
  "critical-section",
  "dotenvy",
  "embassy-executor",
@@ -244,6 +246,15 @@ name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
+
+[[package]]
+name = "bmp388-embedded"
+version = "1.0.0"
+source = "git+https://github.com/trevorflahardy/bmp388-embedded#3538366633f626c254ef7137de6ba96293ed7e94"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+]
 
 [[package]]
 name = "bytemuck"

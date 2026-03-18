@@ -40,7 +40,7 @@ const BACK_TOUCH_WIDTH: u32 = 44;
 const SENSOR_SECTION_Y: u32 = HEADER_HEIGHT_PX + 4;
 
 /// Height of the sensor values section
-const SENSOR_SECTION_HEIGHT: u32 = 48;
+const SENSOR_SECTION_HEIGHT: u32 = 64;
 
 /// Y offset for the log feed area
 const LOG_Y_OFFSET: u32 = SENSOR_SECTION_Y + SENSOR_SECTION_HEIGHT + 4;
@@ -86,6 +86,7 @@ pub struct MonitorPage {
     last_humidity: Option<f32>,
     last_co2: Option<f32>,
     last_lux: Option<f32>,
+    last_pressure: Option<f32>,
     dirty: bool,
 }
 
@@ -98,6 +99,7 @@ impl MonitorPage {
             last_humidity: None,
             last_co2: None,
             last_lux: None,
+            last_pressure: None,
             dirty: true,
         }
     }
@@ -115,6 +117,7 @@ impl MonitorPage {
             self.last_humidity = data.humidity;
             self.last_co2 = data.co2;
             self.last_lux = data.lux;
+            self.last_pressure = data.pressure;
             self.dirty = true;
         }
     }
@@ -233,6 +236,15 @@ impl MonitorPage {
         }
         Text::new(&buf, Point::new(x + 120, y_base + 28), text_style).draw(display)?;
 
+        // Row 3: Pressure
+        buf.clear();
+        if let Some(p) = self.last_pressure {
+            let _ = write!(buf, "P: {:.1}hPa", p);
+        } else {
+            let _ = write!(buf, "P: --");
+        }
+        Text::new(&buf, Point::new(x, y_base + 44), text_style).draw(display)?;
+
         // Separator line
         let sep_y = y_base + SENSOR_SECTION_HEIGHT as i32 - 2;
         Rectangle::new(
@@ -322,6 +334,9 @@ impl Page for MonitorPage {
                 }
                 if let Some(lux) = data.lux {
                     self.last_lux = Some(lux);
+                }
+                if let Some(pressure) = data.pressure {
+                    self.last_pressure = Some(pressure);
                 }
 
                 let mut log_msg = HeaplessString::<64>::new();
