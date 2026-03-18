@@ -10,7 +10,7 @@
 //!
 //! ```text
 //! ┌──────────────────────────────────────┐
-//! │  ▫  HOME AIR              ≈ (icon)  │  ← header (Container)
+//! │  ▫  AIR AROUND YOU         ≈ (icon)  │  ← header (Container)
 //! ├──────────────────────────────────────┤
 //! │                                      │
 //! │           ( n o n )   or  ...        │  ← status text
@@ -189,7 +189,7 @@ impl WifiStatusPage {
             Container::<2>::new(bounds, Direction::Vertical).with_alignment(UiAlignment::Stretch);
 
         // ── Header row ──────────────────────────────────────────────────
-        let header_text = TextComponent::auto("HOME AIR", TextSize::Medium)
+        let header_text = TextComponent::auto("AIR AROUND YOU", TextSize::Medium)
             .with_style(Style::new().with_foreground(COLOR_HEADER_TEXT));
 
         let header = Container::<MAX_CONTAINER_CHILDREN>::new(
@@ -360,7 +360,7 @@ impl Drawable for WifiStatusPage {
         // Full-screen dark background
         display.clear(COLOR_BACKGROUND)?;
 
-        // Container draws the header background, "HOME AIR" text (vertically
+        // Container draws the header background, "AIR AROUND YOU" text (vertically
         // centred), body content (centrally positioned), and button.
         self.root.draw(display)?;
 

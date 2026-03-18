@@ -666,7 +666,7 @@ impl HomePage {
 
         // Title
         Text::with_alignment(
-            "HOME AIR",
+            "AIR AROUND YOU",
             Point::new(
                 self.bounds.top_left.x + 36,
                 self.bounds.top_left.y + (HEADER_HEIGHT_PX / 2 + 4) as i32,
