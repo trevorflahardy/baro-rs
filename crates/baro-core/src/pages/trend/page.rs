@@ -297,8 +297,8 @@ impl TrendPage {
     where
         D: DrawTarget<Color = Rgb565>,
     {
-        // Check if we have data
-        if self.data_buffer.is_empty() {
+        // Check if we have enough data to draw a graph (need at least 2 points)
+        if self.data_buffer.points.len() < 2 {
             // Draw empty graph background
             self.graph_bounds
                 .into_styled(PrimitiveStyle::with_fill(
@@ -306,9 +306,14 @@ impl TrendPage {
                 ))
                 .draw(display)?;
 
+            let msg = if self.data_buffer.is_empty() {
+                "No data available"
+            } else {
+                "Collecting data..."
+            };
             let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
             Text::with_alignment(
-                "No data available",
+                msg,
                 self.graph_bounds.center(),
                 text_style,
                 Alignment::Center,
@@ -323,7 +328,7 @@ impl TrendPage {
             .data_buffer
             .get_window_data(effective_window_secs, self.current_timestamp);
 
-        if data.is_empty() {
+        if data.len() < 2 {
             // Draw empty graph background
             self.graph_bounds
                 .into_styled(PrimitiveStyle::with_fill(
@@ -331,9 +336,14 @@ impl TrendPage {
                 ))
                 .draw(display)?;
 
+            let msg = if data.is_empty() {
+                "No data in window"
+            } else {
+                "Collecting data..."
+            };
             let text_style = MonoTextStyle::new(&FONT_6X10, LIGHT_GRAY);
             Text::with_alignment(
-                "No data in window",
+                msg,
                 self.graph_bounds.center(),
                 text_style,
                 Alignment::Center,

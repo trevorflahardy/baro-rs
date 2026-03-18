@@ -167,32 +167,31 @@ impl<'a> SensorsState<'a> {
     /// Each sensor knows its own mux channel and array indices at compile time,
     /// ensuring type-safe sensor management as the system expands.
     ///
-    /// Sensors that are disabled via feature flags will have their values remain as 0.
-    pub async fn read_all(
-        &mut self,
-    ) -> Result<[i32; baro_core::storage::MAX_SENSORS], SensorError> {
+    /// Individual sensor failures are logged but do not prevent other sensors
+    /// from being read. Values for failed sensors remain as 0.
+    pub async fn read_all(&mut self) -> [i32; baro_core::storage::MAX_SENSORS] {
         let mut values = [0_i32; baro_core::storage::MAX_SENSORS];
 
-        // Read SHT40 using compile-time channel info
-        // The sensor type itself knows it's on channel 0
         #[cfg(feature = "sensor-sht40")]
-        self.read_sht40(&mut values).await?;
+        if let Err(e) = self.read_sht40(&mut values).await {
+            error!("SHT40 read failed (non-fatal): {}", e);
+        }
 
-        // Read SCD41 using compile-time channel info
-        // The sensor type itself knows it's on channel 1
         #[cfg(feature = "sensor-scd41")]
-        self.read_scd41(&mut values).await?;
+        if let Err(e) = self.read_scd41(&mut values).await {
+            error!("SCD41 read failed (non-fatal): {}", e);
+        }
 
-        // Read BH1750 using compile-time channel info
-        // The sensor type itself knows it's on channel 2
         #[cfg(feature = "sensor-bh1750")]
-        self.read_bh1750(&mut values).await?;
+        if let Err(e) = self.read_bh1750(&mut values).await {
+            error!("BH1750 read failed (non-fatal): {}", e);
+        }
 
-        // Read BMP388 using compile-time channel info
-        // The sensor type itself knows it's on channel 3
         #[cfg(feature = "sensor-bmp388")]
-        self.read_bmp388(&mut values).await?;
+        if let Err(e) = self.read_bmp388(&mut values).await {
+            error!("BMP388 read failed (non-fatal): {}", e);
+        }
 
-        Ok(values)
+        values
     }
 }

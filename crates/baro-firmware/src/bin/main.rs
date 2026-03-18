@@ -665,17 +665,8 @@ async fn background_sensor_reading_task(
     loop {
         debug!("Sensor task: Starting read cycle at {}", timestamp);
         // Read all sensors
-        let values = match sensors.read_all().await {
-            Ok(v) => {
-                debug!("Sensor task: Read successful");
-                v
-            }
-            Err(e) => {
-                error!("Sensor read error: {:?}", e);
-                Timer::after(Duration::from_secs(10)).await;
-                continue;
-            }
-        };
+        let values = sensors.read_all().await;
+        debug!("Sensor task: Read cycle complete");
 
         debug!(
             "Sensor readings at {} (unix time): {:?}",

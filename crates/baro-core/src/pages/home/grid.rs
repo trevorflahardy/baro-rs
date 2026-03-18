@@ -219,6 +219,20 @@ impl SensorCard {
         card_bounds: Rectangle,
     ) -> Result<(), D::Error> {
         if self.sparkline_count < 2 {
+            // Show placeholder when insufficient data for a graph
+            let placeholder_y = card_bounds.top_left.y + card_bounds.size.height as i32
+                - SPARKLINE_BOTTOM_MARGIN as i32
+                - (SPARKLINE_HEIGHT_PX / 2) as i32;
+            Text::with_alignment(
+                "Collecting data...",
+                Point::new(
+                    card_bounds.top_left.x + (card_bounds.size.width / 2) as i32,
+                    placeholder_y,
+                ),
+                MonoTextStyle::new(&FONT_6X10, COLOR_MUTED_TEXT),
+                Alignment::Center,
+            )
+            .draw(display)?;
             return Ok(());
         }
 
@@ -298,9 +312,12 @@ impl SensorCard {
             for band in 0..bands {
                 // t_band: 0 at line → 1 at bottom
                 let t_band = (band * 256) / bands;
-                let r = line_r + ((bg_r as i32 - line_r as i32) * t_band as i32 / 256) as u32;
-                let g = line_g + ((bg_g as i32 - line_g as i32) * t_band as i32 / 256) as u32;
-                let b = line_b + ((bg_b as i32 - line_b as i32) * t_band as i32 / 256) as u32;
+                let r = (line_r as i32 + (bg_r as i32 - line_r as i32) * t_band as i32 / 256)
+                    .clamp(0, 31) as u32;
+                let g = (line_g as i32 + (bg_g as i32 - line_g as i32) * t_band as i32 / 256)
+                    .clamp(0, 63) as u32;
+                let b = (line_b as i32 + (bg_b as i32 - line_b as i32) * t_band as i32 / 256)
+                    .clamp(0, 31) as u32;
                 let color = Rgb565::new(r as u8, g as u8, b as u8);
 
                 let by = line_y + (band * band_h) as i32;

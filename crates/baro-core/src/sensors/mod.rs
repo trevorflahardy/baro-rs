@@ -17,16 +17,20 @@ pub use scd41::*;
 pub use sht40::*;
 
 use super::storage::MAX_SENSORS;
+use alloc::string::String;
 use core::{fmt, future::Future, marker::PhantomData};
 use thiserror_no_std::Error;
+
+extern crate alloc;
 
 /// Detailed sensor error with context for debugging
 #[derive(Error, Debug)]
 pub enum SensorError {
-    #[error("Sensor '{sensor}' initialization failed: {details}")]
+    #[error("Sensor '{sensor}' initialization failed: {details} (cause: {cause})")]
     InitializationFailed {
         sensor: &'static str,
         details: &'static str,
+        cause: String,
     },
     #[error("Sensor '{sensor}' read failed during {operation}: {details}")]
     ReadFailed {

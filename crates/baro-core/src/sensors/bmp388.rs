@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use crate::sensors::{SensorError, SensorReadings};
 
 use super::Sensor;
@@ -50,6 +52,7 @@ impl<I: I2c> Sensor<1> for BMP388Sensor<I> {
                 SensorError::InitializationFailed {
                     sensor: "BMP388",
                     details: "Failed to initialize BMP388 async driver",
+                    cause: alloc::format!("{:?}", e),
                 }
             })?;
 
@@ -62,6 +65,7 @@ impl<I: I2c> Sensor<1> for BMP388Sensor<I> {
                 SensorError::InitializationFailed {
                     sensor: "BMP388",
                     details: "Failed to set oversampling configuration",
+                    cause: alloc::format!("{:?}", e),
                 }
             })?;
 

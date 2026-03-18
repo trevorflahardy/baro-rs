@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use crate::sensors::{SensorError, SensorReadings};
 
 use super::Sensor;
@@ -45,6 +47,7 @@ impl<I: I2c> SCD41Sensor<I> {
                 SensorError::InitializationFailed {
                     sensor: "SCD41",
                     details: "Failed to enable automatic self-calibration",
+                    cause: alloc::format!("{:?}", e),
                 }
             })?;
 
@@ -69,6 +72,7 @@ impl<I: I2c> Sensor<1> for SCD41Sensor<I> {
                 SensorError::InitializationFailed {
                     sensor: "SCD41",
                     details: "Failed to initialize sensor before reading",
+                    cause: alloc::format!("{:?}", e),
                 }
             })?;
         }
