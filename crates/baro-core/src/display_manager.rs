@@ -149,7 +149,7 @@ where
         DD: embedded_hal::delay::DelayNs,
         TD: embedded_sdmmc::TimeSource,
     {
-        debug!(" Navigating to page: {:?}", page_id);
+        debug!("Navigating to page: {:?}", page_id);
         match page_id {
             PageId::Home => {
                 // Navigate to the correct home page based on current mode
