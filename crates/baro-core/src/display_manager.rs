@@ -15,7 +15,7 @@ use embedded_graphics::primitives::Rectangle;
 use log::{debug, error, info};
 
 use crate::app_state::AppState;
-use crate::config::{HomePageMode, TemperatureUnit};
+use crate::config::{DeviceConfig, HomePageMode, TemperatureUnit};
 use crate::framebuffer::FrameBuffer;
 use crate::metrics::QualityLevel;
 use crate::pages::home::grid::HomeGridPage;
@@ -276,6 +276,11 @@ where
             }
         }
         self.needs_redraw = true;
+
+        // Deliver current config to the newly created page so it can
+        // adapt display (e.g. temperature unit) without waiting for an
+        // explicit settings change.
+        self.broadcast_config();
     }
 
     /// Load historical data for a trend page from storage
@@ -433,6 +438,10 @@ where
                         let mut state = app_state.lock().await;
                         state.device_config.temperature_unit = unit;
                     }
+
+                    // Notify the active page so it redraws with the new unit
+                    self.broadcast_config();
+                    self.needs_redraw = true;
                 }
                 _ => {
                     debug!(" Unhandled action: {:?}", action);
@@ -465,6 +474,16 @@ where
         qualities
             .iter()
             .all(|q| matches!(q, QualityLevel::Good | QualityLevel::Excellent))
+    }
+
+    /// Build a `ConfigChanged` event from the current display manager state
+    /// and deliver it to the active page so it can adapt (e.g. temperature unit).
+    fn broadcast_config(&mut self) {
+        let event = PageEvent::ConfigChanged(DeviceConfig {
+            home_page_mode: self.home_page_mode,
+            temperature_unit: self.temperature_unit,
+        });
+        Page::on_event(&mut self.current_page, &event);
     }
 
     /// Set the home page mode (called during boot after loading config)

@@ -31,7 +31,7 @@ use embedded_graphics_simulator::{
 };
 use log::info;
 
-use baro_core::config::{HomePageMode, TemperatureUnit};
+use baro_core::config::{DeviceConfig, HomePageMode, TemperatureUnit};
 use baro_core::pages::home::grid::HomeGridPage;
 use baro_core::pages::monitor::MonitorPage;
 use baro_core::pages::page::Page;
@@ -351,6 +351,14 @@ fn handle_sim_action(
             unsafe {
                 SIM_TEMP_UNIT = unit;
             }
+            // Notify the active page so it redraws with the new unit
+            let mode = unsafe { SIM_HOME_PAGE_MODE };
+            let config_event = PageEvent::ConfigChanged(DeviceConfig {
+                home_page_mode: mode,
+                temperature_unit: unit,
+            });
+            Page::on_event(current_page, &config_event);
+            *needs_redraw = true;
         }
         other => {
             info!("Touch → action {:?}", other);

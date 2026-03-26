@@ -4,7 +4,7 @@
 extern crate alloc;
 use alloc::boxed::Box;
 
-use crate::config::{HomePageMode, TemperatureUnit};
+use crate::config::{DeviceConfig, HomePageMode, TemperatureUnit};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 
@@ -216,6 +216,8 @@ pub enum PageEvent {
     RollupEvent(Box<crate::storage::accumulator::RollupEvent>),
     /// System event
     SystemEvent(SystemEvent),
+    /// Device configuration changed (temperature unit, home page mode, etc.)
+    ConfigChanged(DeviceConfig),
 }
 
 /// Sensor data for event system

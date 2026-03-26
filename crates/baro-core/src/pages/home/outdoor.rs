@@ -20,6 +20,7 @@ use embedded_graphics::primitives::{
 };
 use embedded_graphics::text::{Alignment, Text};
 
+use crate::config::TemperatureUnit;
 use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
 use crate::sensor_store::SensorDataStore;
@@ -208,6 +209,7 @@ impl SensorRow {
         &self,
         display: &mut D,
         bounds: Rectangle,
+        temperature_unit: TemperatureUnit,
     ) -> Result<(), D::Error> {
         // Row background
         RoundedRectangle::with_equal_corners(
@@ -245,16 +247,23 @@ impl SensorRow {
 
         // Value (large, centered)
         if let Some(val) = self.latest_value {
+            // Convert temperature to the user's preferred unit; other sensors pass through.
+            let (display_val, unit_str) = if self.sensor == SensorType::Temperature {
+                (temperature_unit.convert(val), temperature_unit.unit_label())
+            } else {
+                (val, self.sensor.unit())
+            };
+
             let mut buf = heapless::String::<16>::new();
             let _ = match self.sensor {
                 SensorType::Temperature | SensorType::Humidity => {
-                    write!(buf, "{:.1} {}", val, self.sensor.unit())
+                    write!(buf, "{:.1} {}", display_val, unit_str)
                 }
                 SensorType::Co2 | SensorType::Lux => {
-                    write!(buf, "{:.0} {}", val, self.sensor.unit())
+                    write!(buf, "{:.0} {}", display_val, unit_str)
                 }
                 SensorType::Pressure => {
-                    write!(buf, "{:.1} {}", val, self.sensor.unit())
+                    write!(buf, "{:.1} {}", display_val, unit_str)
                 }
             };
 
@@ -490,6 +499,7 @@ impl AlertOverlay {
         &self,
         display: &mut D,
         page_bounds: Rectangle,
+        temperature_unit: TemperatureUnit,
     ) -> Result<(), D::Error> {
         if !self.active {
             return Ok(());
@@ -535,14 +545,23 @@ impl AlertOverlay {
         )
         .draw(display)?;
 
-        // Value
+        // Value — convert temperature to user's preferred unit
+        let (display_val, unit_str) = if self.sensor == SensorType::Temperature {
+            (
+                temperature_unit.convert(self.value),
+                temperature_unit.unit_label(),
+            )
+        } else {
+            (self.value, self.sensor.unit())
+        };
+
         let mut val_buf = heapless::String::<16>::new();
         let _ = match self.sensor {
             SensorType::Temperature | SensorType::Humidity | SensorType::Pressure => {
-                write!(val_buf, "{:.1} {}", self.value, self.sensor.unit())
+                write!(val_buf, "{:.1} {}", display_val, unit_str)
             }
             SensorType::Co2 | SensorType::Lux => {
-                write!(val_buf, "{:.0} {}", self.value, self.sensor.unit())
+                write!(val_buf, "{:.0} {}", display_val, unit_str)
             }
         };
         Text::with_alignment(
@@ -602,6 +621,8 @@ pub struct HomePage {
     alert: AlertOverlay,
     settings_touch_bounds: Rectangle,
     last_timestamp: u64,
+    /// Current temperature display unit (updated via `ConfigChanged` events).
+    temperature_unit: TemperatureUnit,
     dirty: bool,
     /// Action deferred until Release (to distinguish taps from scrolls)
     pending_tap_action: Option<Action>,
@@ -651,6 +672,7 @@ impl HomePage {
             alert: AlertOverlay::new(),
             settings_touch_bounds,
             last_timestamp: 0,
+            temperature_unit: TemperatureUnit::default(),
             dirty: true,
             pending_tap_action: None,
             press_origin: None,
@@ -968,6 +990,14 @@ impl Page for HomePage {
                 self.dirty = true;
                 true
             }
+            PageEvent::ConfigChanged(config) => {
+                if self.temperature_unit != config.temperature_unit {
+                    self.temperature_unit = config.temperature_unit;
+                    self.dirty = true;
+                    return true;
+                }
+                false
+            }
             _ => false,
         }
     }
@@ -1031,14 +1061,15 @@ impl Drawable for HomePage {
             }
             let data_idx = self.sort_order[visual_idx];
             let row_rect = self.row_screen_bounds(visual_idx);
-            self.rows[data_idx].draw(display, row_rect)?;
+            self.rows[data_idx].draw(display, row_rect, self.temperature_unit)?;
         }
 
         // Scrollbar indicator
         self.draw_scrollbar(display)?;
 
         // Alert overlay (drawn last, on top)
-        self.alert.draw(display, self.bounds)?;
+        self.alert
+            .draw(display, self.bounds, self.temperature_unit)?;
 
         Ok(())
     }

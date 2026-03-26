@@ -56,7 +56,7 @@ pub mod styling;
 
 // Re-export commonly used items.
 pub use crate::config::{HomePageMode, TemperatureUnit};
-pub use components::{Button, MultiLineText, TextComponent, TextSize};
+pub use components::{Button, MultiLineText, OptionSelector, TextComponent, TextSize};
 pub use core::{
     Action, DirtyRegion, Drawable, Interactive, PageEvent, PageId, SensorData, StorageEvent,
     SystemEvent, TouchEvent, TouchPoint, TouchResult, Touchable,

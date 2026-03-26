@@ -15,6 +15,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle, RoundedRectangle};
 use embedded_graphics::text::{Alignment, Text};
 
+use crate::config::TemperatureUnit;
 use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
 use crate::sensor_store::SensorDataStore;
@@ -147,6 +148,7 @@ impl SensorCard {
         &self,
         display: &mut D,
         bounds: Rectangle,
+        temperature_unit: TemperatureUnit,
     ) -> Result<(), D::Error> {
         // Card background with quality-tinted color
         RoundedRectangle::with_equal_corners(
@@ -177,13 +179,20 @@ impl SensorCard {
 
         // Current value (large, centered below name)
         if let Some(val) = self.latest_value {
+            // Convert temperature to user's preferred unit; other sensors pass through.
+            let (display_val, unit_str) = if self.sensor == SensorType::Temperature {
+                (temperature_unit.convert(val), temperature_unit.unit_label())
+            } else {
+                (val, self.sensor.unit())
+            };
+
             let mut buf = heapless::String::<16>::new();
             let _ = match self.sensor {
                 SensorType::Temperature | SensorType::Humidity | SensorType::Pressure => {
-                    write!(buf, "{:.1}", val)
+                    write!(buf, "{:.1}", display_val)
                 }
                 SensorType::Co2 | SensorType::Lux => {
-                    write!(buf, "{:.0}", val)
+                    write!(buf, "{:.0}", display_val)
                 }
             };
 
@@ -198,7 +207,7 @@ impl SensorCard {
 
             // Unit
             Text::with_alignment(
-                self.sensor.unit(),
+                unit_str,
                 Point::new(bounds.top_left.x + bounds.size.width as i32 - 8, val_y),
                 MonoTextStyle::new(&FONT_6X10, COLOR_MUTED_TEXT),
                 Alignment::Right,
@@ -408,6 +417,8 @@ pub struct HomeGridPage {
     bounds: Rectangle,
     cards: [SensorCard; GRID_SENSOR_COUNT],
     settings_touch_bounds: Rectangle,
+    /// Current temperature display unit (updated via `ConfigChanged` events).
+    temperature_unit: TemperatureUnit,
     dirty: bool,
 }
 
@@ -432,6 +443,7 @@ impl HomeGridPage {
             bounds,
             cards,
             settings_touch_bounds,
+            temperature_unit: TemperatureUnit::default(),
             dirty: true,
         }
     }
@@ -618,6 +630,14 @@ impl Page for HomeGridPage {
                 self.dirty = true;
                 true
             }
+            PageEvent::ConfigChanged(config) => {
+                if self.temperature_unit != config.temperature_unit {
+                    self.temperature_unit = config.temperature_unit;
+                    self.dirty = true;
+                    return true;
+                }
+                false
+            }
             _ => false,
         }
     }
@@ -664,7 +684,7 @@ impl Drawable for HomeGridPage {
         for i in 0..GRID_SENSOR_COUNT {
             let (row, col) = Self::card_grid_position(i);
             let card_rect = self.card_bounds(row, col);
-            self.cards[i].draw(display, card_rect)?;
+            self.cards[i].draw(display, card_rect, self.temperature_unit)?;
         }
 
         Ok(())
