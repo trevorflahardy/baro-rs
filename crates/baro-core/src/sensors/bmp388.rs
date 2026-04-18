@@ -1,6 +1,4 @@
-extern crate alloc;
-
-use crate::sensors::{SensorError, SensorReadings};
+use crate::sensors::{InitStep, SensorError, SensorReadings};
 
 use super::Sensor;
 use bmp388_embedded::r#async::Bmp388Async;
@@ -39,21 +37,16 @@ impl<I: I2c> Sensor<1> for BMP388Sensor<I> {
     type Readings = BMP388Readings;
 
     async fn read(&mut self) -> Result<BMP388Readings, SensorError> {
-        let i2c = self.i2c.take().ok_or(SensorError::ReadFailed {
+        let i2c = self.i2c.take().ok_or(SensorError::InvalidState {
             sensor: "BMP388",
-            operation: "read",
-            details: "I2C device already consumed; create a new BMP388Sensor per read cycle",
+            reason: "I2C device already consumed; create a new BMP388Sensor per read cycle",
         })?;
 
         let mut sensor = Bmp388Async::new(i2c, embassy_time::Delay, Address::Primary)
             .await
             .map_err(|e| {
                 error!("BMP388 initialization failed: {:?}", e);
-                SensorError::InitializationFailed {
-                    sensor: "BMP388",
-                    details: "Failed to initialize BMP388 async driver",
-                    cause: alloc::format!("{:?}", e),
-                }
+                SensorError::init("BMP388", InitStep::Reset, &e)
             })?;
 
         // Post-init diagnostics: chip ID, error register. Non-fatal — log only.
@@ -71,11 +64,7 @@ impl<I: I2c> Sensor<1> for BMP388Sensor<I> {
             .await
             .map_err(|e| {
                 error!("BMP388 set_oversampling failed: {:?}", e);
-                SensorError::InitializationFailed {
-                    sensor: "BMP388",
-                    details: "Failed to set oversampling configuration",
-                    cause: alloc::format!("{:?}", e),
-                }
+                SensorError::init("BMP388", InitStep::Config, &e)
             })?;
 
         // Read back oversampling to confirm the write landed.
@@ -86,11 +75,7 @@ impl<I: I2c> Sensor<1> for BMP388Sensor<I> {
 
         let measurement = sensor.forced_measurement().await.map_err(|e| {
             error!("BMP388 forced_measurement failed: {:?}", e);
-            SensorError::ReadFailed {
-                sensor: "BMP388",
-                operation: "forced_measurement",
-                details: "Failed to read pressure value during forced measurement",
-            }
+            SensorError::read("BMP388", "forced_measurement", &e)
         })?;
 
         // Post-measurement diagnostics. The library's `wait_for_data` silently

@@ -17,50 +17,180 @@ pub use scd41::*;
 pub use sht40::*;
 
 use super::storage::MAX_SENSORS;
-use alloc::string::String;
-use core::{fmt, future::Future, marker::PhantomData};
+use core::{future::Future, marker::PhantomData};
+use embedded_hal::i2c::{Error as I2cError, ErrorKind};
 use thiserror_no_std::Error;
 
 extern crate alloc;
 
-/// Detailed sensor error with context for debugging
-#[derive(Error, Debug)]
+/// Categorized I2C fault, derived from [`embedded_hal::i2c::ErrorKind`].
+///
+/// Kept `Copy` and heap-free so retry/backoff policy can pattern-match on it
+/// cheaply and so health trackers can store the last observed fault without
+/// allocating. This is deliberately coarser than the raw HAL variants — callers
+/// that need the full detail should still log the original error via `Debug`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum I2cFault {
+    /// The addressed device did not acknowledge an address or data byte.
+    /// Usually means wrong address, wrong mux channel, or device not powered.
+    NoAck,
+    /// Generic bus error (noise, stuck line, clock-stretch timeout, etc.).
+    Bus,
+    /// Lost arbitration to another master on the bus.
+    Arbitration,
+    /// Transaction-level timeout inside the HAL.
+    Timeout,
+    /// Overrun, underrun, or other flavor not covered above.
+    Other,
+}
+
+impl I2cFault {
+    /// Classify any `embedded_hal::i2c::Error` into a fault bucket.
+    pub fn from_err<E: I2cError>(err: &E) -> Self {
+        Self::from_kind(err.kind())
+    }
+
+    /// Classify an [`ErrorKind`] directly.
+    pub const fn from_kind(kind: ErrorKind) -> Self {
+        match kind {
+            ErrorKind::NoAcknowledge(_) => Self::NoAck,
+            ErrorKind::Bus => Self::Bus,
+            ErrorKind::ArbitrationLoss => Self::Arbitration,
+            ErrorKind::Overrun => Self::Other,
+            _ => Self::Other,
+        }
+    }
+}
+
+impl core::fmt::Display for I2cFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::NoAck => "no-ack",
+            Self::Bus => "bus",
+            Self::Arbitration => "arbitration-loss",
+            Self::Timeout => "timeout",
+            Self::Other => "other",
+        };
+        f.write_str(s)
+    }
+}
+
+/// Which step of sensor bring-up failed.
+///
+/// Helps distinguish "the chip isn't responding at all" (Reset/ChipId) from
+/// "chip talks but rejects our config" (Calibration/Config). Retry policy
+/// can key off this — for example, NoAck on `ChipId` should trigger longer
+/// backoff (likely wiring or address issue) than NoAck on `Config`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitStep {
+    /// Soft reset / power-up sequence.
+    Reset,
+    /// Chip-ID / WHOAMI validation.
+    ChipId,
+    /// Factory calibration load from NVM.
+    Calibration,
+    /// Oversampling / filter / ODR / self-calibration configuration.
+    Config,
+    /// Anything else that happens during initialization.
+    Other,
+}
+
+impl core::fmt::Display for InitStep {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::Reset => "reset",
+            Self::ChipId => "chip-id",
+            Self::Calibration => "calibration",
+            Self::Config => "config",
+            Self::Other => "other",
+        };
+        f.write_str(s)
+    }
+}
+
+/// Structured sensor error.
+///
+/// All variants are `Copy`-friendly and heap-free: the raw HAL error is
+/// classified into an [`I2cFault`] at the call site via [`I2cFault::from_err`]
+/// so the error can flow through channels, health trackers, and logs without
+/// allocation. If the caller needs the raw `Debug` form, it should log it
+/// separately before constructing this error.
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SensorError {
-    #[error("Sensor '{sensor}' initialization failed: {details} (cause: {cause})")]
-    InitializationFailed {
+    #[error("Sensor '{sensor}' init failed at {step} ({fault})")]
+    Init {
         sensor: &'static str,
-        details: &'static str,
-        cause: String,
+        step: InitStep,
+        fault: I2cFault,
     },
-    #[error("Sensor '{sensor}' read failed during {operation}: {details}")]
-    ReadFailed {
+    #[error("Sensor '{sensor}' read failed during '{op}' ({fault})")]
+    Read {
         sensor: &'static str,
-        operation: &'static str,
-        details: &'static str,
+        op: &'static str,
+        fault: I2cFault,
     },
-    #[error("Sensor '{sensor}' I2C communication error on channel {channel}: {details}")]
-    I2cError {
+    #[error("Sensor '{sensor}' mux select failed on channel {channel} ({fault})")]
+    MuxSelect {
         sensor: &'static str,
         channel: u8,
-        details: &'static str,
+        fault: I2cFault,
     },
-    #[error("Sensor '{sensor}' data not ready (operation: {operation})")]
+    #[error("Sensor '{sensor}' data not ready (op: {op})")]
     DataNotReady {
         sensor: &'static str,
-        operation: &'static str,
+        op: &'static str,
     },
-    #[error("Sensor '{sensor}' timeout during {operation}")]
+    #[error("Sensor '{sensor}' timed out during '{op}'")]
     Timeout {
         sensor: &'static str,
-        operation: &'static str,
+        op: &'static str,
+    },
+    #[error("Sensor '{sensor}' reported invalid state: {reason}")]
+    InvalidState {
+        sensor: &'static str,
+        reason: &'static str,
     },
 }
 
-/// Helper to format I2C errors from esp-hal
-pub fn format_i2c_error(_err: &dyn fmt::Debug) -> &'static str {
-    // For now, we'll return a generic message.
-    // In the future, we could match on specific error types if needed.
-    "I2C communication failed (see logs for details)"
+impl SensorError {
+    /// Build an [`SensorError::Init`] from any HAL-level I2C error.
+    pub fn init<E: I2cError>(sensor: &'static str, step: InitStep, err: &E) -> Self {
+        Self::Init {
+            sensor,
+            step,
+            fault: I2cFault::from_err(err),
+        }
+    }
+
+    /// Build a [`SensorError::Read`] from any HAL-level I2C error.
+    pub fn read<E: I2cError>(sensor: &'static str, op: &'static str, err: &E) -> Self {
+        Self::Read {
+            sensor,
+            op,
+            fault: I2cFault::from_err(err),
+        }
+    }
+
+    /// Build a [`SensorError::MuxSelect`] from any HAL-level I2C error.
+    pub fn mux_select<E: I2cError>(sensor: &'static str, channel: u8, err: &E) -> Self {
+        Self::MuxSelect {
+            sensor,
+            channel,
+            fault: I2cFault::from_err(err),
+        }
+    }
+
+    /// Name of the sensor this error belongs to.
+    pub const fn sensor(&self) -> &'static str {
+        match self {
+            Self::Init { sensor, .. }
+            | Self::Read { sensor, .. }
+            | Self::MuxSelect { sensor, .. }
+            | Self::DataNotReady { sensor, .. }
+            | Self::Timeout { sensor, .. }
+            | Self::InvalidState { sensor, .. } => sensor,
+        }
+    }
 }
 
 /// Trait for sensor reading data structures.
