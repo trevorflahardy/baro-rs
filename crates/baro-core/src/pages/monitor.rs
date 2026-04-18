@@ -17,11 +17,13 @@ use embedded_graphics::primitives::{
 use embedded_graphics::text::{Alignment, Text};
 use heapless::{String as HeaplessString, Vec};
 
+use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
 use crate::sensor_store::SensorDataStore;
+use crate::sensors::SensorType;
 use crate::ui::Drawable;
-use crate::ui::core::{Action, PageEvent, PageId, StorageEvent, TouchEvent};
-use crate::ui::styling::{COLOR_BACKGROUND, COLOR_FOREGROUND, WHITE};
+use crate::ui::core::{Action, PageEvent, PageId, SensorData, StorageEvent, TouchEvent};
+use crate::ui::styling::{COLOR_BACKGROUND, COLOR_FOREGROUND, FONT_6X10_CHAR_WIDTH_PX, WHITE};
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -39,8 +41,23 @@ const BACK_TOUCH_WIDTH: u32 = 44;
 /// Y offset for sensor section
 const SENSOR_SECTION_Y: u32 = HEADER_HEIGHT_PX + 4;
 
-/// Height of the sensor values section
-const SENSOR_SECTION_HEIGHT: u32 = 64;
+/// Number of columns in the live sensor grid.
+const SENSOR_COLUMNS: usize = 2;
+
+/// Vertical spacing between sensor rows, in pixels.
+const SENSOR_ROW_HEIGHT_PX: i32 = 16;
+
+/// Y offset of the first sensor row relative to the section top.
+const SENSOR_ROW_BASELINE_Y: i32 = 12;
+
+/// Extra pixels below the last sensor row (separator + padding).
+const SENSOR_SECTION_TRAILING_PX: u32 = 6;
+
+/// Height of the sensor values section, sized to fit every supported sensor.
+const SENSOR_ROW_COUNT: usize = SensorType::ALL.len().div_ceil(SENSOR_COLUMNS);
+const SENSOR_SECTION_HEIGHT: u32 = SENSOR_ROW_BASELINE_Y as u32
+    + SENSOR_ROW_COUNT as u32 * SENSOR_ROW_HEIGHT_PX as u32
+    + SENSOR_SECTION_TRAILING_PX;
 
 /// Y offset for the log feed area
 const LOG_Y_OFFSET: u32 = SENSOR_SECTION_Y + SENSOR_SECTION_HEIGHT + 4;
@@ -60,6 +77,16 @@ const PADDING_X: u32 = 6;
 /// Maximum log entries
 const MAX_LOG_ENTRIES: usize = 20;
 
+/// Maximum characters retained per log entry. Must be large enough to hold a
+/// summary line with every sensor in [`SensorType::ALL`].
+const LOG_ENTRY_CAPACITY: usize = 96;
+
+/// Maximum characters in one `Name:ValueUnit` segment (e.g. `"Pres:1013.2hPa"`).
+const LOG_SEGMENT_CAPACITY: usize = 24;
+
+/// Pixels of horizontal space reserved between adjacent sensor segments.
+const LOG_SEGMENT_GAP_PX: i32 = FONT_6X10_CHAR_WIDTH_PX as i32;
+
 /// Header text color (muted)
 const COLOR_HEADER_TEXT: Rgb565 = Rgb565::new(20, 40, 20);
 
@@ -70,9 +97,15 @@ const COLOR_MUTED_TEXT: Rgb565 = Rgb565::new(18, 36, 18);
 // LogEntry
 // ---------------------------------------------------------------------------
 
+/// One item in the scrolling monitor log.
+///
+/// `Sensor` entries are rendered as wrapping, color-coded segments at draw
+/// time so their appearance stays in sync with current quality thresholds.
+/// `Text` entries are plain single-line messages (raw samples, rollups).
 #[derive(Clone)]
-struct LogEntry {
-    message: HeaplessString<64>,
+enum LogEntry {
+    Sensor(SensorData),
+    Text(HeaplessString<LOG_ENTRY_CAPACITY>),
 }
 
 // ---------------------------------------------------------------------------
@@ -82,11 +115,8 @@ struct LogEntry {
 pub struct MonitorPage {
     bounds: Rectangle,
     log_entries: Vec<LogEntry, MAX_LOG_ENTRIES>,
-    last_temperature: Option<f32>,
-    last_humidity: Option<f32>,
-    last_co2: Option<f32>,
-    last_lux: Option<f32>,
-    last_pressure: Option<f32>,
+    /// Latest value per sensor, indexed by position in [`SensorType::ALL`].
+    last_values: [Option<f32>; SensorType::ALL.len()],
     dirty: bool,
 }
 
@@ -95,11 +125,7 @@ impl MonitorPage {
         Self {
             bounds,
             log_entries: Vec::new(),
-            last_temperature: None,
-            last_humidity: None,
-            last_co2: None,
-            last_lux: None,
-            last_pressure: None,
+            last_values: [None; SensorType::ALL.len()],
             dirty: true,
         }
     }
@@ -113,13 +139,37 @@ impl MonitorPage {
     /// page shows current readings immediately instead of starting blank.
     pub fn load_from_store(&mut self, store: &SensorDataStore) {
         if let Some(data) = store.latest() {
-            self.last_temperature = data.temperature;
-            self.last_humidity = data.humidity;
-            self.last_co2 = data.co2;
-            self.last_lux = data.lux;
-            self.last_pressure = data.pressure;
+            self.ingest_sensor_data(data);
             self.dirty = true;
         }
+    }
+
+    /// Copy every present reading in `data` into [`Self::last_values`].
+    fn ingest_sensor_data(&mut self, data: &SensorData) {
+        for (slot, sensor) in self.last_values.iter_mut().zip(SensorType::ALL.iter()) {
+            if let Some(value) = sensor.value_from(data) {
+                *slot = Some(value);
+            }
+        }
+    }
+
+    /// Format a single sensor reading as an ASCII-safe log segment such as
+    /// `"Temp:21.3C"`. Returned buffer is at most [`LOG_SEGMENT_CAPACITY`]
+    /// characters — enough for any supported sensor's short name + value.
+    fn format_sensor_segment(
+        sensor: SensorType,
+        value: f32,
+    ) -> HeaplessString<LOG_SEGMENT_CAPACITY> {
+        let mut buf = HeaplessString::<LOG_SEGMENT_CAPACITY>::new();
+        let _ = write!(
+            buf,
+            "{}:{:.*}{}",
+            sensor.short_name(),
+            sensor.log_precision(),
+            value,
+            sensor.ascii_unit(),
+        );
+        buf
     }
 
     fn back_touch_bounds(&self) -> Rectangle {
@@ -129,10 +179,7 @@ impl MonitorPage {
         )
     }
 
-    fn add_log_entry(&mut self, message: &str) {
-        let mut entry_text = HeaplessString::<64>::new();
-        entry_text.push_str(message).ok();
-
+    fn push_log_entry(&mut self, entry: LogEntry) {
         if self.log_entries.len() >= MAX_LOG_ENTRIES {
             for i in 0..(MAX_LOG_ENTRIES - 1) {
                 let next = self.log_entries.get(i + 1).cloned();
@@ -141,15 +188,17 @@ impl MonitorPage {
                 }
             }
             if let Some(last) = self.log_entries.get_mut(MAX_LOG_ENTRIES - 1) {
-                last.message = entry_text;
+                *last = entry;
             }
         } else {
-            self.log_entries
-                .push(LogEntry {
-                    message: entry_text,
-                })
-                .ok();
+            self.log_entries.push(entry).ok();
         }
+    }
+
+    fn add_text_entry(&mut self, message: &str) {
+        let mut buf = HeaplessString::<LOG_ENTRY_CAPACITY>::new();
+        buf.push_str(message).ok();
+        self.push_log_entry(LogEntry::Text(buf));
     }
 
     fn log_area_bounds(&self) -> Rectangle {
@@ -200,59 +249,41 @@ impl MonitorPage {
         let x = self.bounds.top_left.x + PADDING_X as i32;
         let y_base = self.bounds.top_left.y + SENSOR_SECTION_Y as i32;
         let text_style = MonoTextStyle::new(&FONT_6X10, WHITE);
-        let _label_style = MonoTextStyle::new(&FONT_6X10, COLOR_MUTED_TEXT);
 
-        // Row 1: Temperature + Humidity
+        let usable_width = self.bounds.size.width.saturating_sub(PADDING_X * 2);
+        let column_width = (usable_width / SENSOR_COLUMNS as u32) as i32;
+
         let mut buf = HeaplessString::<32>::new();
-        if let Some(t) = self.last_temperature {
-            let _ = write!(buf, "T: {:.1}C", t);
-        } else {
-            let _ = write!(buf, "T: --");
-        }
-        Text::new(&buf, Point::new(x, y_base + 12), text_style).draw(display)?;
+        for (idx, sensor) in SensorType::ALL.iter().enumerate() {
+            let col = (idx % SENSOR_COLUMNS) as i32;
+            let row = (idx / SENSOR_COLUMNS) as i32;
+            let cell_x = x + col * column_width;
+            let cell_y = y_base + SENSOR_ROW_BASELINE_Y + row * SENSOR_ROW_HEIGHT_PX;
 
-        buf.clear();
-        if let Some(h) = self.last_humidity {
-            let _ = write!(buf, "H: {:.1}%", h);
-        } else {
-            let _ = write!(buf, "H: --");
+            buf.clear();
+            match self.last_values[idx] {
+                Some(value) => {
+                    let _ = write!(
+                        buf,
+                        "{}: {:.*}{}",
+                        sensor.short_name(),
+                        sensor.log_precision(),
+                        value,
+                        sensor.ascii_unit(),
+                    );
+                }
+                None => {
+                    let _ = write!(buf, "{}: --", sensor.short_name());
+                }
+            }
+            Text::new(&buf, Point::new(cell_x, cell_y), text_style).draw(display)?;
         }
-        Text::new(&buf, Point::new(x + 120, y_base + 12), text_style).draw(display)?;
-
-        // Row 2: CO2 + Lux
-        buf.clear();
-        if let Some(c) = self.last_co2 {
-            let _ = write!(buf, "CO2: {:.0}ppm", c);
-        } else {
-            let _ = write!(buf, "CO2: --");
-        }
-        Text::new(&buf, Point::new(x, y_base + 28), text_style).draw(display)?;
-
-        buf.clear();
-        if let Some(l) = self.last_lux {
-            let _ = write!(buf, "Lux: {:.0}", l);
-        } else {
-            let _ = write!(buf, "Lux: --");
-        }
-        Text::new(&buf, Point::new(x + 120, y_base + 28), text_style).draw(display)?;
-
-        // Row 3: Pressure
-        buf.clear();
-        if let Some(p) = self.last_pressure {
-            let _ = write!(buf, "P: {:.1}hPa", p);
-        } else {
-            let _ = write!(buf, "P: --");
-        }
-        Text::new(&buf, Point::new(x, y_base + 44), text_style).draw(display)?;
 
         // Separator line
         let sep_y = y_base + SENSOR_SECTION_HEIGHT as i32 - 2;
-        Rectangle::new(
-            Point::new(x, sep_y),
-            Size::new(self.bounds.size.width.saturating_sub(PADDING_X * 2), 1),
-        )
-        .into_styled(PrimitiveStyle::with_fill(COLOR_MUTED_TEXT))
-        .draw(display)?;
+        Rectangle::new(Point::new(x, sep_y), Size::new(usable_width, 1))
+            .into_styled(PrimitiveStyle::with_fill(COLOR_MUTED_TEXT))
+            .draw(display)?;
 
         Ok(())
     }
@@ -271,7 +302,8 @@ impl MonitorPage {
             .build();
         log_area.into_styled(style).draw(display)?;
 
-        let text_style = MonoTextStyle::new(&FONT_6X10, WHITE);
+        let left_x = log_area.top_left.x + LOG_TEXT_PADDING_LEFT;
+        let right_limit = log_area.top_left.x + log_area.size.width as i32 - LOG_TEXT_PADDING_LEFT;
         let mut y = log_area.top_left.y + LOG_LINE_HEIGHT;
         let max_y = log_area.top_left.y + log_area.size.height as i32 - 2;
 
@@ -279,16 +311,84 @@ impl MonitorPage {
             if y > max_y {
                 break;
             }
-            Text::new(
-                entry.message.as_str(),
-                Point::new(log_area.top_left.x + LOG_TEXT_PADDING_LEFT, y),
-                text_style,
-            )
-            .draw(display)?;
-            y += LOG_LINE_HEIGHT;
+            match entry {
+                LogEntry::Text(message) => {
+                    Text::new(
+                        message.as_str(),
+                        Point::new(left_x, y),
+                        MonoTextStyle::new(&FONT_6X10, WHITE),
+                    )
+                    .draw(display)?;
+                    y += LOG_LINE_HEIGHT;
+                }
+                LogEntry::Sensor(data) => {
+                    y = Self::draw_sensor_log_entry(display, data, left_x, right_limit, y, max_y)?;
+                }
+            }
         }
 
         Ok(())
+    }
+
+    /// Render a sensor log entry, colour-coding each sensor's short name by
+    /// its current quality rating and wrapping segments to additional lines
+    /// when they would overflow the log area. Returns the next free y.
+    fn draw_sensor_log_entry<D: DrawTarget<Color = Rgb565>>(
+        display: &mut D,
+        data: &SensorData,
+        left_x: i32,
+        right_limit: i32,
+        start_y: i32,
+        max_y: i32,
+    ) -> Result<i32, D::Error> {
+        let mut y = start_y;
+        let mut x = left_x;
+        let mut first_on_line = true;
+        let char_w = FONT_6X10_CHAR_WIDTH_PX as i32;
+
+        for sensor in SensorType::ALL {
+            let Some(value) = sensor.value_from(data) else {
+                continue;
+            };
+            let segment = Self::format_sensor_segment(*sensor, value);
+            let segment_width = segment.len() as i32 * char_w;
+            let gap = if first_on_line { 0 } else { LOG_SEGMENT_GAP_PX };
+
+            if !first_on_line && x + gap + segment_width > right_limit {
+                y += LOG_LINE_HEIGHT;
+                if y > max_y {
+                    return Ok(y);
+                }
+                x = left_x;
+            } else {
+                x += gap;
+            }
+
+            let name_width = sensor.short_name().len() as i32 * char_w;
+            let quality_color = QualityLevel::assess(*sensor, value).foreground_color();
+
+            // Coloured sensor name (e.g. "Temp").
+            Text::new(
+                sensor.short_name(),
+                Point::new(x, y),
+                MonoTextStyle::new(&FONT_6X10, quality_color),
+            )
+            .draw(display)?;
+
+            // Remainder of the segment (":21.3C") in white for readability.
+            let remainder = &segment.as_str()[sensor.short_name().len()..];
+            Text::new(
+                remainder,
+                Point::new(x + name_width, y),
+                MonoTextStyle::new(&FONT_6X10, WHITE),
+            )
+            .draw(display)?;
+
+            x += segment_width;
+            first_on_line = false;
+        }
+
+        Ok(y + LOG_LINE_HEIGHT)
     }
 }
 
@@ -323,53 +423,26 @@ impl Page for MonitorPage {
     fn on_event(&mut self, event: &PageEvent) -> bool {
         match event {
             PageEvent::SensorUpdate(data) => {
-                if let Some(temp) = data.temperature {
-                    self.last_temperature = Some(temp);
+                self.ingest_sensor_data(data);
+                if SensorType::ALL.iter().any(|s| s.value_from(data).is_some()) {
+                    self.push_log_entry(LogEntry::Sensor(*data));
                 }
-                if let Some(hum) = data.humidity {
-                    self.last_humidity = Some(hum);
-                }
-                if let Some(co2) = data.co2 {
-                    self.last_co2 = Some(co2);
-                }
-                if let Some(lux) = data.lux {
-                    self.last_lux = Some(lux);
-                }
-                if let Some(pressure) = data.pressure {
-                    self.last_pressure = Some(pressure);
-                }
-
-                let mut log_msg = HeaplessString::<64>::new();
-                if let Some(temp) = data.temperature {
-                    let _ = write!(
-                        log_msg,
-                        "[Sensor] T:{:.1} H:{:.1} CO2:{:.0} L:{:.0}",
-                        temp,
-                        data.humidity.unwrap_or(0.0),
-                        data.co2.unwrap_or(0.0),
-                        data.lux.unwrap_or(0.0),
-                    );
-                }
-                self.add_log_entry(&log_msg);
-
                 self.dirty = true;
                 true
             }
             PageEvent::StorageEvent(storage_event) => {
+                let mut log_msg = HeaplessString::<LOG_ENTRY_CAPACITY>::new();
                 match storage_event {
                     StorageEvent::RawSample { sensor, value, .. } => {
-                        let mut log_msg = HeaplessString::<64>::new();
                         let _ = write!(log_msg, "[Raw] {}: {:.2}", sensor, value);
-                        self.add_log_entry(&log_msg);
                     }
                     StorageEvent::Rollup {
                         interval, count, ..
                     } => {
-                        let mut log_msg = HeaplessString::<64>::new();
                         let _ = write!(log_msg, "[Rollup] {}: {}", interval, count);
-                        self.add_log_entry(&log_msg);
                     }
                 }
+                self.add_text_entry(&log_msg);
                 self.dirty = true;
                 true
             }

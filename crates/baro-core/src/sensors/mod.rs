@@ -228,6 +228,49 @@ pub enum SensorType {
 }
 
 impl SensorType {
+    /// All supported sensor types, in canonical display order.
+    ///
+    /// Extend this array when adding a new sensor so UI surfaces that
+    /// enumerate sensors (e.g. the live monitor) pick it up automatically.
+    pub const ALL: &'static [SensorType] = &[
+        SensorType::Temperature,
+        SensorType::Humidity,
+        SensorType::Co2,
+        SensorType::Lux,
+        SensorType::Pressure,
+    ];
+
+    /// Extract this sensor's reading from a [`SensorData`] snapshot.
+    pub fn value_from(self, data: &crate::ui::core::SensorData) -> Option<f32> {
+        match self {
+            Self::Temperature => data.temperature,
+            Self::Humidity => data.humidity,
+            Self::Co2 => data.co2,
+            Self::Lux => data.lux,
+            Self::Pressure => data.pressure,
+        }
+    }
+
+    /// Short unit string without non-ASCII characters — safe for the
+    /// FONT_6X10 ASCII-only glyph set used by the monitor log.
+    pub const fn ascii_unit(self) -> &'static str {
+        match self {
+            Self::Temperature => "C",
+            Self::Humidity => "%",
+            Self::Co2 => "ppm",
+            Self::Lux => "lux",
+            Self::Pressure => "hPa",
+        }
+    }
+
+    /// Number of fractional digits to render for a compact log line.
+    pub const fn log_precision(self) -> usize {
+        match self {
+            Self::Temperature | Self::Humidity | Self::Pressure => 1,
+            Self::Co2 | Self::Lux => 0,
+        }
+    }
+
     /// Get the sensor array index for this sensor type
     pub const fn index(self) -> usize {
         match self {
