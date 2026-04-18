@@ -1,8 +1,8 @@
-use crate::sensors::{SensorError, SensorReadings};
+use crate::sensors::{I2cFault, SensorError, SensorReadings};
 
 use super::Sensor;
 use embedded_hal_async::i2c::I2c;
-use sht4x::Sht4xAsync;
+use sht4x::{Error as Sht4xError, Sht4xAsync};
 
 /// Typed readings from the SHT40 sensor.
 /// This provides named access to sensor values and ensures type safety.
@@ -40,10 +40,18 @@ impl<I: I2c> Sensor<2> for SHT40Sensor<I> {
             .await
             .map_err(|e| {
                 log::error!("SHT40 measurement failed: {:?}", e);
-                SensorError::ReadFailed {
+                // `sht4x::Error` does not implement `embedded_hal::i2c::Error`,
+                // so classify manually — I2c variant carries the HAL error, Crc
+                // is a data-integrity failure (not an I2C bus fault).
+                let fault = match &e {
+                    Sht4xError::I2c(inner) => I2cFault::from_err(inner),
+                    Sht4xError::Crc => I2cFault::Other,
+                    _ => I2cFault::Other,
+                };
+                SensorError::Read {
                     sensor: "SHT40",
-                    operation: "measure temperature/humidity",
-                    details: "I2C communication error or sensor not responding",
+                    op: "measure",
+                    fault,
                 }
             })?;
 

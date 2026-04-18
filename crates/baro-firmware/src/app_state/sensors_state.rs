@@ -64,17 +64,12 @@ impl<'a> SensorsState<'a> {
                 "Failed to select mux channel {} for SHT40: {:?}",
                 channel, e
             );
-            SensorError::I2cError {
-                sensor: "SHT40",
-                channel,
-                details: "Failed to select mux channel",
-            }
+            SensorError::mux_select("SHT40", channel, &e)
         })?;
         let mut sht40 = SHT40Indexed::from(SHT40Sensor::new(sht40_i2c));
 
-        sht40.read_into(into).await.map_err(|e| {
+        sht40.read_into(into).await.inspect_err(|e| {
             error!("Failed to read SHT40 on I2C mux channel {}: {}", channel, e);
-            e
         })
     }
 
@@ -89,17 +84,12 @@ impl<'a> SensorsState<'a> {
                 "Failed to select mux channel {} for SCD41: {:?}",
                 channel, e
             );
-            SensorError::I2cError {
-                sensor: "SCD41",
-                channel,
-                details: "Failed to select mux channel",
-            }
+            SensorError::mux_select("SCD41", channel, &e)
         })?;
         let mut scd41 = SCD41Indexed::from(SCD41Sensor::new(scd41_i2c));
 
-        scd41.read_into(into).await.map_err(|e| {
+        scd41.read_into(into).await.inspect_err(|e| {
             error!("Failed to read SCD41 on I2C mux channel {}: {}", channel, e);
-            e
         })
     }
 
@@ -114,20 +104,15 @@ impl<'a> SensorsState<'a> {
                 "Failed to select mux channel {} for BMP388: {:?}",
                 channel, e
             );
-            SensorError::I2cError {
-                sensor: "BMP388",
-                channel,
-                details: "Failed to select mux channel",
-            }
+            SensorError::mux_select("BMP388", channel, &e)
         })?;
         let mut bmp388 = BMP388Indexed::from(BMP388Sensor::new(bmp388_i2c));
 
-        bmp388.read_into(into).await.map_err(|e| {
+        bmp388.read_into(into).await.inspect_err(|e| {
             error!(
                 "Failed to read BMP388 on I2C mux channel {}: {}",
                 channel, e
             );
-            e
         })
     }
 
@@ -142,20 +127,15 @@ impl<'a> SensorsState<'a> {
                 "Failed to select mux channel {} for BH1750: {:?}",
                 channel, e
             );
-            SensorError::I2cError {
-                sensor: "BH1750",
-                channel,
-                details: "Failed to select mux channel",
-            }
+            SensorError::mux_select("BH1750", channel, &e)
         })?;
         let mut bh1750 = BH1750Indexed::from(BH1750Sensor::new(bh1750_i2c));
 
-        bh1750.read_into(into).await.map_err(|e| {
+        bh1750.read_into(into).await.inspect_err(|e| {
             error!(
                 "Failed to read BH1750 on I2C mux channel {}: {}",
                 channel, e
             );
-            e
         })
     }
 
