@@ -7,6 +7,7 @@
 //!
 //! | Key | Action                       |
 //! |-----|------------------------------|
+//! | 0   | Pressure trend               |
 //! | 1   | Home page (mode-aware)       |
 //! | 2   | Temperature trend            |
 //! | 3   | Humidity trend               |
@@ -30,7 +31,7 @@ use embedded_graphics_simulator::{
 };
 use log::info;
 
-use baro_core::config::{HomePageMode, TemperatureUnit};
+use baro_core::config::{DeviceConfig, HomePageMode, TemperatureUnit};
 use baro_core::pages::home::grid::HomeGridPage;
 use baro_core::pages::monitor::MonitorPage;
 use baro_core::pages::page::Page;
@@ -93,6 +94,9 @@ impl MockSensorGenerator {
         // Lux: 200–600 lux with a medium cycle
         let lux = 400.0 + 200.0 * (t / 240.0).sin() + 50.0 * (t / 31.0).cos();
 
+        // Pressure: 1010–1020 hPa with slow drift (typical barometric variation)
+        let pressure = 1013.25 + 5.0 * (t / 600.0).sin() + 2.0 * (t / 97.0).cos();
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -103,6 +107,7 @@ impl MockSensorGenerator {
             humidity: Some(humidity as f32),
             co2: Some(co2 as f32),
             lux: Some(lux as f32),
+            pressure: Some(pressure as f32),
             timestamp,
         }
     }
@@ -130,6 +135,9 @@ impl MockSensorGenerator {
                     ((600.0 + 200.0 * (t / 300.0).sin() + 30.0 * (t / 41.0).cos()) * 1000.0) as i32;
                 let lux_ml =
                     ((400.0 + 200.0 * (t / 240.0).sin() + 50.0 * (t / 31.0).cos()) * 1000.0) as i32;
+                // Pressure in milli-Pascals: hPa × 100 (Pa/hPa) × 1000 (mPa/Pa)
+                let pressure_mpa = ((1013.25 + 5.0 * (t / 600.0).sin() + 2.0 * (t / 97.0).cos())
+                    * 100_000.0) as i32;
 
                 let mut sample = RawSample::default();
                 sample.timestamp = ts;
@@ -137,6 +145,7 @@ impl MockSensorGenerator {
                 sample.values[baro_core::sensors::HUMIDITY] = hum_mp;
                 sample.values[baro_core::sensors::CO2] = co2_mp;
                 sample.values[baro_core::sensors::LUX] = lux_ml;
+                sample.values[baro_core::sensors::PRESSURE] = pressure_mpa;
 
                 sample
             })
@@ -237,6 +246,12 @@ fn create_page(
             TimeWindow::ThirtyMinutes,
             sensor_gen,
         ),
+        PageId::TrendPressure => create_trend_page(
+            bounds,
+            SensorType::Pressure,
+            TimeWindow::OneHour,
+            sensor_gen,
+        ),
         PageId::WifiStatus => {
             PageWrapper::WifiStatus(Box::new(WifiStatusPage::new(WifiState::Error)))
         }
@@ -279,6 +294,7 @@ fn create_trend_page(
 /// Map an SDL keycode to a page navigation request.
 fn keycode_to_page(keycode: Keycode) -> Option<PageId> {
     match keycode {
+        Keycode::Num0 | Keycode::Kp0 => Some(PageId::TrendPressure),
         Keycode::Num1 | Keycode::Kp1 => Some(PageId::Home),
         Keycode::Num2 | Keycode::Kp2 => Some(PageId::TrendTemperature),
         Keycode::Num3 | Keycode::Kp3 => Some(PageId::TrendHumidity),
@@ -289,6 +305,64 @@ fn keycode_to_page(keycode: Keycode) -> Option<PageId> {
         Keycode::Num8 | Keycode::Kp8 => Some(PageId::HomeGrid),
         Keycode::Num9 | Keycode::Kp9 => Some(PageId::Monitor),
         _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Touch action handling
+// ---------------------------------------------------------------------------
+
+/// Process a touch action from the UI (shared by Press and Release handlers).
+fn handle_sim_action(
+    action: Action,
+    current_page: &mut PageWrapper,
+    sensor_gen: &mut MockSensorGenerator,
+    sensor_store: &SensorDataStore,
+    needs_redraw: &mut bool,
+) {
+    match action {
+        Action::NavigateToPage(page_id) => {
+            info!("Touch → navigate to {:?}", page_id);
+            *current_page = create_page(page_id, sensor_gen, sensor_store);
+            *needs_redraw = true;
+        }
+        Action::GoBack => {
+            let current_id = Page::id(current_page);
+            let target = match current_id {
+                PageId::DisplaySettings | PageId::Monitor => PageId::Settings,
+                _ => PageId::Home,
+            };
+            info!("Touch → go back to {:?}", target);
+            *current_page = create_page(target, sensor_gen, sensor_store);
+            *needs_redraw = true;
+        }
+        Action::UpdateHomePageMode(mode) => {
+            info!("Touch → update home page mode to {:?}", mode);
+            // SAFETY: single-threaded simulator
+            unsafe {
+                SIM_HOME_PAGE_MODE = mode;
+            }
+            *current_page = create_page(PageId::Home, sensor_gen, sensor_store);
+            *needs_redraw = true;
+        }
+        Action::UpdateTemperatureUnit(unit) => {
+            info!("Touch → update temperature unit to {:?}", unit);
+            // SAFETY: single-threaded simulator
+            unsafe {
+                SIM_TEMP_UNIT = unit;
+            }
+            // Notify the active page so it redraws with the new unit
+            let mode = unsafe { SIM_HOME_PAGE_MODE };
+            let config_event = PageEvent::ConfigChanged(DeviceConfig {
+                home_page_mode: mode,
+                temperature_unit: unit,
+            });
+            Page::on_event(current_page, &config_event);
+            *needs_redraw = true;
+        }
+        other => {
+            info!("Touch → action {:?}", other);
+        }
     }
 }
 
@@ -304,7 +378,7 @@ fn main() {
         DISPLAY_WIDTH_PX, DISPLAY_HEIGHT_PX, WINDOW_SCALE
     );
     info!(
-        "Keys: 1=Home  2=TempTrend  3=HumTrend  4=CO2Trend  5=LuxTrend  6=Settings  7=WiFi  8=HomeGrid  9=Monitor  Q=Quit"
+        "Keys: 0=PresTrend  1=Home  2=TempTrend  3=HumTrend  4=CO2Trend  5=LuxTrend  6=Settings  7=WiFi  8=HomeGrid  9=Monitor  Q=Quit"
     );
 
     // SDL2 display and window
@@ -375,45 +449,32 @@ fn main() {
                         point.y.max(0) as u16,
                     ));
 
+                    // Send Press — actions are deferred until Release
                     if let Some(action) = Page::handle_touch(&mut current_page, touch) {
-                        match action {
-                            Action::NavigateToPage(page_id) => {
-                                info!("Touch → navigate to {:?}", page_id);
-                                current_page = create_page(page_id, &mut sensor_gen, &sensor_store);
-                                needs_redraw = true;
-                            }
-                            Action::GoBack => {
-                                // Context-aware back navigation
-                                let current_id = Page::id(&current_page);
-                                let target = match current_id {
-                                    PageId::DisplaySettings | PageId::Monitor => PageId::Settings,
-                                    _ => PageId::Home,
-                                };
-                                info!("Touch → go back to {:?}", target);
-                                current_page = create_page(target, &mut sensor_gen, &sensor_store);
-                                needs_redraw = true;
-                            }
-                            Action::UpdateHomePageMode(mode) => {
-                                info!("Touch → update home page mode to {:?}", mode);
-                                // SAFETY: single-threaded simulator
-                                unsafe {
-                                    SIM_HOME_PAGE_MODE = mode;
-                                }
-                                current_page =
-                                    create_page(PageId::Home, &mut sensor_gen, &sensor_store);
-                                needs_redraw = true;
-                            }
-                            Action::UpdateTemperatureUnit(unit) => {
-                                info!("Touch → update temperature unit to {:?}", unit);
-                                // SAFETY: single-threaded simulator
-                                unsafe {
-                                    SIM_TEMP_UNIT = unit;
-                                }
-                            }
-                            other => {
-                                info!("Touch → action {:?}", other);
-                            }
-                        }
+                        handle_sim_action(
+                            action,
+                            &mut current_page,
+                            &mut sensor_gen,
+                            &sensor_store,
+                            &mut needs_redraw,
+                        );
+                    }
+                }
+
+                SimulatorEvent::MouseButtonUp { point, .. } => {
+                    let touch = TouchEvent::Release(TouchPoint::new(
+                        point.x.max(0) as u16,
+                        point.y.max(0) as u16,
+                    ));
+
+                    if let Some(action) = Page::handle_touch(&mut current_page, touch) {
+                        handle_sim_action(
+                            action,
+                            &mut current_page,
+                            &mut sensor_gen,
+                            &sensor_store,
+                            &mut needs_redraw,
+                        );
                     }
                 }
 

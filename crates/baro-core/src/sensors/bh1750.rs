@@ -48,11 +48,7 @@ impl<I: I2c> Sensor<1> for BH1750Sensor<I> {
             })
             .map_err(|e| {
                 error!("BH1750 one_time_measurement failed: {:?}", e);
-                SensorError::ReadFailed {
-                    sensor: "BH1750",
-                    operation: "one_time_measurement",
-                    details: "Failed to read lux value during a single one-time measurement",
-                }
+                SensorError::read("BH1750", "one_time_measurement", &e)
             })
     }
 }

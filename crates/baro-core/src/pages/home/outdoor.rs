@@ -20,11 +20,12 @@ use embedded_graphics::primitives::{
 };
 use embedded_graphics::text::{Alignment, Text};
 
+use crate::config::TemperatureUnit;
 use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
 use crate::sensor_store::SensorDataStore;
 use crate::sensors::SensorType;
-use crate::ui::core::{Action, Drawable, PageEvent, PageId, TouchEvent, Touchable};
+use crate::ui::core::{Action, Drawable, PageEvent, PageId, TouchEvent, TouchPoint, Touchable};
 use crate::ui::layouts::scrollable::{ScrollDirection, ScrollableContainer};
 use crate::ui::styling::{COLOR_BACKGROUND, COLOR_FOREGROUND, WHITE};
 
@@ -120,11 +121,12 @@ const COLOR_OVERLAY: Rgb565 = Rgb565::new(5, 10, 5);
 // Default sensor assignment
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SENSORS: [SensorType; 4] = [
+const DEFAULT_SENSORS: [SensorType; 5] = [
     SensorType::Temperature,
     SensorType::Humidity,
     SensorType::Co2,
     SensorType::Lux,
+    SensorType::Pressure,
 ];
 
 // ---------------------------------------------------------------------------
@@ -165,6 +167,7 @@ impl SensorRow {
             SensorType::Humidity => PageId::TrendHumidity,
             SensorType::Co2 => PageId::TrendCo2,
             SensorType::Lux => PageId::TrendLux,
+            SensorType::Pressure => PageId::TrendPressure,
         }
     }
 
@@ -206,6 +209,7 @@ impl SensorRow {
         &self,
         display: &mut D,
         bounds: Rectangle,
+        temperature_unit: TemperatureUnit,
     ) -> Result<(), D::Error> {
         // Row background
         RoundedRectangle::with_equal_corners(
@@ -243,13 +247,23 @@ impl SensorRow {
 
         // Value (large, centered)
         if let Some(val) = self.latest_value {
+            // Convert temperature to the user's preferred unit; other sensors pass through.
+            let (display_val, unit_str) = if self.sensor == SensorType::Temperature {
+                (temperature_unit.convert(val), temperature_unit.unit_label())
+            } else {
+                (val, self.sensor.unit())
+            };
+
             let mut buf = heapless::String::<16>::new();
             let _ = match self.sensor {
                 SensorType::Temperature | SensorType::Humidity => {
-                    write!(buf, "{:.1} {}", val, self.sensor.unit())
+                    write!(buf, "{:.1} {}", display_val, unit_str)
                 }
                 SensorType::Co2 | SensorType::Lux => {
-                    write!(buf, "{:.0} {}", val, self.sensor.unit())
+                    write!(buf, "{:.0} {}", display_val, unit_str)
+                }
+                SensorType::Pressure => {
+                    write!(buf, "{:.1} {}", display_val, unit_str)
                 }
             };
 
@@ -485,6 +499,7 @@ impl AlertOverlay {
         &self,
         display: &mut D,
         page_bounds: Rectangle,
+        temperature_unit: TemperatureUnit,
     ) -> Result<(), D::Error> {
         if !self.active {
             return Ok(());
@@ -530,14 +545,23 @@ impl AlertOverlay {
         )
         .draw(display)?;
 
-        // Value
+        // Value — convert temperature to user's preferred unit
+        let (display_val, unit_str) = if self.sensor == SensorType::Temperature {
+            (
+                temperature_unit.convert(self.value),
+                temperature_unit.unit_label(),
+            )
+        } else {
+            (self.value, self.sensor.unit())
+        };
+
         let mut val_buf = heapless::String::<16>::new();
         let _ = match self.sensor {
-            SensorType::Temperature | SensorType::Humidity => {
-                write!(val_buf, "{:.1} {}", self.value, self.sensor.unit())
+            SensorType::Temperature | SensorType::Humidity | SensorType::Pressure => {
+                write!(val_buf, "{:.1} {}", display_val, unit_str)
             }
             SensorType::Co2 | SensorType::Lux => {
-                write!(val_buf, "{:.0} {}", self.value, self.sensor.unit())
+                write!(val_buf, "{:.0} {}", display_val, unit_str)
             }
         };
         Text::with_alignment(
@@ -583,6 +607,9 @@ impl AlertOverlay {
 // HomePage
 // ---------------------------------------------------------------------------
 
+/// Minimum drag distance (in pixels) to distinguish scroll from tap
+const DRAG_THRESHOLD_PX: i32 = 8;
+
 /// Home page showing status banner and priority-sorted sensor list.
 pub struct HomePage {
     bounds: Rectangle,
@@ -594,7 +621,15 @@ pub struct HomePage {
     alert: AlertOverlay,
     settings_touch_bounds: Rectangle,
     last_timestamp: u64,
+    /// Current temperature display unit (updated via `ConfigChanged` events).
+    temperature_unit: TemperatureUnit,
     dirty: bool,
+    /// Action deferred until Release (to distinguish taps from scrolls)
+    pending_tap_action: Option<Action>,
+    /// Original press point for drag-distance calculation
+    press_origin: Option<TouchPoint>,
+    /// Whether a drag exceeding the threshold has occurred since last press
+    is_dragging: bool,
 }
 
 impl HomePage {
@@ -604,8 +639,8 @@ impl HomePage {
             SensorRow::new(DEFAULT_SENSORS[1]),
             SensorRow::new(DEFAULT_SENSORS[2]),
             SensorRow::new(DEFAULT_SENSORS[3]),
+            SensorRow::new(DEFAULT_SENSORS[4]),
             SensorRow::new(SensorType::Temperature), // unused slots
-            SensorRow::new(SensorType::Temperature),
             SensorRow::new(SensorType::Temperature),
             SensorRow::new(SensorType::Temperature),
         ];
@@ -618,7 +653,7 @@ impl HomePage {
             Size::new(SETTINGS_TOUCH_WIDTH, HEADER_HEIGHT_PX),
         );
 
-        let row_count = 4;
+        let row_count = 5;
         let list_viewport = Self::list_viewport(bounds);
         let content_height = Self::content_height(row_count);
         let scroll = ScrollableContainer::new(
@@ -637,7 +672,11 @@ impl HomePage {
             alert: AlertOverlay::new(),
             settings_touch_bounds,
             last_timestamp: 0,
+            temperature_unit: TemperatureUnit::default(),
             dirty: true,
+            pending_tap_action: None,
+            press_origin: None,
+            is_dragging: false,
         }
     }
 
@@ -664,6 +703,9 @@ impl HomePage {
             }
             if let Some(lux) = data.lux {
                 self.rows[3].update_value(lux);
+            }
+            if let Some(pressure) = data.pressure {
+                self.rows[4].update_value(pressure);
             }
             self.recompute_sort_order();
             self.banner.update(&self.rows, self.row_count);
@@ -842,22 +884,27 @@ impl Page for HomePage {
             TouchEvent::Press(point) => {
                 let pt = point.to_point();
 
-                // Settings gear
+                // Settings gear — immediate action (not in scrollable area)
                 if self.settings_touch_bounds.contains(pt) {
                     return Some(Action::NavigateToPage(PageId::Settings));
                 }
 
+                // Reset drag tracking
+                self.pending_tap_action = None;
+                self.press_origin = Some(point);
+                self.is_dragging = false;
+
                 // Check if press is in the list viewport area
                 let viewport = Self::list_viewport(self.bounds);
                 if viewport.contains(pt) {
-                    // Check sensor rows (accounting for scroll)
+                    // Record which row was pressed (don't navigate yet)
                     for visual_idx in 0..self.row_count {
                         let screen_rect = self.row_screen_bounds(visual_idx);
                         if screen_rect.contains(pt) && self.is_row_visible(visual_idx) {
                             let data_idx = self.sort_order[visual_idx];
-                            return Some(Action::NavigateToPage(
-                                self.rows[data_idx].trend_page_id(),
-                            ));
+                            self.pending_tap_action =
+                                Some(Action::NavigateToPage(self.rows[data_idx].trend_page_id()));
+                            break;
                         }
                     }
 
@@ -868,12 +915,40 @@ impl Page for HomePage {
                 None
             }
             TouchEvent::Drag(point) => {
+                // Check if drag exceeds threshold to distinguish from tap
+                if !self.is_dragging
+                    && let Some(origin) = self.press_origin
+                {
+                    let dx = point.x as i32 - origin.x as i32;
+                    let dy = point.y as i32 - origin.y as i32;
+                    if dx.abs() > DRAG_THRESHOLD_PX || dy.abs() > DRAG_THRESHOLD_PX {
+                        self.is_dragging = true;
+                        self.pending_tap_action = None;
+                    }
+                }
+
                 let viewport = Self::list_viewport(self.bounds);
                 if viewport.contains(point.to_point()) || self.scroll.scroll_offset().y != 0 {
                     self.scroll.handle_touch(event);
                     self.dirty = true;
                 }
                 None
+            }
+            TouchEvent::Release(_) => {
+                self.scroll.handle_touch(event);
+
+                // If no significant drag occurred, fire the pending tap action
+                let action = if !self.is_dragging {
+                    self.pending_tap_action.take()
+                } else {
+                    None
+                };
+
+                self.pending_tap_action = None;
+                self.press_origin = None;
+                self.is_dragging = false;
+
+                action
             }
         }
     }
@@ -897,6 +972,9 @@ impl Page for HomePage {
                 if let Some(lux) = data.lux {
                     self.rows[3].update_value(lux);
                 }
+                if let Some(pressure) = data.pressure {
+                    self.rows[4].update_value(pressure);
+                }
 
                 self.recompute_sort_order();
                 self.banner.update(&self.rows, self.row_count);
@@ -911,6 +989,14 @@ impl Page for HomePage {
 
                 self.dirty = true;
                 true
+            }
+            PageEvent::ConfigChanged(config) => {
+                if self.temperature_unit != config.temperature_unit {
+                    self.temperature_unit = config.temperature_unit;
+                    self.dirty = true;
+                    return true;
+                }
+                false
             }
             _ => false,
         }
@@ -975,14 +1061,15 @@ impl Drawable for HomePage {
             }
             let data_idx = self.sort_order[visual_idx];
             let row_rect = self.row_screen_bounds(visual_idx);
-            self.rows[data_idx].draw(display, row_rect)?;
+            self.rows[data_idx].draw(display, row_rect, self.temperature_unit)?;
         }
 
         // Scrollbar indicator
         self.draw_scrollbar(display)?;
 
         // Alert overlay (drawn last, on top)
-        self.alert.draw(display, self.bounds)?;
+        self.alert
+            .draw(display, self.bounds, self.temperature_unit)?;
 
         Ok(())
     }

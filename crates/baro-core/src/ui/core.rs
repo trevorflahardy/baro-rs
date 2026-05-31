@@ -4,7 +4,7 @@
 extern crate alloc;
 use alloc::boxed::Box;
 
-use crate::config::{HomePageMode, TemperatureUnit};
+use crate::config::{DeviceConfig, HomePageMode, TemperatureUnit};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::Rectangle;
 
@@ -32,6 +32,8 @@ pub enum TouchEvent {
     Press(TouchPoint),
     /// Touch drag to a new point
     Drag(TouchPoint),
+    /// Touch released at a point
+    Release(TouchPoint),
 }
 
 /// Result from handling a touch event
@@ -81,6 +83,7 @@ pub enum PageId {
     TrendHumidity,
     TrendCo2,
     TrendLux,
+    TrendPressure,
     /// Combined WiFi status page (connecting + error states)
     WifiStatus,
 }
@@ -213,6 +216,8 @@ pub enum PageEvent {
     RollupEvent(Box<crate::storage::accumulator::RollupEvent>),
     /// System event
     SystemEvent(SystemEvent),
+    /// Device configuration changed (temperature unit, home page mode, etc.)
+    ConfigChanged(DeviceConfig),
 }
 
 /// Sensor data for event system
@@ -222,6 +227,7 @@ pub struct SensorData {
     pub humidity: Option<f32>,
     pub co2: Option<f32>,
     pub lux: Option<f32>,
+    pub pressure: Option<f32>,
     pub timestamp: u64,
 }
 

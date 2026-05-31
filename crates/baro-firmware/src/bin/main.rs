@@ -665,17 +665,8 @@ async fn background_sensor_reading_task(
     loop {
         debug!("Sensor task: Starting read cycle at {}", timestamp);
         // Read all sensors
-        let values = match sensors.read_all().await {
-            Ok(v) => {
-                debug!("Sensor task: Read successful");
-                v
-            }
-            Err(e) => {
-                error!("Sensor read error: {:?}", e);
-                Timer::after(Duration::from_secs(10)).await;
-                continue;
-            }
-        };
+        let values = sensors.read_all().await;
+        debug!("Sensor task: Read cycle complete");
 
         debug!(
             "Sensor readings at {} (unix time): {:?}",
@@ -738,6 +729,9 @@ async fn touch_polling_task(
 ) {
     info!("Touch polling task started");
 
+    let mut was_touching = false;
+    let mut last_point = baro_core::ui::TouchPoint { x: 0, y: 0 };
+
     loop {
         match touch.scan().await {
             Ok(touch_data) => {
@@ -755,8 +749,8 @@ async fn touch_polling_task(
                             y: point.y,
                         };
 
-                        // TODO: Handle Release events properly
-                        // For now, always send a Press event
+                        last_point = touch_point;
+
                         let event = match point.status {
                             TouchStatus::Touch => {
                                 debug!("Touch task: Press at ({}, {})", point.x, point.y);
@@ -769,13 +763,25 @@ async fn touch_polling_task(
                             _ => {
                                 debug!("Touch task: Other status at ({}, {})", point.x, point.y);
                                 baro_core::ui::TouchEvent::Press(touch_point)
-                            } // <- Release does not ever be fired (?)
+                            }
                         };
 
                         let display_sender = baro_core::display_manager::get_display_sender();
                         debug!("Touch task: Sending touch event to display");
                         let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));
                     }
+                    was_touching = true;
+                } else if was_touching {
+                    // Finger lifted — send Release at last known position
+                    debug!(
+                        "Touch task: Release at ({}, {})",
+                        last_point.x, last_point.y
+                    );
+                    let display_sender = baro_core::display_manager::get_display_sender();
+                    let _ = display_sender.try_send(DisplayRequest::HandleTouch(
+                        baro_core::ui::TouchEvent::Release(last_point),
+                    ));
+                    was_touching = false;
                 }
             }
             Err(e) => {

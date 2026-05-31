@@ -93,13 +93,15 @@ impl<'a> RollupAccumulator<'a> {
     }
 
     fn compute_rollup(rollup: &[RawSample]) -> Rollup {
-        let mut avg = [0i32; MAX_SENSORS];
+        // Sum in i64: a single sensor value (e.g. pressure in milli-Pa ~1.0e8)
+        // summed over up to 30 samples exceeds i32::MAX and would overflow.
+        let mut sum = [0i64; MAX_SENSORS];
         let mut min = [i32::MAX; MAX_SENSORS];
         let mut max = [i32::MIN; MAX_SENSORS];
 
         for r in rollup.iter() {
             for i in 0..MAX_SENSORS {
-                avg[i] += r.values[i];
+                sum[i] += i64::from(r.values[i]);
                 if r.values[i] < min[i] {
                     min[i] = r.values[i];
                 }
@@ -109,20 +111,25 @@ impl<'a> RollupAccumulator<'a> {
             }
         }
 
-        let count = rollup.len() as i32;
-        avg.iter_mut().for_each(|a| *a /= count);
+        let count = rollup.len() as i64;
+        let mut avg = [0i32; MAX_SENSORS];
+        for i in 0..MAX_SENSORS {
+            avg[i] = (sum[i] / count) as i32;
+        }
 
         Rollup::new(rollup[0].timestamp, &avg, &min, &max)
     }
 
     fn compute_rollup_from_rollups(rollup: &[Rollup]) -> Rollup {
-        let mut avg = [0i32; MAX_SENSORS];
+        // Sum in i64: averaged values stay large (pressure ~1.0e8), and summing
+        // up to 24 of them would overflow i32.
+        let mut sum = [0i64; MAX_SENSORS];
         let mut min = [i32::MAX; MAX_SENSORS];
         let mut max = [i32::MIN; MAX_SENSORS];
 
         for r in rollup.iter() {
             for i in 0..MAX_SENSORS {
-                avg[i] += r.avg[i];
+                sum[i] += i64::from(r.avg[i]);
                 if r.min[i] < min[i] {
                     min[i] = r.min[i];
                 }
@@ -132,8 +139,11 @@ impl<'a> RollupAccumulator<'a> {
             }
         }
 
-        let count = rollup.len() as i32;
-        avg.iter_mut().for_each(|a| *a /= count);
+        let count = rollup.len() as i64;
+        let mut avg = [0i32; MAX_SENSORS];
+        for i in 0..MAX_SENSORS {
+            avg[i] = (sum[i] / count) as i32;
+        }
 
         Rollup::new(rollup[0].start_ts, &avg, &min, &max)
     }

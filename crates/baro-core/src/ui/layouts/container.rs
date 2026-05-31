@@ -564,7 +564,7 @@ impl<const N: usize> Touchable for Container<N> {
     fn handle_touch(&mut self, event: TouchEvent) -> TouchResult {
         // Forward to children (top-most last wins).
         let point = match event {
-            TouchEvent::Press(p) | TouchEvent::Drag(p) => p,
+            TouchEvent::Press(p) | TouchEvent::Drag(p) | TouchEvent::Release(p) => p,
         };
 
         for child in self.children.iter_mut().rev() {

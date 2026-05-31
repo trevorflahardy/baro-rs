@@ -15,6 +15,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle, RoundedRectangle};
 use embedded_graphics::text::{Alignment, Text};
 
+use crate::config::TemperatureUnit;
 use crate::metrics::QualityLevel;
 use crate::pages::page::Page;
 use crate::sensor_store::SensorDataStore;
@@ -138,6 +139,7 @@ impl SensorCard {
             SensorType::Humidity => PageId::TrendHumidity,
             SensorType::Co2 => PageId::TrendCo2,
             SensorType::Lux => PageId::TrendLux,
+            SensorType::Pressure => PageId::TrendPressure,
         }
     }
 
@@ -146,6 +148,7 @@ impl SensorCard {
         &self,
         display: &mut D,
         bounds: Rectangle,
+        temperature_unit: TemperatureUnit,
     ) -> Result<(), D::Error> {
         // Card background with quality-tinted color
         RoundedRectangle::with_equal_corners(
@@ -176,13 +179,20 @@ impl SensorCard {
 
         // Current value (large, centered below name)
         if let Some(val) = self.latest_value {
+            // Convert temperature to user's preferred unit; other sensors pass through.
+            let (display_val, unit_str) = if self.sensor == SensorType::Temperature {
+                (temperature_unit.convert(val), temperature_unit.unit_label())
+            } else {
+                (val, self.sensor.unit())
+            };
+
             let mut buf = heapless::String::<16>::new();
             let _ = match self.sensor {
-                SensorType::Temperature | SensorType::Humidity => {
-                    write!(buf, "{:.1}", val)
+                SensorType::Temperature | SensorType::Humidity | SensorType::Pressure => {
+                    write!(buf, "{:.1}", display_val)
                 }
                 SensorType::Co2 | SensorType::Lux => {
-                    write!(buf, "{:.0}", val)
+                    write!(buf, "{:.0}", display_val)
                 }
             };
 
@@ -197,7 +207,7 @@ impl SensorCard {
 
             // Unit
             Text::with_alignment(
-                self.sensor.unit(),
+                unit_str,
                 Point::new(bounds.top_left.x + bounds.size.width as i32 - 8, val_y),
                 MonoTextStyle::new(&FONT_6X10, COLOR_MUTED_TEXT),
                 Alignment::Right,
@@ -218,6 +228,20 @@ impl SensorCard {
         card_bounds: Rectangle,
     ) -> Result<(), D::Error> {
         if self.sparkline_count < 2 {
+            // Show placeholder when insufficient data for a graph
+            let placeholder_y = card_bounds.top_left.y + card_bounds.size.height as i32
+                - SPARKLINE_BOTTOM_MARGIN as i32
+                - (SPARKLINE_HEIGHT_PX / 2) as i32;
+            Text::with_alignment(
+                "Collecting data...",
+                Point::new(
+                    card_bounds.top_left.x + (card_bounds.size.width / 2) as i32,
+                    placeholder_y,
+                ),
+                MonoTextStyle::new(&FONT_6X10, COLOR_MUTED_TEXT),
+                Alignment::Center,
+            )
+            .draw(display)?;
             return Ok(());
         }
 
@@ -297,9 +321,12 @@ impl SensorCard {
             for band in 0..bands {
                 // t_band: 0 at line → 1 at bottom
                 let t_band = (band * 256) / bands;
-                let r = line_r + ((bg_r as i32 - line_r as i32) * t_band as i32 / 256) as u32;
-                let g = line_g + ((bg_g as i32 - line_g as i32) * t_band as i32 / 256) as u32;
-                let b = line_b + ((bg_b as i32 - line_b as i32) * t_band as i32 / 256) as u32;
+                let r = (line_r as i32 + (bg_r as i32 - line_r as i32) * t_band as i32 / 256)
+                    .clamp(0, 31) as u32;
+                let g = (line_g as i32 + (bg_g as i32 - line_g as i32) * t_band as i32 / 256)
+                    .clamp(0, 63) as u32;
+                let b = (line_b as i32 + (bg_b as i32 - line_b as i32) * t_band as i32 / 256)
+                    .clamp(0, 31) as u32;
                 let color = Rgb565::new(r as u8, g as u8, b as u8);
 
                 let by = line_y + (band * band_h) as i32;
@@ -390,6 +417,8 @@ pub struct HomeGridPage {
     bounds: Rectangle,
     cards: [SensorCard; GRID_SENSOR_COUNT],
     settings_touch_bounds: Rectangle,
+    /// Current temperature display unit (updated via `ConfigChanged` events).
+    temperature_unit: TemperatureUnit,
     dirty: bool,
 }
 
@@ -414,6 +443,7 @@ impl HomeGridPage {
             bounds,
             cards,
             settings_touch_bounds,
+            temperature_unit: TemperatureUnit::default(),
             dirty: true,
         }
     }
@@ -600,6 +630,14 @@ impl Page for HomeGridPage {
                 self.dirty = true;
                 true
             }
+            PageEvent::ConfigChanged(config) => {
+                if self.temperature_unit != config.temperature_unit {
+                    self.temperature_unit = config.temperature_unit;
+                    self.dirty = true;
+                    return true;
+                }
+                false
+            }
             _ => false,
         }
     }
@@ -646,7 +684,7 @@ impl Drawable for HomeGridPage {
         for i in 0..GRID_SENSOR_COUNT {
             let (row, col) = Self::card_grid_position(i);
             let card_rect = self.card_bounds(row, col);
-            self.cards[i].draw(display, card_rect)?;
+            self.cards[i].draw(display, card_rect, self.temperature_unit)?;
         }
 
         Ok(())

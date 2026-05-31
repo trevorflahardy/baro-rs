@@ -15,7 +15,7 @@ use embedded_graphics::primitives::Rectangle;
 use log::{debug, error, info};
 
 use crate::app_state::AppState;
-use crate::config::{HomePageMode, TemperatureUnit};
+use crate::config::{DeviceConfig, HomePageMode, TemperatureUnit};
 use crate::framebuffer::FrameBuffer;
 use crate::metrics::QualityLevel;
 use crate::pages::home::grid::HomeGridPage;
@@ -29,7 +29,7 @@ use crate::sensor_store::SensorDataStore;
 use crate::sensors::SensorType;
 use crate::sensors::{
     CO2 as SENSOR_CO2_INDEX, HUMIDITY as SENSOR_HUMIDITY_INDEX, LUX as SENSOR_LUX_INDEX,
-    TEMPERATURE as SENSOR_TEMPERATURE_INDEX,
+    PRESSURE as SENSOR_PRESSURE_INDEX, TEMPERATURE as SENSOR_TEMPERATURE_INDEX,
 };
 use crate::storage::accumulator::RollupEvent;
 use crate::storage::{RollupTier, TimeWindow};
@@ -47,11 +47,12 @@ const PAGE_CHANGE_CAPACITY: usize = 4;
 const AUTO_CYCLE_INTERVAL_SECS: u64 = 15;
 
 /// Sensors to cycle through in auto-cycle mode
-const AUTO_CYCLE_PAGES: [PageId; 4] = [
+const AUTO_CYCLE_PAGES: [PageId; 5] = [
     PageId::TrendTemperature,
     PageId::TrendHumidity,
     PageId::TrendCo2,
     PageId::TrendLux,
+    PageId::TrendPressure,
 ];
 
 /// Request to change the current page or update the display
@@ -148,7 +149,7 @@ where
         DD: embedded_hal::delay::DelayNs,
         TD: embedded_sdmmc::TimeSource,
     {
-        debug!(" Navigating to page: {:?}", page_id);
+        debug!("Navigating to page: {:?}", page_id);
         match page_id {
             PageId::Home => {
                 // Navigate to the correct home page based on current mode
@@ -257,12 +258,29 @@ where
 
                 self.current_page = PageWrapper::TrendPage(Box::new(page));
             }
+            PageId::TrendPressure => {
+                debug!(" Creating TrendPressure page with historical data");
+                let mut page = crate::pages::TrendPage::new(
+                    self.bounds,
+                    SensorType::Pressure,
+                    TimeWindow::OneHour,
+                );
+
+                Self::load_trend_data(app_state, &mut page, TimeWindow::OneHour).await;
+
+                self.current_page = PageWrapper::TrendPage(Box::new(page));
+            }
             PageId::WifiStatus => {
                 let page = WifiStatusPage::new(WifiState::Error);
                 self.current_page = PageWrapper::WifiStatus(Box::new(page));
             }
         }
         self.needs_redraw = true;
+
+        // Deliver current config to the newly created page so it can
+        // adapt display (e.g. temperature unit) without waiting for an
+        // explicit settings change.
+        self.broadcast_config();
     }
 
     /// Load historical data for a trend page from storage
@@ -354,8 +372,8 @@ where
 
         // Touch debounce: skip this Press if the previous touch caused a
         // page state change (prevents dismiss-then-tap-through on alerts).
-        if matches!(event, TouchEvent::Press(_)) && self.skip_next_press {
-            debug!(" Skipping press (debounce)");
+        if matches!(event, TouchEvent::Press(_) | TouchEvent::Release(_)) && self.skip_next_press {
+            debug!(" Skipping press/release (debounce)");
             self.skip_next_press = false;
             return;
         }
@@ -388,6 +406,7 @@ where
                         | PageId::TrendHumidity
                         | PageId::TrendCo2
                         | PageId::TrendLux
+                        | PageId::TrendPressure
                         | PageId::TrendPage => {
                             self.navigate_to(PageId::Home, app_state).await;
                         }
@@ -419,6 +438,10 @@ where
                         let mut state = app_state.lock().await;
                         state.device_config.temperature_unit = unit;
                     }
+
+                    // Notify the active page so it redraws with the new unit
+                    self.broadcast_config();
+                    self.needs_redraw = true;
                 }
                 _ => {
                     debug!(" Unhandled action: {:?}", action);
@@ -428,15 +451,22 @@ where
             debug!(" Touch event not handled by page");
         }
 
+        // If the touch changed visible state (e.g. a scroll/drag mutates the
+        // page's offset and marks it dirty) without returning a navigation
+        // Action, nothing else would request a repaint. Trigger the normal
+        // render+flush path so the screen reflects the new state immediately.
+        let is_dirty_now = Page::is_dirty(&self.current_page);
+        if is_dirty_now {
+            self.needs_redraw = true;
+        }
+
         // If this press caused the page to change state (became dirty when it
         // wasn't before, or triggered navigation), arm the debounce so the
         // next press is ignored. This prevents a single physical tap from
         // triggering two separate logical actions.
-        if matches!(event, TouchEvent::Press(_)) {
-            let is_dirty_now = Page::is_dirty(&self.current_page);
-            if !was_dirty && is_dirty_now {
-                self.skip_next_press = true;
-            }
+        let is_press_or_release = matches!(event, TouchEvent::Press(_) | TouchEvent::Release(_));
+        if is_press_or_release && !was_dirty && is_dirty_now {
+            self.skip_next_press = true;
         }
     }
 
@@ -451,6 +481,16 @@ where
         qualities
             .iter()
             .all(|q| matches!(q, QualityLevel::Good | QualityLevel::Excellent))
+    }
+
+    /// Build a `ConfigChanged` event from the current display manager state
+    /// and deliver it to the active page so it can adapt (e.g. temperature unit).
+    fn broadcast_config(&mut self) {
+        let event = PageEvent::ConfigChanged(DeviceConfig {
+            home_page_mode: self.home_page_mode,
+            temperature_unit: self.temperature_unit,
+        });
+        Page::on_event(&mut self.current_page, &event);
     }
 
     /// Set the home page mode (called during boot after loading config)
@@ -479,12 +519,15 @@ where
                 let humidity_mp = sample.values[SENSOR_HUMIDITY_INDEX];
                 let co2_mp = sample.values[SENSOR_CO2_INDEX];
                 let lux_ml = sample.values[SENSOR_LUX_INDEX];
+                let pressure_mpa = sample.values[SENSOR_PRESSURE_INDEX];
 
                 // Convert to float values (divide by 1000)
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
                 let co2_ppm = co2_mp as f32 / 1000.0;
                 let lux_val = lux_ml as f32 / 1000.0;
+                // Pressure: stored as milli-Pa, display as hPa (1 hPa = 100 Pa)
+                let pressure_hpa = pressure_mpa as f32 / 100_000.0;
 
                 debug!("{}", sample);
 
@@ -498,6 +541,7 @@ where
                     humidity: Some(humidity_pct),
                     co2: Some(co2_ppm),
                     lux: Some(lux_val),
+                    pressure: Some(pressure_hpa),
                     timestamp: sample.timestamp as u64,
                 };
 
@@ -521,11 +565,13 @@ where
                 let humidity_mp = rollup.avg[SENSOR_HUMIDITY_INDEX];
                 let co2_mp = rollup.avg[SENSOR_CO2_INDEX];
                 let lux_ml = rollup.avg[SENSOR_LUX_INDEX];
+                let pressure_mpa = rollup.avg[SENSOR_PRESSURE_INDEX];
 
                 let temp_c = temperature_mc as f32 / 1000.0;
                 let humidity_pct = humidity_mp as f32 / 1000.0;
                 let co2_ppm = co2_mp as f32 / 1000.0;
                 let lux_val = lux_ml as f32 / 1000.0;
+                let pressure_hpa = pressure_mpa as f32 / 100_000.0;
 
                 debug!("{}", rollup);
 
@@ -534,6 +580,7 @@ where
                     humidity: Some(humidity_pct),
                     co2: Some(co2_ppm),
                     lux: Some(lux_val),
+                    pressure: Some(pressure_hpa),
                     timestamp: rollup.start_ts as u64,
                 };
 

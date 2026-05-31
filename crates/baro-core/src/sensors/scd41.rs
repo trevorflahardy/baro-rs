@@ -1,4 +1,4 @@
-use crate::sensors::{SensorError, SensorReadings};
+use crate::sensors::{InitStep, SensorError, SensorReadings};
 
 use super::Sensor;
 use embedded_hal_async::i2c::I2c;
@@ -42,10 +42,7 @@ impl<I: I2c> SCD41Sensor<I> {
             .await
             .map_err(|e| {
                 error!("SCD41 set_automatic_self_calibration failed: {:?}", e);
-                SensorError::InitializationFailed {
-                    sensor: "SCD41",
-                    details: "Failed to enable automatic self-calibration",
-                }
+                SensorError::init("SCD41", InitStep::Config, &e)
             })?;
 
         info!("SCD41: Automatic self-calibration enabled");
@@ -63,23 +60,12 @@ impl<I: I2c> Sensor<1> for SCD41Sensor<I> {
     async fn read(&mut self) -> Result<SCD41Readings, super::SensorError> {
         // Initialize sensor on first read
         if !self.calibrated {
-            // Need to initialize before reading
-            self.initialize().await.map_err(|e| {
-                error!("SCD41 initialization failed: {:?}", e);
-                SensorError::InitializationFailed {
-                    sensor: "SCD41",
-                    details: "Failed to initialize sensor before reading",
-                }
-            })?;
+            self.initialize().await?;
         }
 
         self.sensor.measure_single_shot().await.map_err(|e| {
             error!("SCD41 single shot measurement failed: {:?}", e);
-            SensorError::ReadFailed {
-                sensor: "SCD41",
-                operation: "initiate single shot measurement",
-                details: "I2C communication error",
-            }
+            SensorError::read("SCD41", "measure_single_shot", &e)
         })?;
 
         // Wait for 5s to allow measurement to complete
@@ -90,11 +76,7 @@ impl<I: I2c> Sensor<1> for SCD41Sensor<I> {
         let mut attempts = 0;
         while (!self.sensor.data_ready().await.map_err(|e| {
             error!("SCD41 data_ready check failed: {:?}", e);
-            SensorError::ReadFailed {
-                sensor: "SCD41",
-                operation: "check data ready status",
-                details: "I2C communication error",
-            }
+            SensorError::read("SCD41", "data_ready", &e)
         })?) && attempts < 5
         {
             embassy_time::Timer::after_millis(1000).await;
@@ -105,18 +87,14 @@ impl<I: I2c> Sensor<1> for SCD41Sensor<I> {
             error!("SCD41 data not ready after multiple attempts");
             return Err(SensorError::Timeout {
                 sensor: "SCD41",
-                operation: "wait for data ready status",
+                op: "data_ready",
             });
         }
 
         // Read measurement
         let measurement = self.sensor.measurement().await.map_err(|e| {
             error!("SCD41 measurement read failed: {:?}", e);
-            SensorError::ReadFailed {
-                sensor: "SCD41",
-                operation: "read CO2 measurement",
-                details: "I2C communication error or invalid data",
-            }
+            SensorError::read("SCD41", "measurement", &e)
         })?;
 
         let co2_ppm = measurement.co2_ppm as i32;

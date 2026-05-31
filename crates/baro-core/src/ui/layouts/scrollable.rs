@@ -343,18 +343,35 @@ impl Touchable for ScrollableContainer {
                 }
             }
             TouchEvent::Drag(point) => {
-                if let Some(last) = self.last_touch {
-                    let delta_x = point.x as i32 - last.x as i32;
-                    let delta_y = point.y as i32 - last.y as i32;
+                match self.last_touch {
+                    Some(last) => {
+                        let delta_x = point.x as i32 - last.x as i32;
+                        let delta_y = point.y as i32 - last.y as i32;
 
-                    // Invert scroll direction (drag down = scroll up)
-                    self.scroll_by(Point::new(-delta_x, -delta_y));
+                        // Invert scroll direction (drag down = scroll up)
+                        self.scroll_by(Point::new(-delta_x, -delta_y));
 
-                    self.last_touch = Some(point);
-                    TouchResult::Handled
-                } else {
-                    TouchResult::NotHandled
+                        self.last_touch = Some(point);
+                        TouchResult::Handled
+                    }
+                    // No preceding Press reached us (the touch controller can
+                    // report a drag for the first contact, and the display
+                    // manager may debounce-drop the Press). Treat this Drag as
+                    // the start of the gesture: anchor here and consume it so
+                    // the next Drag produces a delta.
+                    None => {
+                        if self.contains_point(point) {
+                            self.last_touch = Some(point);
+                            TouchResult::Handled
+                        } else {
+                            TouchResult::NotHandled
+                        }
+                    }
                 }
+            }
+            TouchEvent::Release(_) => {
+                self.last_touch = None;
+                TouchResult::Handled
             }
         }
     }
