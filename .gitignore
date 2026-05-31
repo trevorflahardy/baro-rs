@@ -28,3 +28,6 @@ target/
 
 # Custom temp ignore
 .env
+
+# Firmware run logs (make run / make run-release)
+.logs/

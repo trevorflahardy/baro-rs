@@ -7,16 +7,21 @@
 ESP_TARGET  := xtensa-esp32s3-none-elf
 BUILD_STD   := -Z build-std=alloc,core
 
+# Directory where `make run` / `make run-release` tee their output.
+LOG_DIR     := .logs
+
 # ----------------------------------------------------------------------------
 # Running on the actual ESP32-S3
 # ----------------------------------------------------------------------------
-.PHONY: run, run-release
+.PHONY: run run-release
 
-run: ## Runs the firmware on the ESP32-S3 (debug)
-	cargo run --target $(ESP_TARGET) $(BUILD_STD)
+run: ## Runs the firmware on the ESP32-S3 (debug), teeing output to .logs/
+	@mkdir -p $(LOG_DIR)
+	bash -c 'set -o pipefail; cargo run --target $(ESP_TARGET) $(BUILD_STD) 2>&1 | tee $(LOG_DIR)/firmware-$(shell date +%Y%m%d-%H%M%S).log'
 
-run-release: ## Runs the firmware on the ESP32-S3
-	cargo run --target $(ESP_TARGET) $(BUILD_STD) --release
+run-release: ## Runs the firmware on the ESP32-S3, teeing output to .logs/
+	@mkdir -p $(LOG_DIR)
+	bash -c 'set -o pipefail; cargo run --target $(ESP_TARGET) $(BUILD_STD) --release 2>&1 | tee $(LOG_DIR)/firmware-release-$(shell date +%Y%m%d-%H%M%S).log'
 
 # ---------------------------------------------------------------------------
 # Firmware (ESP32-S3)

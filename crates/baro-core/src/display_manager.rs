@@ -451,15 +451,22 @@ where
             debug!(" Touch event not handled by page");
         }
 
+        // If the touch changed visible state (e.g. a scroll/drag mutates the
+        // page's offset and marks it dirty) without returning a navigation
+        // Action, nothing else would request a repaint. Trigger the normal
+        // render+flush path so the screen reflects the new state immediately.
+        let is_dirty_now = Page::is_dirty(&self.current_page);
+        if is_dirty_now {
+            self.needs_redraw = true;
+        }
+
         // If this press caused the page to change state (became dirty when it
         // wasn't before, or triggered navigation), arm the debounce so the
         // next press is ignored. This prevents a single physical tap from
         // triggering two separate logical actions.
-        if matches!(event, TouchEvent::Press(_) | TouchEvent::Release(_)) {
-            let is_dirty_now = Page::is_dirty(&self.current_page);
-            if !was_dirty && is_dirty_now {
-                self.skip_next_press = true;
-            }
+        let is_press_or_release = matches!(event, TouchEvent::Press(_) | TouchEvent::Release(_));
+        if is_press_or_release && !was_dirty && is_dirty_now {
+            self.skip_next_press = true;
         }
     }
 
