@@ -26,7 +26,7 @@ use embassy_net::{Config as EmbassyNetConfig, IpListenEndpoint, Runner, StackRes
 use embassy_net::{IpAddress, IpEndpoint};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex as AsyncMutex;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{clock::CpuClock, gpio::Output, spi::master::Spi, timer::timg::TimerGroup};
 use esp_radio::Controller;
 use esp_radio::wifi::{ClientConfig, WifiController, WifiDevice};
@@ -716,6 +716,12 @@ async fn storage_event_processing_task(app_state: &'static ConcreteGlobalStateTy
     }
 }
 
+/// Minimum idle time (finger fully lifted) required between two distinct
+/// touch interactions. A tap that begins sooner than this after the previous
+/// touch lifted is ignored entirely, so dismissing a popup cannot immediately
+/// trigger whatever sits underneath it. Makes tapping feel intentional.
+const TOUCH_DEBOUNCE_MS: u64 = 250;
+
 /// Async task for polling touch input
 #[allow(clippy::large_stack_frames)]
 #[embassy_executor::task]
@@ -731,57 +737,83 @@ async fn touch_polling_task(
 
     let mut was_touching = false;
     let mut last_point = baro_core::ui::TouchPoint { x: 0, y: 0 };
+    // Timestamp of the last finger-lift, used to debounce rapid successive taps.
+    let mut last_release: Option<Instant> = None;
+    // True while the current touch interaction is being suppressed because it
+    // began inside the debounce window of the previous lift.
+    let mut ignoring_touch = false;
 
     loop {
         match touch.scan().await {
             Ok(touch_data) => {
                 if touch_data.touch_count > 0 {
-                    debug!(
-                        "Touch task: Detected {} touch points",
-                        touch_data.touch_count
-                    );
-                    for i in 0..touch_data.touch_count as usize {
-                        let point = &touch_data.points[i];
-
-                        // Convert touch to our TouchEvent and send to display
-                        let touch_point = baro_core::ui::TouchPoint {
-                            x: point.x,
-                            y: point.y,
-                        };
-
-                        last_point = touch_point;
-
-                        let event = match point.status {
-                            TouchStatus::Touch => {
-                                debug!("Touch task: Press at ({}, {})", point.x, point.y);
-                                baro_core::ui::TouchEvent::Press(touch_point)
-                            }
-                            TouchStatus::Stream => {
-                                debug!("Touch task: Drag at ({}, {})", point.x, point.y);
-                                baro_core::ui::TouchEvent::Drag(touch_point)
-                            }
-                            _ => {
-                                debug!("Touch task: Other status at ({}, {})", point.x, point.y);
-                                baro_core::ui::TouchEvent::Press(touch_point)
-                            }
-                        };
-
-                        let display_sender = baro_core::display_manager::get_display_sender();
-                        debug!("Touch task: Sending touch event to display");
-                        let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));
+                    // On the first contact of a new interaction, decide whether
+                    // it falls inside the debounce window of the previous lift.
+                    if !was_touching {
+                        ignoring_touch = last_release.is_some_and(|t| {
+                            t.elapsed() < Duration::from_millis(TOUCH_DEBOUNCE_MS)
+                        });
+                        if ignoring_touch {
+                            debug!("Touch task: Ignoring tap (debounce)");
+                        }
                     }
                     was_touching = true;
+
+                    if !ignoring_touch {
+                        debug!(
+                            "Touch task: Detected {} touch points",
+                            touch_data.touch_count
+                        );
+                        for i in 0..touch_data.touch_count as usize {
+                            let point = &touch_data.points[i];
+
+                            // Convert touch to our TouchEvent and send to display
+                            let touch_point = baro_core::ui::TouchPoint {
+                                x: point.x,
+                                y: point.y,
+                            };
+
+                            last_point = touch_point;
+
+                            let event = match point.status {
+                                TouchStatus::Touch => {
+                                    debug!("Touch task: Press at ({}, {})", point.x, point.y);
+                                    baro_core::ui::TouchEvent::Press(touch_point)
+                                }
+                                TouchStatus::Stream => {
+                                    debug!("Touch task: Drag at ({}, {})", point.x, point.y);
+                                    baro_core::ui::TouchEvent::Drag(touch_point)
+                                }
+                                _ => {
+                                    debug!(
+                                        "Touch task: Other status at ({}, {})",
+                                        point.x, point.y
+                                    );
+                                    baro_core::ui::TouchEvent::Press(touch_point)
+                                }
+                            };
+
+                            let display_sender = baro_core::display_manager::get_display_sender();
+                            debug!("Touch task: Sending touch event to display");
+                            let _ = display_sender.try_send(DisplayRequest::HandleTouch(event));
+                        }
+                    }
                 } else if was_touching {
-                    // Finger lifted — send Release at last known position
-                    debug!(
-                        "Touch task: Release at ({}, {})",
-                        last_point.x, last_point.y
-                    );
-                    let display_sender = baro_core::display_manager::get_display_sender();
-                    let _ = display_sender.try_send(DisplayRequest::HandleTouch(
-                        baro_core::ui::TouchEvent::Release(last_point),
-                    ));
+                    // Finger lifted — record the time for debounce and, unless
+                    // this interaction was ignored, send Release at last position.
                     was_touching = false;
+                    last_release = Some(Instant::now());
+                    if !ignoring_touch {
+                        debug!(
+                            "Touch task: Release at ({}, {})",
+                            last_point.x, last_point.y
+                        );
+                        let display_sender = baro_core::display_manager::get_display_sender();
+                        let _ = display_sender.try_send(DisplayRequest::HandleTouch(
+                            baro_core::ui::TouchEvent::Release(last_point),
+                        ));
+                    }
+                    ignoring_touch = false;
                 }
             }
             Err(e) => {
